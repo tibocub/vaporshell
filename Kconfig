@@ -1,0 +1,27 @@
+config VAPOROS_VAPORSHELL
+	tristate "vaporshell -- vaporOS's own shell (v0: read/echo loop only)"
+	default n
+	---help---
+		docs/vaporshell.md Milestone 1, step 1: proves app registration
+		and reuse of apps/system/readline's readline() from a program
+		that isn't NSH itself, before any real parsing or process
+		spawning exists. Runs as an ordinary NSH builtin for now (nsh>
+		vaporshell) -- not wired in as any board's boot entrypoint yet,
+		deliberately, so it can be iterated on against plain sim:nsh
+		without needing vterm_fb's graphics/pty machinery at all.
+
+if VAPOROS_VAPORSHELL
+
+config VAPOROS_VAPORSHELL_PROGNAME
+	string "Program name"
+	default "vaporshell"
+
+config VAPOROS_VAPORSHELL_PRIORITY
+	int "priority"
+	default 100
+
+config VAPOROS_VAPORSHELL_STACKSIZE
+	int "stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif
