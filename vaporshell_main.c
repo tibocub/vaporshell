@@ -145,6 +145,46 @@ static int tokenize(FAR char *line, FAR char *argv[], int max_tokens)
 }
 
 /****************************************************************************
+ * Multicall dispatch table: applet names vaporshell can run via `tbx`
+ * (the toybox port's own entry point, vapor_entry.c -- not toybox's
+ * own main()/toybox_main(), which vapor_entry.c deliberately bypasses;
+ * see that file's own comment for why). Invocation convention is
+ * argv[0]="tbx" with the applet name as argv[1] (vapor_entry.c calls
+ * toy_exec(argv+1), whose own argv[0] becomes the applet name) --
+ * NOT the argv[0]-rewriting convention docs/vaporshell.md originally
+ * described, which assumed toybox's own main()/toybox_main() dispatch
+ * would be used directly; that assumption no longer holds now that
+ * vapor_entry.c exists for the reasons documented there.
+ *
+ * Hand-maintained, not generated from toybox's own build config --
+ * reasonable at this scope (10 applets so far); worth revisiting if
+ * this list grows much longer. Kept in sync with toybox/Makefile's
+ * own CSRCS list by hand for now.
+ ****************************************************************************/
+
+static const char *const g_toybox_applets[] =
+{
+    "true", "false", "echo", "pwd",
+    "cat", "mkdir", "rmdir", "touch", "printf", "rm",
+    NULL
+};
+
+static bool is_toybox_applet(FAR const char *name)
+{
+    int i;
+
+    for (i = 0; g_toybox_applets[i] != NULL; i++)
+    {
+        if (strcmp(name, g_toybox_applets[i]) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/****************************************************************************
  * Builtins have to live here regardless of how good NuttX's spawn
  * story is -- cd mutates *this* process's cwd, not a child's, so it
  * can never be a spawned program. Sets *handled so the caller knows
@@ -222,6 +262,44 @@ static int run_command(int argc, FAR char *argv[])
      */
 
     ret = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
+
+    /* Fall back to the toybox multicall table only on ENOENT (command
+     * not found via normal PATH resolution) -- a real installed
+     * program with the same name should always win, the same
+     * precedence a real Unix shell gives $PATH over any builtin
+     * utility replacement. ENOENT confirmed directly as the real
+     * error this path returns: it's what "ls: No such file or
+     * directory" (strerror(ENOENT)) came from before this fallback
+     * existed.
+     */
+
+    if (ret == ENOENT && is_toybox_applet(argv[0]))
+    {
+        FAR char *tbx_argv[MAX_TOKENS + 1];
+        int i;
+
+        /* tokenize()'s own bound already guarantees argc <=
+         * MAX_TOKENS - 1, but check the actual array capacity here
+         * rather than assume that bound can never change independently.
+         */
+
+        if (argc + 2 > (int)(sizeof(tbx_argv) / sizeof(tbx_argv[0])))
+        {
+            fprintf(stderr, "vaporshell: %s: too many arguments\n", argv[0]);
+            return 1;
+        }
+
+        tbx_argv[0] = "tbx";
+        for (i = 0; i < argc; i++)
+        {
+            tbx_argv[i + 1] = argv[i];
+        }
+
+        tbx_argv[argc + 1] = NULL;
+
+        ret = posix_spawnp(&pid, "tbx", NULL, NULL, tbx_argv, environ);
+    }
+
     if (ret != 0)
     {
         fprintf(stderr, "vaporshell: %s: %s\n", argv[0], strerror(ret));
