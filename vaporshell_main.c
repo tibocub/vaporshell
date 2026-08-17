@@ -71,12 +71,28 @@ static int tokenize(FAR char *line, FAR char *argv[], int max_tokens)
     int argc = 0;
     FAR char *p = line;
 
+    /* readline()'s own doc comment claims "the final newline removed,
+     * so only the text of the line remains" -- confirmed directly
+     * against readline_fd.c that this is not actually true in the
+     * code we're calling: readline_fd()'s own doc comment says "if a
+     * newline is read, it is stored into the buffer," and the
+     * public readline() wrapper does zero post-processing of what
+     * readline_fd() returns before handing it back. Every line here
+     * really does end in '\n'. Treating '\n' (and defensively '\r',
+     * given this project's whole CR/LF history with vterm_fb) as a
+     * delimiter, same as space/tab, handles this at the one place it
+     * actually matters rather than requiring a separate strip-the-
+     * newline preprocessing step that's easy to forget to call from
+     * every caller (both the interactive loop and -c mode use this
+     * same function).
+     */
+
     for (; ; )
     {
         char quote = '\0';
         FAR char *start;
 
-        while (*p == ' ' || *p == '\t')
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
         {
             p++;
         }
@@ -103,7 +119,8 @@ static int tokenize(FAR char *line, FAR char *argv[], int max_tokens)
         }
         else
         {
-            while (*p != '\0' && *p != ' ' && *p != '\t')
+            while (*p != '\0' && *p != ' ' && *p != '\t' &&
+                   *p != '\n' && *p != '\r')
             {
                 p++;
             }
