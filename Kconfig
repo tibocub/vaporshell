@@ -1,14 +1,16 @@
 config VAPOROS_VAPORSHELL
-	tristate "vaporshell -- vaporOS's own shell (v0: read/echo loop only)"
+	tristate "vaporshell -- vaporOS's own shell"
 	default n
 	---help---
-		docs/vaporshell.md Milestone 1, step 1: proves app registration
-		and reuse of apps/system/readline's readline() from a program
-		that isn't NSH itself, before any real parsing or process
-		spawning exists. Runs as an ordinary NSH builtin for now (nsh>
-		vaporshell) -- not wired in as any board's boot entrypoint yet,
-		deliberately, so it can be iterated on against plain sim:nsh
-		without needing vterm_fb's graphics/pty machinery at all.
+		docs/vaporshell.md Milestone 1: runs programs via posix_spawnp
+		(PATH resolution), a cd builtin, exit-status tracking, and a
+		-c mode for non-interactive single commands (the same argv
+		shape apps/system/system/system.c uses when
+		CONFIG_SYSTEM_SYSTEM_SHPATH points elsewhere than NSH). No
+		pipes, redirection, expansion, or control flow yet -- see the
+		design doc for what's deliberately deferred and why. Runs as
+		an ordinary NSH builtin for now (nsh> vaporshell) -- not wired
+		in as any board's boot entrypoint yet.
 
 if VAPOROS_VAPORSHELL
 
