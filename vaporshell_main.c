@@ -359,9 +359,28 @@ int main(int argc, FAR char *argv[])
 
     for (; ; )
     {
-        FAR char *line = readline("vaporshell$ ");
+        static const char prompt[] = "vaporshell$ ";
+        FAR char *line;
         FAR char *tokens[MAX_TOKENS];
         int ntok;
+
+        /* readline() never prints the prompt itself -- confirmed
+         * directly, its own entry sequence has no prompt-printing
+         * logic at all, and NuttX's own documentation for
+         * readline_prompt() says its purpose is telling readline what
+         * to redraw for Home/End/history/tab-completion, not the
+         * initial display. NSH does exactly this same two-step
+         * sequence itself (nsh_session.c) -- explicit write() first,
+         * then readline_prompt() separately for redraws. Without the
+         * write() here, the prompt only ever appeared as a side
+         * effect of a redraw (Home/End, ...), never on its own.
+         */
+
+        write(STDOUT_FILENO, prompt, sizeof(prompt) - 1);
+#if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
+        readline_prompt(prompt);
+#endif
+        line = readline(prompt);
 
         if (line == NULL)
         {
