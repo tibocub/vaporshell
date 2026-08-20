@@ -168,6 +168,7 @@ static const char *const g_toybox_applets[] =
     "cat", "mkdir", "rmdir", "touch", "printf", "rm",
     "ls", "cp", "mv",
     "printenv",
+    "basename", "dirname", "sleep", "which",
     NULL
 };
 
