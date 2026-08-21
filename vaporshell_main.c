@@ -146,40 +146,49 @@ static int tokenize(FAR char *line, FAR char *argv[], int max_tokens)
 }
 
 /****************************************************************************
- * Multicall dispatch table: applet names vaporshell can run via `tbx`
- * (the toybox port's own entry point, vapor_entry.c -- not toybox's
- * own main()/toybox_main(), which vapor_entry.c deliberately bypasses;
- * see that file's own comment for why). Invocation convention is
- * argv[0]="tbx" with the applet name as argv[1] (vapor_entry.c calls
- * toy_exec(argv+1), whose own argv[0] becomes the applet name) --
- * NOT the argv[0]-rewriting convention docs/vaporshell.md originally
- * described, which assumed toybox's own main()/toybox_main() dispatch
- * would be used directly; that assumption no longer holds now that
- * vapor_entry.c exists for the reasons documented there.
+ * Multicall dispatch table: command names vaporshell can run via `tbx`
+ * (vapor_entry.c, tbx's own entry point -- not toybox's own main()/
+ * toybox_main(), which vapor_entry.c deliberately bypasses; see that
+ * file's own comment for why). Invocation convention is argv[0]="tbx"
+ * with the command name as argv[1] (vapor_entry.c calls toy_exec(argv+1)
+ * for toybox's own commands, or nshports_dispatch() first for anything
+ * ported from NSH instead -- see vaporOS-coreutils' own nsh-ports/
+ * directory) -- NOT the argv[0]-rewriting convention docs/vaporshell.md
+ * originally described, which assumed toybox's own main()/toybox_main()
+ * dispatch would be used directly; that assumption no longer holds now
+ * that vapor_entry.c exists for the reasons documented there.
  *
- * Hand-maintained, not generated from toybox's own build config --
- * reasonable at this scope (10 applets so far); worth revisiting if
- * this list grows much longer. Kept in sync with toybox/Makefile's
- * own CSRCS list by hand for now.
+ * This table doesn't distinguish toybox-sourced from NSH-sourced names
+ * at all -- deliberately: from vaporshell's own side, both are just
+ * "names tbx knows how to run", the toybox-vs-nsh-ports split only
+ * matters inside vaporOS-coreutils itself (for diffing against each
+ * one's own upstream independently). See its own README for which is
+ * which.
+ *
+ * Hand-maintained, not generated from any build config -- reasonable
+ * at this scope (19 commands so far); worth revisiting if this list
+ * grows much longer. Kept in sync with vaporOS-coreutils' own
+ * Makefile/CSRCS list by hand for now.
  ****************************************************************************/
 
-static const char *const g_toybox_applets[] =
+static const char *const g_tbx_commands[] =
 {
     "true", "false", "echo", "pwd",
     "cat", "mkdir", "rmdir", "touch", "printf", "rm",
     "ls", "cp", "mv",
     "printenv",
     "basename", "dirname", "sleep", "which",
+    "poweroff",
     NULL
 };
 
-static bool is_toybox_applet(FAR const char *name)
+static bool is_tbx_command(FAR const char *name)
 {
     int i;
 
-    for (i = 0; g_toybox_applets[i] != NULL; i++)
+    for (i = 0; g_tbx_commands[i] != NULL; i++)
     {
-        if (strcmp(name, g_toybox_applets[i]) == 0)
+        if (strcmp(name, g_tbx_commands[i]) == 0)
         {
             return true;
         }
@@ -198,15 +207,15 @@ static bool is_toybox_applet(FAR const char *name)
 /****************************************************************************
  * Prints every command vaporshell can actually run, in three groups:
  * vaporshell's own builtins (hardcoded, there are only a few), the
- * toybox applets (from g_toybox_applets, the same table run_command()
- * itself checks), and everything else spawnable from /bin (read via
- * opendir()/readdir() -- confirmed safe against a NAMED, absolute
- * path here, unlike the bare "." case dirtree.c's own NuttX fixes
- * were about; "ls /bin" already works correctly through that same
- * distinction). This third group is what actually answers "is X a
- * real program" for things like vhello/vlua/vi/vcat/tbx itself --
- * information run_command()'s own g_toybox_applets table doesn't
- * have, since those are genuinely different from toybox applets.
+ * commands run via tbx (from g_tbx_commands, the same table
+ * run_command() itself checks -- toybox- and NSH-sourced alike, see
+ * that table's own comment), and everything else spawnable from /bin
+ * (read via opendir()/readdir() -- confirmed safe against a NAMED,
+ * absolute path here, unlike the bare "." case dirtree.c's own NuttX
+ * fixes were about; "ls /bin" already works correctly through that
+ * same distinction). This third group is what actually answers "is X
+ * a real program" for things like vhello/vlua/vi/vcat/tbx itself --
+ * information run_command()'s own g_tbx_commands table doesn't have.
  ****************************************************************************/
 
 static void run_help(void)
@@ -218,11 +227,11 @@ static void run_help(void)
     printf("vaporshell builtins:\n");
     printf("  cd exit quit help\n");
 
-    printf("\ntoybox commands (via tbx):\n");
+    printf("\ncommands (via tbx):\n");
     printf(" ");
-    for (i = 0; g_toybox_applets[i] != NULL; i++)
+    for (i = 0; g_tbx_commands[i] != NULL; i++)
     {
-        printf(" %s", g_toybox_applets[i]);
+        printf(" %s", g_tbx_commands[i]);
     }
 
     printf("\n\nother programs (/bin):\n");
@@ -343,7 +352,7 @@ static int run_command(int argc, FAR char *argv[])
 
     ret = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
 
-    /* Fall back to the toybox multicall table only on ENOENT (command
+    /* Fall back to the tbx multicall table only on ENOENT (command
      * not found via normal PATH resolution) -- a real installed
      * program with the same name should always win, the same
      * precedence a real Unix shell gives $PATH over any builtin
@@ -353,7 +362,7 @@ static int run_command(int argc, FAR char *argv[])
      * existed.
      */
 
-    if (ret == ENOENT && is_toybox_applet(argv[0]))
+    if (ret == ENOENT && is_tbx_command(argv[0]))
     {
         FAR char *tbx_argv[MAX_TOKENS + 1];
         int i;
