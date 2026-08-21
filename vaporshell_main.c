@@ -48,6 +48,7 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <dirent.h>
 
 #include "system/readline.h"
 
@@ -194,6 +195,76 @@ static bool is_toybox_applet(FAR const char *name)
  * whether to fall through to posix_spawnp.
  ****************************************************************************/
 
+/****************************************************************************
+ * Prints every command vaporshell can actually run, in three groups:
+ * vaporshell's own builtins (hardcoded, there are only a few), the
+ * toybox applets (from g_toybox_applets, the same table run_command()
+ * itself checks), and everything else spawnable from /bin (read via
+ * opendir()/readdir() -- confirmed safe against a NAMED, absolute
+ * path here, unlike the bare "." case dirtree.c's own NuttX fixes
+ * were about; "ls /bin" already works correctly through that same
+ * distinction). This third group is what actually answers "is X a
+ * real program" for things like vhello/vlua/vi/vcat/tbx itself --
+ * information run_command()'s own g_toybox_applets table doesn't
+ * have, since those are genuinely different from toybox applets.
+ ****************************************************************************/
+
+static void run_help(void)
+{
+    int i;
+    FAR DIR *dir;
+    FAR struct dirent *entry;
+
+    printf("vaporshell builtins:\n");
+    printf("  cd exit quit help\n");
+
+    printf("\ntoybox commands (via tbx):\n");
+    printf(" ");
+    for (i = 0; g_toybox_applets[i] != NULL; i++)
+    {
+        printf(" %s", g_toybox_applets[i]);
+    }
+
+    printf("\n\nother programs (/bin):\n");
+    printf(" ");
+
+    dir = opendir("/bin");
+    if (dir == NULL)
+    {
+        printf(" (couldn't read /bin: %s)", strerror(errno));
+    }
+    else
+    {
+        while ((entry = readdir(dir)) != NULL)
+        {
+            /* binfs has no "." or ".." entries of its own (confirmed
+             * directly, same as the pseudo-fs behavior dirtree.c had
+             * to work around for real directories) -- this check is
+             * defensive, not covering a known gap here.
+             */
+
+            if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0)
+            {
+                continue;
+            }
+
+            printf(" %s", entry->d_name);
+        }
+
+        closedir(dir);
+    }
+
+    printf("\n");
+}
+
+/****************************************************************************
+ * Builtins have to live here regardless of how good NuttX's spawn
+ * story is -- cd mutates *this* process's cwd, not a child's, so it
+ * can never be a spawned program. Sets *handled so the caller knows
+ * whether to fall through to posix_spawnp.
+ ****************************************************************************/
+
 static int run_builtin(int argc, FAR char *argv[], FAR bool *handled)
 {
     *handled = true;
@@ -224,6 +295,12 @@ static int run_builtin(int argc, FAR char *argv[], FAR bool *handled)
             setenv("PWD", cwd, 1);
         }
 
+        return 0;
+    }
+
+    if (strcmp(argv[0], "help") == 0)
+    {
+        run_help();
         return 0;
     }
 
