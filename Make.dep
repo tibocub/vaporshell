@@ -1,0 +1,61 @@
+# Gen Make.dep automatically
+vaporshell_main.c.home.tibo.Code.vaporOS-nuttx.vaporshell.o: \
+ vaporshell_main.c /usr/include/stdc-predef.h \
+ /home/tibo/Code/nuttx/include/nuttx/config.h \
+ /home/tibo/Code/nuttx/include/stdio.h \
+ /home/tibo/Code/nuttx/include/sys/types.h \
+ /home/tibo/Code/nuttx/include/nuttx/compiler.h \
+ /home/tibo/Code/nuttx/include/stdint.h \
+ /home/tibo/Code/nuttx/include/arch/types.h \
+ /home/tibo/Code/nuttx/include/arch/inttypes.h \
+ /home/tibo/Code/nuttx/include/limits.h \
+ /home/tibo/Code/nuttx/include/arch/limits.h \
+ /usr/lib/gcc/x86_64-redhat-linux/15/include/stdarg.h \
+ /home/tibo/Code/nuttx/include/time.h \
+ /home/tibo/Code/nuttx/include/nuttx/fs/fs.h \
+ /home/tibo/Code/nuttx/include/nuttx/fs/ioctl.h \
+ /home/tibo/Code/nuttx/include/stdbool.h \
+ /home/tibo/Code/nuttx/include/nuttx/serial/tioctl.h \
+ /home/tibo/Code/nuttx/include/nuttx/fs/uio.h \
+ /home/tibo/Code/nuttx/include/sys/uio.h \
+ /home/tibo/Code/nuttx/include/dirent.h \
+ /home/tibo/Code/nuttx/include/nuttx/atomic.h \
+ /usr/lib/gcc/x86_64-redhat-linux/15/include/stdatomic.h \
+ /home/tibo/Code/nuttx/include/nuttx/mutex.h \
+ /home/tibo/Code/nuttx/include/assert.h \
+ /home/tibo/Code/nuttx/include/nuttx/semaphore.h \
+ /home/tibo/Code/nuttx/include/errno.h \
+ /home/tibo/Code/nuttx/include/nuttx/irq.h \
+ /home/tibo/Code/nuttx/include/arch/irq.h \
+ /home/tibo/Code/nuttx/include/arch/setjmp.h \
+ /home/tibo/Code/nuttx/include/semaphore.h \
+ /home/tibo/Code/nuttx/include/nuttx/queue.h \
+ /home/tibo/Code/nuttx/include/nuttx/clock.h \
+ /home/tibo/Code/nuttx/include/sys/timex.h \
+ /home/tibo/Code/nuttx/include/sys/time.h \
+ /home/tibo/Code/nuttx/include/sys/select.h \
+ /home/tibo/Code/nuttx/include/signal.h \
+ /home/tibo/Code/nuttx/include/string.h \
+ /home/tibo/Code/nuttx/include/stddef.h \
+ /home/tibo/Code/nuttx/include/alloca.h \
+ /home/tibo/Code/nuttx/include/nuttx/lib/math32.h \
+ /home/tibo/Code/nuttx/include/inttypes.h \
+ /home/tibo/Code/nuttx/include/strings.h \
+ /home/tibo/Code/nuttx/include/nuttx/mm/map.h \
+ /home/tibo/Code/nuttx/include/nuttx/mm/gran.h \
+ /home/tibo/Code/nuttx/include/nuttx/spawn.h \
+ /home/tibo/Code/nuttx/include/spawn.h \
+ /home/tibo/Code/nuttx/include/sched.h \
+ /home/tibo/Code/nuttx/include/nuttx/spinlock_type.h \
+ /home/tibo/Code/nuttx/include/nuttx/lib/lib.h \
+ /home/tibo/Code/nuttx/include/nuttx/kmalloc.h \
+ /home/tibo/Code/nuttx/include/stdlib.h \
+ /home/tibo/Code/nuttx/include/nuttx/mm/mm.h \
+ /home/tibo/Code/nuttx/include/nuttx/userspace.h \
+ /home/tibo/Code/nuttx/include/pthread.h \
+ /home/tibo/Code/nuttx/include/unistd.h \
+ /home/tibo/Code/nuttx/include/malloc.h \
+ /home/tibo/Code/nuttx/include/sys/wait.h \
+ /home/tibo/Code/apps/include/system/readline.h
+# No files specified for dependency generation
+# No files specified for dependency generation
