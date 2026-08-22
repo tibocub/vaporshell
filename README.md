@@ -54,3 +54,51 @@ Interactive use works: tokenizing, quoting, builtins (`cd`, `exit`,
 `help`), `$PATH` resolution, environment variables. Scripting (reading
 a file of commands rather than a line at a time) doesn't exist yet --
 see `docs/design.md`'s own milestones for what's next.
+
+## TODO
+
+**Basic shell features**:
+- [x] execute a script file
+- [x] source a script into the current session (. and source)
+- [ ] variables (num=3; echo $num)
+
+**Bash synthax**:
+- [ ] ";" end line with semicolon
+- [ ] bash datatypes ( age=5; name="tibo")
+- [ ] "$" process variables and execute commands inside a string (echo $PWD; echo "I'm in $(pwd)"; if -z [[ "$string" ]]; etc.)
+- [ ] ( )
+- [ ] [ ]
+- [ ] [[ ]]
+- [ ] if/then/else
+
+**Comparison Operators**:
+- [ ] -eq: Equal to
+- [ ] -ne: Not equal to
+- [ ] -lt: Less than
+- [ ] -le: Less than or equal to
+- [ ] -gt: Greater than
+- [ ] -ge: Greater than or equal to
+
+**String Comparison Operators**:
+- [ ] =: Equal to
+- [ ] !=: Not equal to
+- [ ] <: Less than, in ASCII alphabetical order
+- [ ] >: Greater than, in ASCII alphabetical order
+
+**Arithmetic Operators**:
+- [ ] +: Addition
+- [ ] -: Subtraction
+- [ ] *: Multiplication
+- [ ] /: Division
+- [ ] %: Modulus
+
+**Logical Operators**:
+- [ ] &&: Logical AND
+- [ ] ||: Logical OR
+- [ ] !: Logical NOT
+
+**File Test Operators**:
+- [ ] -e: Checks if a file exists
+- [ ] -d: Checks if a directory exists
+- [ ] -f: Checks if a file is a regular file
+- [ ] -s: Checks if a file is not empty

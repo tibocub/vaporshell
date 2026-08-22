@@ -6,6 +6,7 @@ STACKSIZE = $(CONFIG_VAPOROS_VAPORSHELL_STACKSIZE)
 MODULE    = $(CONFIG_VAPOROS_VAPORSHELL)
 
 MAINSRC = vaporshell_main.c
+CSRCS = tokenize.c dispatch.c help.c script.c builtins.c exec.c
 
 include $(APPDIR)/external/vapor-nostdinc.mk
 include $(APPDIR)/Application.mk
