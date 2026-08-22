@@ -7,4 +7,5 @@ MODULE    = $(CONFIG_VAPOROS_VAPORSHELL)
 
 MAINSRC = vaporshell_main.c
 
+include $(APPDIR)/external/vapor-nostdinc.mk
 include $(APPDIR)/Application.mk
