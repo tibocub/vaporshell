@@ -24,37 +24,27 @@
 #include "vaporshell.h"
 
 /****************************************************************************
- * Returns the exit status (or 127, the standard shell convention for
- * "command not found", if spawning failed outright).
+ * Spawns argv[0] via PATH resolution, falling back to the tbx
+ * multicall table on ENOENT -- shared by run_command() (actions ==
+ * NULL, inherit stdin/stdout/stderr as-is, the normal case) and
+ * pipeline.c (a real file_actions redirecting stdin/stdout into a
+ * pipe). Deliberately does *not* check builtins at all -- that's the
+ * caller's job (run_command() does it; pipeline.c deliberately
+ * doesn't, see its own top-of-file comment on why builtins aren't
+ * supported as pipeline stages yet) -- this function always spawns a
+ * real process.
+ *
+ * On success, sets *pid and returns 0. On failure, returns the errno
+ * value directly -- posix_spawnp's own convention, not the usual
+ * "-1 and errno set" -- and *pid is left unset.
  ****************************************************************************/
 
-int run_command(int argc, FAR char *argv[])
+int spawn_command(int argc, FAR char *argv[],
+                   FAR posix_spawn_file_actions_t *actions, FAR pid_t *pid)
 {
-    bool handled;
-    int status;
-    pid_t pid;
     int ret;
 
-    if (argc == 0)
-    {
-        return 0;
-    }
-
-    status = run_builtin(argc, argv, &handled);
-    if (handled)
-    {
-        return status;
-    }
-
-    /* posix_spawnp, not posix_spawn: PATH resolution
-     * (CONFIG_LIBC_ENVPATH) is what makes a bare command name work at
-     * all instead of requiring a full path. Its own error convention
-     * is unusual and easy to get backwards -- it returns 0 on success
-     * or a positive errno value directly on failure, NOT -1 with
-     * errno set the way most POSIX calls work.
-     */
-
-    ret = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
+    ret = posix_spawnp(pid, argv[0], actions, NULL, argv, environ);
 
     /* Fall back to the tbx multicall table only on ENOENT (command
      * not found via normal PATH resolution) -- a real installed
@@ -79,7 +69,7 @@ int run_command(int argc, FAR char *argv[])
         if (argc + 2 > (int)(sizeof(tbx_argv) / sizeof(tbx_argv[0])))
         {
             fprintf(stderr, "vaporshell: %s: too many arguments\n", argv[0]);
-            return 1;
+            return E2BIG;
         }
 
         tbx_argv[0] = "tbx";
@@ -90,9 +80,36 @@ int run_command(int argc, FAR char *argv[])
 
         tbx_argv[argc + 1] = NULL;
 
-        ret = posix_spawnp(&pid, "tbx", NULL, NULL, tbx_argv, environ);
+        ret = posix_spawnp(pid, "tbx", actions, NULL, tbx_argv, environ);
     }
 
+    return ret;
+}
+
+/****************************************************************************
+ * Returns the exit status (or 127, the standard shell convention for
+ * "command not found", if spawning failed outright).
+ ****************************************************************************/
+
+int run_command(int argc, FAR char *argv[])
+{
+    bool handled;
+    int status;
+    pid_t pid;
+    int ret;
+
+    if (argc == 0)
+    {
+        return 0;
+    }
+
+    status = run_builtin(argc, argv, &handled);
+    if (handled)
+    {
+        return status;
+    }
+
+    ret = spawn_command(argc, argv, NULL, &pid);
     if (ret != 0)
     {
         fprintf(stderr, "vaporshell: %s: %s\n", argv[0], strerror(ret));

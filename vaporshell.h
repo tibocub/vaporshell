@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <nuttx/compiler.h>
+#include <spawn.h>
 
 #define MAX_TOKENS 64
 #define MAX_PWD    128
@@ -27,6 +28,12 @@ int tokenize(FAR char *line, FAR char *argv[], FAR bool no_expand[],
 
 /* line.c */
 int run_line(FAR char *line, FAR bool *should_exit);
+void expand_tokens(FAR char *raw_tokens[], FAR bool no_expand[], int ntok,
+                    FAR char *argv_out[]);
+
+/* pipeline.c */
+bool has_unquoted_pipe(FAR const char *text);
+int run_pipeline(FAR char *text);
 
 /* dispatch.c */
 bool is_tbx_command(FAR const char *name);
@@ -43,5 +50,7 @@ int run_builtin(int argc, FAR char *argv[], FAR bool *handled);
 
 /* exec.c */
 int run_command(int argc, FAR char *argv[]);
+int spawn_command(int argc, FAR char *argv[],
+                   FAR posix_spawn_file_actions_t *actions, FAR pid_t *pid);
 
 #endif

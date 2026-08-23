@@ -46,10 +46,12 @@ vaporshell/
   expand.c                   $VAR/${VAR} expansion, assignment
   subst.c                     command substitution ($(...), `...`)
   line.c                       splits/runs a line (;, &&, ||)
-  vaporshell.h                  shared header
-  Kconfig, Makefile              standard NuttX app-directory shape
-  docs/design.md                  the real design doc -- read this
-                                  first for anything non-trivial
+  pipeline.c                     cmd1 | cmd2 | cmd3 execution
+  control.c                        if/then/elif/else/fi
+  vaporshell.h                       shared header
+  Kconfig, Makefile                    standard NuttX app-directory shape
+  docs/design.md                         the real design doc -- read this
+                                         first for anything non-trivial
 ```
 
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx)
@@ -61,10 +63,12 @@ wired in automatically.
 ## STATUS
 
 Interactive and script use both work: tokenizing, quoting (including
-mid-token, e.g. `name="tibo smith"`), `#` comments, `$VAR`/`${VAR}`
-expansion, command substitution (`$(...)` and `` `...` ``), variable
-assignment, `;`/`&&`/`||`, `.`/`source`, and `test`/`[` (comparison,
-string comparison, and file test operators). See the TODO below for
+mid-token, e.g. `name="tibo smith"`), backslash escaping, `#`
+comments, `$VAR`/`${VAR}`/`$?` expansion, command substitution
+(`$(...)` and `` `...` ``), variable assignment, `;`/`&&`/`||`/`|`
+(real pipelines), `.`/`source`, `test`/`[` (comparison, string
+comparison, and file test operators), and `if`/`then`/`elif`/`else`/
+`fi` (single-line, multi-line, and nested). See the TODO below for
 the real, current gap list -- kept accurate and updated as things get
 implemented, not left to go stale.
 
@@ -105,10 +109,15 @@ while implementing `test`/`[`:
 - [x] `$VAR` / `${VAR}` expansion
 - [x] command substitution: `$(...)` and `` `...` ``
 - [x] `&&` / `||` conditional execution
-- [ ] backslash escaping (`\`) -- next up
-- [ ] pipes (`|`, distinct from `||`) -- nothing pipes one command's
-      stdout into another's stdin yet; every command today just
-      inherits the shell's own stdin/stdout directly
+- [x] backslash escaping (`\`)
+- [x] pipes (`|`, distinct from `||`) -- real multi-stage pipeline
+      execution with genuine pipe-based data flow between commands;
+      required enabling `CONFIG_SCHED_CHILD_STATUS` in vaporOS-nuttx's
+      own build.sh -- without it, NuttX's own waitpid() can't retrieve
+      a fast-exiting command's status if it already exited before
+      waitpid() got called (confirmed directly in NuttX's own Kconfig
+      help text for that option), which pipelines hit routinely since
+      every stage has to be spawned before any of them are waited on
 - [ ] redirection: `>`, `<`, `>>`, `2>`, `2>&1`, `&>`, `n>&m`
 - [ ] here-documents (`<<`) and here-strings (`<<<`)
 - [ ] process substitution (`<(...)`, `>(...)`)
@@ -125,7 +134,21 @@ while implementing `test`/`[`:
       before committing to it
 
 ### Control flow
-- [ ] `if`/`then`/`elif`/`else`/`fi`
+- [x] `if`/`then`/`elif`/`else`/`fi` -- works both on one line
+      (`;`-separated) and across multiple (the common script style,
+      with an interactive continuation prompt too), including nested
+      if/fi and pipes/`test`/`[` inside conditions. A genuinely
+      tricky feature to get right -- four separate, real bugs found
+      and fixed along the way: a naive word-boundary check treating
+      punctuation like `-` as a keyword boundary (so `echo
+      multiline-then-ok` was misread as containing the real keyword
+      "then"); a missing leading-newline skip that broke detecting a
+      *nested* if specifically (its own extracted body text starts
+      with the newline that followed the outer "then"); the same
+      leading-whitespace issue in the marker-scanning pass itself; and
+      the construct not being separated from text that follows its
+      own closing "fi" on the same line/string, which silently
+      discarded any trailing statements until fixed
 - [ ] `for NAME in LIST; do ...; done`
 - [ ] `for ((init; cond; step)); do ...; done` (C-style, bash-specific)
 - [ ] `while ...; do ...; done`
@@ -146,9 +169,10 @@ while implementing `test`/`[`:
 - [ ] `$#` (argument count)
 - [ ] `$*` / `$@` (all positional args -- and the real, easy-to-get-
       wrong difference between them under `"$*"` vs `"$@"` quoting)
-- [ ] `$?` (exit status of the last command) -- widely used, currently
-      has no way to be read at all despite the status itself already
-      being tracked internally
+- [x] `$?` (exit status of the last command) -- kept current per
+      *segment*, not just once per line, so `false; echo $?` correctly
+      sees `false`'s status rather than whatever the previous line
+      left behind
 - [ ] `$$` (this shell's PID)
 - [ ] `$!` (PID of the last background job)
 - [ ] `$_` (last argument of the previous command)

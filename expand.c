@@ -10,6 +10,7 @@
 
 #include <nuttx/config.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -120,6 +121,7 @@ FAR char *expand_token(FAR const char *token, bool in_single_quotes)
         FAR const char *value;
         size_t valuelen;
         char namebuf[128];
+        char statusbuf[16];
         FAR const char *cmd_start;
         FAR const char *cmd_end;
         FAR const char *after;
@@ -228,6 +230,18 @@ FAR char *expand_token(FAR const char *token, bool in_single_quotes)
                 p++;
             }
         }
+        else if (*p == '?')
+        {
+            /* $? -- exit status of the last command run so far.
+             * is_ident_start() below doesn't match '?' at all (it's
+             * not a valid identifier character), so this needs its
+             * own branch, checked before that one.
+             */
+
+            name_start = p;
+            namelen = 1;
+            p++;
+        }
         else if (is_ident_start(*p))
         {
             name_start = p;
@@ -257,18 +271,33 @@ FAR char *expand_token(FAR const char *token, bool in_single_quotes)
             continue;
         }
 
-        if (namelen >= sizeof(namebuf))
+        if (namelen == 1 && name_start[0] == '?')
         {
-            namelen = sizeof(namebuf) - 1;
+            /* g_last_status (vaporshell_main.c, kept current per
+             * segment by line.c -- see its own comment on why) isn't
+             * an environment variable, so getenv() below can't reach
+             * it at all -- this has to be its own path, not folded
+             * into the general namebuf/getenv lookup.
+             */
+
+            snprintf(statusbuf, sizeof(statusbuf), "%d", g_last_status);
+            value = statusbuf;
         }
-
-        memcpy(namebuf, name_start, namelen);
-        namebuf[namelen] = '\0';
-
-        value = getenv(namebuf);
-        if (value == NULL)
+        else
         {
-            value = "";
+            if (namelen >= sizeof(namebuf))
+            {
+                namelen = sizeof(namebuf) - 1;
+            }
+
+            memcpy(namebuf, name_start, namelen);
+            namebuf[namelen] = '\0';
+
+            value = getenv(namebuf);
+            if (value == NULL)
+            {
+                value = "";
+            }
         }
 
         valuelen = strlen(value);

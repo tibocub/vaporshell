@@ -2,11 +2,12 @@
  * docs/design.md, Milestone 1: a minimal shell that actually runs
  * programs, not just echoes input back. Split across several small
  * files (tokenize.c, dispatch.c, help.c, script.c, builtins.c,
- * exec.c, expand.c, line.c, all sharing vaporshell.h) rather than one
- * growing file -- see each one's own top-of-file comment for what
- * it's responsible for; this file is just the entry point and the
- * interactive loop, both delegating a whole line to run_line()
- * (line.c) rather than calling tokenize()/run_command() directly.
+ * exec.c, expand.c, line.c, pipeline.c, control.c, all sharing
+ * vaporshell.h) rather than one growing file -- see each one's own
+ * top-of-file comment for what it's responsible for; this file is
+ * just the entry point and the interactive loop, delegating a whole
+ * line to run_line() (line.c), or to run_control_construct()
+ * (control.c) if it starts an if/then/elif/else/fi.
  *
  * A real limitation worth being upfront about here specifically:
  * -c mode (`vaporshell -c "cmd"`) runs one command non-interactively
@@ -29,8 +30,51 @@
 
 #include "system/readline.h"
 #include "vaporshell.h"
+#include "control.h"
 
 int g_last_status = 0;
+
+/****************************************************************************
+ * readline() never prints the prompt itself -- confirmed directly,
+ * its own entry sequence has no prompt-printing logic at all, and
+ * NuttX's own documentation for readline_prompt() says its purpose is
+ * telling readline what to redraw for Home/End/history/tab-
+ * completion, not the initial display. NSH does exactly this same
+ * two-step sequence itself (nsh_session.c) -- explicit write() first,
+ * then readline_prompt() separately for redraws. Without the write()
+ * here, the prompt only ever appeared as a side effect of a redraw
+ * (Home/End, ...), never on its own. Shared by the main loop below
+ * and interactive_next_line() (this file's own next_line_fn, for
+ * control.c's continuation prompt while an if/then/else spans
+ * multiple lines) -- both need the identical prompt/readline dance,
+ * just with a different prompt string.
+ ****************************************************************************/
+
+static FAR char *read_one_line(FAR const char *prompt)
+{
+    write(STDOUT_FILENO, prompt, strlen(prompt));
+#if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
+    readline_prompt(prompt);
+#endif
+    return readline(prompt);
+}
+
+/* control.c's own next_line_fn for interactive use -- 'ctx' is unused
+ * (nothing to pass; there's only one input stream, stdin, same as
+ * readline() itself already assumes). 'continuation' is always true
+ * here in practice: the *first* line of any construct is already read
+ * by the main loop below before it ever calls
+ * run_control_construct(), so this function only ever gets called for
+ * the lines after that.
+ */
+
+static FAR char *interactive_next_line(FAR void *ctx, bool continuation)
+{
+    (void)ctx;
+    (void)continuation;
+
+    return read_one_line("> ");
+}
 
 int main(int argc, FAR char *argv[])
 {
@@ -82,27 +126,10 @@ int main(int argc, FAR char *argv[])
 
     for (; ; )
     {
-        static const char prompt[] = "vaporshell$ ";
         FAR char *line;
         bool should_exit;
 
-        /* readline() never prints the prompt itself -- confirmed
-         * directly, its own entry sequence has no prompt-printing
-         * logic at all, and NuttX's own documentation for
-         * readline_prompt() says its purpose is telling readline what
-         * to redraw for Home/End/history/tab-completion, not the
-         * initial display. NSH does exactly this same two-step
-         * sequence itself (nsh_session.c) -- explicit write() first,
-         * then readline_prompt() separately for redraws. Without the
-         * write() here, the prompt only ever appeared as a side
-         * effect of a redraw (Home/End, ...), never on its own.
-         */
-
-        write(STDOUT_FILENO, prompt, sizeof(prompt) - 1);
-#if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
-        readline_prompt(prompt);
-#endif
-        line = readline(prompt);
+        line = read_one_line("vaporshell$ ");
 
         if (line == NULL)
         {
@@ -114,8 +141,16 @@ int main(int argc, FAR char *argv[])
             break;
         }
 
-        g_last_status = run_line(line, &should_exit);
-        free(line);
+        if (is_control_start(line))
+        {
+            g_last_status = run_control_construct(line, interactive_next_line,
+                                                    NULL, &should_exit);
+        }
+        else
+        {
+            g_last_status = run_line(line, &should_exit);
+            free(line);
+        }
 
         if (should_exit)
         {
