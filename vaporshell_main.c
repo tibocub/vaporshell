@@ -2,9 +2,11 @@
  * docs/design.md, Milestone 1: a minimal shell that actually runs
  * programs, not just echoes input back. Split across several small
  * files (tokenize.c, dispatch.c, help.c, script.c, builtins.c,
- * exec.c, all sharing vaporshell.h) rather than one growing file --
- * see each one's own top-of-file comment for what it's responsible
- * for; this file is just the entry point and the interactive loop.
+ * exec.c, expand.c, line.c, all sharing vaporshell.h) rather than one
+ * growing file -- see each one's own top-of-file comment for what
+ * it's responsible for; this file is just the entry point and the
+ * interactive loop, both delegating a whole line to run_line()
+ * (line.c) rather than calling tokenize()/run_command() directly.
  *
  * A real limitation worth being upfront about here specifically:
  * -c mode (`vaporshell -c "cmd"`) runs one command non-interactively
@@ -49,17 +51,20 @@ int main(int argc, FAR char *argv[])
 
     if (argc >= 3 && strcmp(argv[1], "-c") == 0)
     {
-        FAR char *tokens[MAX_TOKENS];
         FAR char *cmd = strdup(argv[2]);
-        int ntok;
+        bool should_exit;
 
         if (cmd == NULL)
         {
             return 1;
         }
 
-        ntok = tokenize(cmd, tokens, MAX_TOKENS);
-        g_last_status = run_command(ntok, tokens);
+        /* should_exit is meaningless here -- this process is a
+         * single-shot invocation ending right after this either way,
+         * whether the command itself was "exit" or anything else.
+         */
+
+        g_last_status = run_line(cmd, &should_exit);
         free(cmd);
         return g_last_status;
     }
@@ -79,8 +84,7 @@ int main(int argc, FAR char *argv[])
     {
         static const char prompt[] = "vaporshell$ ";
         FAR char *line;
-        FAR char *tokens[MAX_TOKENS];
-        int ntok;
+        bool should_exit;
 
         /* readline() never prints the prompt itself -- confirmed
          * directly, its own entry sequence has no prompt-printing
@@ -110,21 +114,13 @@ int main(int argc, FAR char *argv[])
             break;
         }
 
-        ntok = tokenize(line, tokens, MAX_TOKENS);
-
-        if (ntok > 0)
-        {
-            if (strcmp(tokens[0], "exit") == 0 ||
-                strcmp(tokens[0], "quit") == 0)
-            {
-                free(line);
-                break;
-            }
-
-            g_last_status = run_command(ntok, tokens);
-        }
-
+        g_last_status = run_line(line, &should_exit);
         free(line);
+
+        if (should_exit)
+        {
+            break;
+        }
     }
 
     return g_last_status;

@@ -22,7 +22,11 @@
 extern int g_last_status;
 
 /* tokenize.c */
-int tokenize(FAR char *line, FAR char *argv[], int max_tokens);
+int tokenize(FAR char *line, FAR char *argv[], FAR bool no_expand[],
+             int max_tokens);
+
+/* line.c */
+int run_line(FAR char *line, FAR bool *should_exit);
 
 /* dispatch.c */
 bool is_tbx_command(FAR const char *name);

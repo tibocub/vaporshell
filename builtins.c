@@ -61,10 +61,10 @@ int run_builtin(int argc, FAR char *argv[], FAR bool *handled)
 
     if (strcmp(argv[0], ".") == 0 || strcmp(argv[0], "source") == 0)
     {
-        /* No variable expansion inside the sourced file yet either
-         * (see script.c's own note) -- sourcing only matters for
-         * cd/env propagation once expansion exists, but the command
-         * itself belongs here regardless.
+        /* Has to be a builtin, not a spawned program, for the same
+         * reason cd is: a sourced script's cd/variable changes need
+         * to affect *this* shell session, which a child process's
+         * own env/cwd changes could never propagate back up.
          */
 
         if (argc < 2)
