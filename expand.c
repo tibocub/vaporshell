@@ -124,6 +124,30 @@ FAR char *expand_token(FAR const char *token, bool in_single_quotes)
         FAR const char *cmd_end;
         FAR const char *after;
 
+        /* tokenize()'s own doc comment explains why this is here:
+         * \$ and \` are deliberately left intact (backslash included)
+         * by tokenize(), specifically so this function -- the one
+         * that actually decides whether a $ or ` triggers expansion
+         * or command substitution -- can see the escape and correctly
+         * choose not to. Strip the backslash here, copy the $ or `
+         * itself as a plain, literal character, and move on without
+         * ever reaching the checks below that would otherwise expand
+         * it.
+         */
+
+        if (*p == '\\' && (p[1] == '$' || p[1] == '`'))
+        {
+            if (!ensure_capacity(&out, &cap, len, 1))
+            {
+                free(out);
+                return NULL;
+            }
+
+            p++;
+            out[len++] = *p++;
+            continue;
+        }
+
         if (find_command_subst(p, &cmd_start, &cmd_end, &after))
         {
             size_t cmdlen = (size_t)(cmd_end - cmd_start);

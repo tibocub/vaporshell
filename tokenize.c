@@ -1,11 +1,14 @@
 /*
  * tokenize.c -- whitespace + quote tokenizing (plus tracking which
- * tokens were purely single-quoted, for expand.c's benefit). Also
- * groups $(...) and `...` as single, whitespace-preserving regions
- * (like quotes, but content isn't stripped -- expand.c/subst.c do the
- * actual substitution once a token's real boundaries are already
- * settled here) -- confirmed directly this is required, not optional:
- * without it, `echo before \`echo mid\` after` and
+ * tokens were purely single-quoted, for expand.c's benefit) and
+ * backslash escaping (outside quotes: escapes any next character
+ * literally; inside double quotes: only before $, `, ", \ itself;
+ * inside single quotes: not special at all, matching real shells).
+ * Also groups $(...) and `...` as single, whitespace-preserving
+ * regions (like quotes, but content isn't stripped -- expand.c/
+ * subst.c do the actual substitution once a token's real boundaries
+ * are already settled here) -- confirmed directly this is required,
+ * not optional: without it, `echo before \`echo mid\` after` and
  * `echo $(echo nested $(echo deep))` both silently split into several
  * separate tokens the moment a space appears inside the substitution,
  * breaking it before expand.c ever sees a coherent construct to
@@ -119,6 +122,43 @@ int tokenize(FAR char *line, FAR char *argv[], FAR bool no_expand[],
                     continue;
                 }
 
+                /* Backslash is only special inside *double* quotes,
+                 * and even then only before this specific set of
+                 * characters ($, `, ", \) -- everything else after a
+                 * backslash inside double quotes is literal, backslash
+                 * included (so "\n" inside double quotes stays the
+                 * two characters \ and n, not an actual newline --
+                 * that's a different feature, $'...' ANSI-C quoting,
+                 * not implemented here). Single-quoted content is
+                 * completely unaffected -- backslash there is just an
+                 * ordinary character, matching real shell behavior
+                 * (this branch already handled that correctly before;
+                 * this check simply doesn't apply when quote == '\'').
+                 */
+
+                /* \" and \\ are stripped here immediately (neither
+                 * character means anything special to expand.c, so
+                 * there's nothing later that needs to see the
+                 * backslash). \$ and \` are deliberately left
+                 * *intact* -- both characters kept, backslash
+                 * included -- because expand.c is what actually
+                 * decides whether a $ or ` triggers expansion/command
+                 * substitution, and it can only make that decision
+                 * correctly if it can still see the escaping
+                 * backslash once this function hands the token over.
+                 * Stripping it here would leave a bare, now-
+                 * indistinguishable-from-unescaped $ or ` for
+                 * expand.c to find, silently undoing the escape.
+                 */
+
+                if (quote == '"' && *p == '\\' &&
+                    (p[1] == '"' || p[1] == '\\'))
+                {
+                    p++;
+                    *dst++ = *p++;
+                    continue;
+                }
+
                 *dst++ = *p++;
                 continue;
             }
@@ -183,6 +223,39 @@ int tokenize(FAR char *line, FAR char *argv[], FAR bool no_expand[],
                 }
 
                 p++;
+                continue;
+            }
+
+            /* Backslash outside any quotes: escapes the *next*
+             * character literally, whatever it is -- including
+             * whitespace (so "\ " is one literal space, not a token
+             * separator) and quote characters themselves (so \" is a
+             * literal double-quote, not the start of a quoted region).
+             * Has to be checked before the whitespace-ends-the-token
+             * test right below, or "\ " would never reach here.
+             *
+             * \$ and \` are the one exception -- left intact (both
+             * characters, backslash included), same reasoning as the
+             * double-quote case above: expand.c needs to still see
+             * the backslash to know this $ or ` shouldn't trigger
+             * expansion/command substitution. Everything else gets
+             * its backslash stripped immediately here, since nothing
+             * later cares about it.
+             */
+
+            if (*p == '\\' && (p[1] == '$' || p[1] == '`'))
+            {
+                saw_unquoted_or_double = true;
+                *dst++ = *p++;
+                *dst++ = *p++;
+                continue;
+            }
+
+            if (*p == '\\' && p[1] != '\0')
+            {
+                p++;
+                saw_unquoted_or_double = true;
+                *dst++ = *p++;
                 continue;
             }
 
