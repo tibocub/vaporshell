@@ -60,45 +60,62 @@ see `docs/design.md`'s own milestones for what's next.
 **Basic shell features**:
 - [x] execute a script file
 - [x] source a script into the current session (. and source)
-- [ ] variables (num=3; echo $num)
+- [x] variables (num=3; echo $num)
 
 **Bash synthax**:
-- [ ] ";" end line with semicolon
-- [ ] bash datatypes ( age=5; name="tibo")
-- [ ] "$" process variables and execute commands inside a string (echo $PWD; echo "I'm in $(pwd)"; if -z [[ "$string" ]]; etc.)
-- [ ] ( )
-- [ ] [ ]
-- [ ] [[ ]]
+- [x] ";" end line with semicolon
+- [x] bash datatypes ( age=5; name="tibo")
+- [x] "$" process variables and execute commands inside a string (echo $PWD; echo "I'm in $(pwd)"; if -z [[ "$string" ]]; etc.)
+- [x] ( )
+- [x] [ ]
+- [x] [[ ]]
 - [ ] if/then/else
 
+**Arguments**:
+- [ ] $#	Number of arguments
+- [ ] $*	All positional arguments (as a single word)
+- [ ] $@	All positional arguments (as separate strings)
+- [ ] $1	First argument
+- [ ] $!	Insert last argument of previous command in current command (i.e: mkdir test; cd !$)
+- [ ] $_	Last argument of the previous commandé
+
 **Comparison Operators**:
-- [ ] -eq: Equal to
-- [ ] -ne: Not equal to
-- [ ] -lt: Less than
-- [ ] -le: Less than or equal to
-- [ ] -gt: Greater than
-- [ ] -ge: Greater than or equal to
+- [x] -eq   Equal to
+- [x] -ne   Not equal to
+- [x] -lt   Less than
+- [x] -le   Less than or equal to
+- [x] -gt   Greater than
+- [x] -ge   Greater than or equal to
 
 **String Comparison Operators**:
-- [ ] =: Equal to
-- [ ] !=: Not equal to
-- [ ] <: Less than, in ASCII alphabetical order
-- [ ] >: Greater than, in ASCII alphabetical order
+- [x] =     Equal to
+- [x] !=    Not equal to
+- [x] <     Less than, in ASCII alphabetical order
+- [x] >     Greater than, in ASCII alphabetical order
 
 **Arithmetic Operators**:
-- [ ] +: Addition
-- [ ] -: Subtraction
-- [ ] *: Multiplication
-- [ ] /: Division
-- [ ] %: Modulus
+- [ ] +     Addition
+- [ ] -     Subtraction
+- [ ] *     Multiplication
+- [ ] /     Division
+- [ ] %     Modulus
 
 **Logical Operators**:
-- [ ] &&: Logical AND
-- [ ] ||: Logical OR
-- [ ] !: Logical NOT
+- [x] &&    Logical AND
+- [x] ||    Logical OR
+- [x] !     Logical NOT
 
 **File Test Operators**:
-- [ ] -e: Checks if a file exists
-- [ ] -d: Checks if a directory exists
-- [ ] -f: Checks if a file is a regular file
-- [ ] -s: Checks if a file is not empty
+- [x] -e    Checks a file exists
+- [ ] -r    Checks a file is readable
+- [ ] -w    Checks a file is writable
+- [ ] -x    Checks a file is executable
+- [ ] -h    Checks a file is a symlink
+- [x] -d    Checks a directory exists
+- [x] -f    Checks a file is a regular file
+- [ ] -s    Checks a file is not empty (byte size > 0)
+- [ ] -nt   Checks a file in newer than another
+- [ ] -ot   Checks a file in older than another
+- [ ] -ef   Checks two files are the same
+- [ ] 
+- [ ] 
