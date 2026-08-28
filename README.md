@@ -36,22 +36,25 @@ and open questions -- this file is the short version.
 
 ```
 vaporshell/
-  vaporshell_main.c   entry point + interactive loop
-  tokenize.c           whitespace/quote tokenizing
+  vaporshell_main.c    entry point + interactive loop
+  tokenize.c            whitespace/quote tokenizing
   dispatch.c            the tbx multicall command table
-  help.c                 the help builtin
-  script.c                script-file execution
-  builtins.c               cd, ./source, help
-  exec.c                    PATH resolution + posix_spawnp
-  expand.c                   $VAR/${VAR} expansion, assignment
-  subst.c                     command substitution ($(...), `...`)
-  line.c                       splits/runs a line (;, &&, ||)
-  pipeline.c                     cmd1 | cmd2 | cmd3 execution
-  control.c                        if/then/elif/else/fi
-  vaporshell.h                       shared header
-  Kconfig, Makefile                    standard NuttX app-directory shape
-  docs/design.md                         the real design doc -- read this
-                                         first for anything non-trivial
+  help.c                the help builtin
+  script.c              script-file execution
+  builtins.c            cd, ./source, help
+  exec.c                PATH resolution + posix_spawnp
+  expand.c              $VAR/${VAR} expansion, assignment
+  subst.c                command substitution ($(...), `...`)
+  line.c                 splits/runs a line (;, &&, ||)
+  pipeline.c             cmd1 | cmd2 | cmd3 execution
+  control.c              if/then/elif/else/fi
+  loops.c                for/while/until
+  case.c                 case/esac
+  control_internal.h     shared control-flow scanning
+  vaporshell.h          shared header
+  Kconfig, Makefile     standard NuttX app-directory shape
+  docs/design.md        the real design doc -- read this first for
+                        anything non-trivial
 ```
 
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx)
@@ -67,10 +70,19 @@ mid-token, e.g. `name="tibo smith"`), backslash escaping, `#`
 comments, `$VAR`/`${VAR}`/`$?` expansion, command substitution
 (`$(...)` and `` `...` ``), variable assignment, `;`/`&&`/`||`/`|`
 (real pipelines), `.`/`source`, `test`/`[` (comparison, string
-comparison, and file test operators), and `if`/`then`/`elif`/`else`/
-`fi` (single-line, multi-line, and nested). See the TODO below for
-the real, current gap list -- kept accurate and updated as things get
-implemented, not left to go stale.
+comparison, and file test operators), and full control flow --
+`if`/`then`/`elif`/`else`/`fi`, `for`/`while`/`until`/`done`, and
+`case`/`esac` -- all working single-line, multi-line, and nested. See
+the TODO below for the real, current gap list -- kept accurate and
+updated as things get implemented, not left to go stale.
+
+Also worth knowing: `CONFIG_LINE_MAX` (vaporOS-nuttx's own build.sh)
+needs to be raised from NuttX's own default of 80 for any of this to
+be usable interactively past a short line -- `readline()` itself
+allocates exactly `LINE_MAX` bytes and silently truncates anything
+longer, confirmed directly the hard way (a `while` loop typed on one
+line kept losing its own trailing text at exactly the 79th character
+until this was raised).
 
 ## TODO
 
@@ -149,11 +161,15 @@ while implementing `test`/`[`:
       the construct not being separated from text that follows its
       own closing "fi" on the same line/string, which silently
       discarded any trailing statements until fixed
-- [ ] `for NAME in LIST; do ...; done`
+- [x] `for NAME in LIST; do ...; done` -- no bare "for x; do" (no "in
+      list", positional parameters) yet, positional parameters aren't
+      implemented; real, reported error rather than a silent guess
 - [ ] `for ((init; cond; step)); do ...; done` (C-style, bash-specific)
-- [ ] `while ...; do ...; done`
-- [ ] `until ...; do ...; done`
-- [ ] `case ... in ... esac`
+- [x] `while ...; do ...; done`
+- [x] `until ...; do ...; done`
+- [x] `case ... in ... esac` -- pattern matching supports literal
+      text, `*`, `?`, and `|` alternation; bracket expressions
+      (`[abc]`/`[a-z]`) are a real, known gap, not implemented
 - [ ] `select ...; do ...; done` (bash-specific menu construct)
 - [ ] `break` / `continue` (including `break N` / `continue N`)
 - [ ] real `[[ ... ]]` semantics (see correction above)

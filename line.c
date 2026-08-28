@@ -198,6 +198,68 @@ static FAR char *no_more_lines(FAR void *ctx, bool continuation)
     return NULL;
 }
 
+/****************************************************************************
+ * Rebuilds a contiguous string from segments[start_idx..nsegs-1],
+ * reinserting each segment's own original separator (';', '&&', or
+ * '||') between them -- needed when a *later* segment turns out to
+ * start a control construct (e.g. "x=start; while ...; done"):
+ * split_line() has already destroyed the construct's own internal
+ * ';' structure by the time this is discovered, so the only way to
+ * hand run_control_construct() a text it can correctly re-parse (its
+ * own "do"/"done" could be several naively-split segments away) is to
+ * undo that splitting for everything from here onward.
+ ****************************************************************************/
+
+static FAR char *rejoin_segments(struct segment_s segments[], int start_idx,
+                                  int nsegs)
+{
+    size_t total = 0;
+    int i;
+    FAR char *result;
+    FAR char *p;
+
+    for (i = start_idx; i < nsegs; i++)
+    {
+        total += strlen(segments[i].text);
+        if (i > start_idx)
+        {
+            total += (segments[i].sep == ';') ? 1 : 2;
+        }
+    }
+
+    result = malloc(total + 1);
+    if (result == NULL)
+    {
+        return NULL;
+    }
+
+    p = result;
+    for (i = start_idx; i < nsegs; i++)
+    {
+        size_t len;
+
+        if (i > start_idx)
+        {
+            if (segments[i].sep == ';')
+            {
+                *p++ = ';';
+            }
+            else
+            {
+                *p++ = segments[i].sep;
+                *p++ = segments[i].sep;
+            }
+        }
+
+        len = strlen(segments[i].text);
+        memcpy(p, segments[i].text, len);
+        p += len;
+    }
+
+    *p = '\0';
+    return result;
+}
+
 int run_line(FAR char *line, FAR bool *should_exit)
 {
     struct segment_s segments[MAX_SEGMENTS];
@@ -216,20 +278,13 @@ int run_line(FAR char *line, FAR bool *should_exit)
      * it would just split a nested "if ... then ... fi" on its own
      * embedded newlines/';' the same as any other text, scattering
      * "if"/"then"/"fi" into separate, unrelated segments and running
-     * each as a literal (nonexistent) command name.
+     * each as a literal (nonexistent) command name. The same check,
+     * per segment rather than once up front, is what makes a
+     * construct starting *later* in the line (e.g. "x=start; while
+     * ...; done") work too -- see the per-segment check inside the
+     * loop below, and rejoin_segments()'s own comment for why a
+     * naively-split segment alone isn't enough to hand off correctly.
      */
-
-    if (is_control_start(line))
-    {
-        FAR char *owned = strdup(line);
-
-        if (owned == NULL)
-        {
-            return 1;
-        }
-
-        return run_control_construct(owned, no_more_lines, NULL, should_exit);
-    }
 
     nsegs = split_line(line, segments, MAX_SEGMENTS);
 
@@ -251,6 +306,28 @@ int run_line(FAR char *line, FAR bool *should_exit)
             status = run_pipeline(segments[i].text);
             g_last_status = status;
             continue;
+        }
+
+        if (is_control_start(segments[i].text))
+        {
+            FAR char *reconstructed = rejoin_segments(segments, i, nsegs);
+
+            if (reconstructed == NULL)
+            {
+                return 1;
+            }
+
+            /* run_control_construct() already handles everything from
+             * here onward, including any remainder after the
+             * construct's own close -- returning directly rather than
+             * continuing this loop, which would otherwise re-process
+             * the very segments already folded into 'reconstructed'.
+             */
+
+            status = run_control_construct(reconstructed, no_more_lines,
+                                            NULL, should_exit);
+            g_last_status = status;
+            return status;
         }
 
         ntok = tokenize(segments[i].text, raw_tokens, no_expand, MAX_TOKENS);

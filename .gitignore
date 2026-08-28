@@ -11,3 +11,6 @@ Make.dep
 *.o
 *.gcno
 *.gcda
+**/*.o
+**/*.gcno
+**/*.gcda

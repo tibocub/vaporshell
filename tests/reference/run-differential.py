@@ -3,35 +3,26 @@
 through bash, dash, and vaporshell, and compare output.
 
     python3 run-differential.py --nuttx-dir /path/to/built/nuttx some.test [more.test ...]
+    python3 run-differential.py --nuttx-dir /path/to/built/nuttx --all-own
     python3 run-differential.py --nuttx-dir /path/to/built/nuttx --all-smoosh
 
 Dev-only tooling (like update-compat-log.py in vaporOS-nuttx), not
 something that runs on vaporOS itself -- this orchestrates a booted
 NuttX/sim instance from the host, it doesn't run inside one.
 
-HONESTY ABOUT WHAT THIS CAN AND CAN'T DO RIGHT NOW: vaporshell doesn't
-read a script file yet, only one interactive line at a time (see
-vaporshell's own README). This harness drives it the only way that's
-actually possible today -- typing each line of the test script into
-its interactive prompt over a pty, the same technique used throughout
-vaporOS's own development sessions. That means multi-line constructs
-(if/then/fi, for loops, function definitions spanning lines) will NOT
-work correctly -- vaporshell has no idea line 2 is "still part of"
-line 1's `if`, so it just runs each line as its own, independent
-command. That's not a bug in this harness to paper over; it's an
-honest, direct measurement of the real gap this test suite is meant to
-help close. Once vaporshell can actually read and execute a script
-file as a whole (the next real milestone), this harness gets a second,
-real mode instead of just the line-by-line one.
+vaporshell is now genuinely scriptable (`vaporshell script.sh`), so
+this drives it exactly that way: boot the sim, mount the built nuttx/
+directory itself as hostfs (the test script is copied there first),
+run `vaporshell /data/<script>`, capture stdout, poweroff. This
+replaced an earlier version that fed a script in line-by-line over
+vaporshell's own interactive prompt (back when script-file execution
+didn't exist yet) -- that approach needed heavy prompt/echo
+normalization and couldn't handle multi-line constructs (if/for/while)
+at all; running the real script file needs neither.
 
-Given that gap, this harness does NOT claim a hard pass/fail verdict
-for vaporshell. It shows bash's output (the reference), dash's output
-(a free cross-check -- when bash and dash disagree, the test is
-probably exercising a bash-ism, worth knowing on its own), and
-vaporshell's raw output side by side, plus a best-effort, clearly-
-heuristic "looks like a match" signal after stripping vaporshell's own
-prompt/echo noise. Read the raw output for anything that heuristic
-calls uncertain -- it's a starting point for a human, not a verdict.
+'--nuttx-dir' must point at a built nuttx/ directory (contains the
+nuttx binary) with CONFIG_SIM_HOSTFS/CONFIG_FS_HOSTFS enabled -- the
+same build vaporshell's own development already uses.
 """
 
 import argparse
@@ -39,30 +30,43 @@ import os
 import pty
 import re
 import select
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 REFERENCE_DIR = Path(__file__).resolve().parent
 SMOOSH_DIR = REFERENCE_DIR / "smoosh-shell"
+OWN_DIR = REFERENCE_DIR.parent / "own"
 
-# vaporshell's own prompt, and the ANSI "clear to end of line" sequence
-# it emits -- confirmed directly from real vaporshell sessions
-# throughout this project's own development. Stripped before the
-# best-effort comparison; left alone in the raw output shown to a
-# human.
-PROMPT_RE = re.compile(r"vaporshell\$ ")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 CR_RE = re.compile(r"\r+")
 
 
 def run_native(shell, script_path, timeout=10):
+    """Runs inside a fresh, isolated temporary directory -- confirmed
+    directly this is required, not optional: some real tests (smoosh's
+    own semantics.pattern.rightbracket.test/semantics.pattern.hyphen.
+    test, glob-matching edge cases) create fixture files/directories
+    as a side effect of running at all. Without this, they land
+    wherever this harness happened to be invoked from -- which, run
+    from the repo root, means real, tracked source directories getting
+    polluted with stray files like "file]"/"file-"/"filea". Passing
+    script_path as an absolute path first, since the subprocess's own
+    cwd is about to change out from under any relative one.
+    """
+
+    script_path = Path(script_path).resolve()
+
     try:
-        result = subprocess.run(
-            [shell, str(script_path)],
-            capture_output=True, text=True, timeout=timeout,
-        )
+        with tempfile.TemporaryDirectory(prefix="vaporshell-difftest-") as tmpdir:
+            result = subprocess.run(
+                [shell, str(script_path)],
+                capture_output=True, text=True, timeout=timeout,
+                cwd=tmpdir,
+            )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
         return "", "(timed out)", None
@@ -70,10 +74,17 @@ def run_native(shell, script_path, timeout=10):
         return "", f"({shell} not found)", None
 
 
-def run_vaporshell(nuttx_dir, script_lines, boot_wait=3, per_line_wait=0.6):
-    nuttx_bin = Path(nuttx_dir) / "nuttx"
+def run_vaporshell(nuttx_dir, script_path, boot_wait=3, run_wait=5):
+    nuttx_dir = Path(nuttx_dir)
+    nuttx_bin = nuttx_dir / "nuttx"
     if not nuttx_bin.exists():
         return f"(no nuttx binary at {nuttx_bin})"
+
+    # hostfs mounts nuttx_dir itself (the cwd nuttx is launched from) --
+    # drop the script there under a fixed name so it's reachable at a
+    # known /data path regardless of the real test file's own name.
+    staged = nuttx_dir / "difftest_input.sh"
+    shutil.copy(script_path, staged)
 
     master, slave = pty.openpty()
     pid = os.fork()
@@ -89,7 +100,7 @@ def run_vaporshell(nuttx_dir, script_lines, boot_wait=3, per_line_wait=0.6):
 
     os.close(slave)
 
-    def drain(timeout=per_line_wait):
+    def drain(timeout):
         buf = b""
         while True:
             r, _, _ = select.select([master], [], [], timeout)
@@ -103,70 +114,45 @@ def run_vaporshell(nuttx_dir, script_lines, boot_wait=3, per_line_wait=0.6):
         return buf
 
     time.sleep(boot_wait)
-    drain()
-    os.write(master, b"vaporshell\n")
+    drain(0.5)
+    os.write(master, b"mount -t hostfs -o fs=. /data\n")
     time.sleep(1.0)
-    drain()
+    drain(0.5)
 
-    output = b""
-    for line in script_lines:
-        os.write(master, (line + "\n").encode())
-        output += drain()
+    os.write(master, b"vaporshell /data/difftest_input.sh\n")
+    output = drain(run_wait)
 
-    os.write(master, b"exit\n")
-    time.sleep(0.5)
-    drain()
     os.write(master, b"poweroff\n")
     time.sleep(1.5)
+    drain(0.5)
     try:
         os.kill(pid, 9)
     except OSError:
         pass
 
-    return output.decode(errors="replace")
+    staged.unlink(missing_ok=True)
 
-
-def normalize(text):
+    text = output.decode(errors="replace")
     text = ANSI_RE.sub("", text)
-    text = PROMPT_RE.sub("", text)
     text = CR_RE.sub("", text)
-    lines = [ln for ln in text.splitlines() if ln.strip() != ""]
-    return lines
 
+    # First line is the shell's own echo of the command we typed to
+    # invoke it, and the last is the NSH prompt it returns to
+    # afterward -- both artifacts of driving this over an interactive
+    # pty, not part of the script's own output.
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "vaporshell /data/difftest_input.sh":
+        lines = lines[1:]
+    while lines and (lines[-1].strip() == "" or lines[-1].strip().startswith("nsh>")):
+        lines.pop()
 
-def heuristic_match(bash_out, vaporshell_out):
-    """Best-effort only, per this file's own top-of-file honesty note:
-    does every non-blank line bash produced show up, in order, as a
-    substring of some line vaporshell produced? Not a real diff --
-    just enough to flag the clearest cases, leaving genuine judgment
-    calls for a human reading the raw output.
-    """
-    bash_lines = normalize(bash_out)
-    vs_lines = normalize(vaporshell_out)
-
-    idx = 0
-    for bl in bash_lines:
-        found = False
-        while idx < len(vs_lines):
-            if bl in vs_lines[idx]:
-                found = True
-                idx += 1
-                break
-            idx += 1
-        if not found:
-            return False
-    return True
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def run_one(test_path, nuttx_dir):
     print(f"\n{'=' * 70}")
     print(f"TEST: {test_path}")
     print("=" * 70)
-
-    script_lines = [
-        ln for ln in Path(test_path).read_text().splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    ]
 
     bash_out, bash_err, bash_rc = run_native("bash", test_path)
     dash_out, dash_err, dash_rc = run_native("dash", test_path)
@@ -189,32 +175,35 @@ def run_one(test_path, nuttx_dir):
         print("\n--- vaporshell: skipped (no --nuttx-dir given) ---")
         return
 
-    vaporshell_out = run_vaporshell(nuttx_dir, script_lines)
-    print("\n--- vaporshell (raw, line-by-line interactive feed) ---")
+    vaporshell_out = run_vaporshell(nuttx_dir, test_path)
+    print("\n--- vaporshell ---")
     print(vaporshell_out, end="")
 
-    verdict = heuristic_match(bash_out, vaporshell_out)
-    print(f"\n[heuristic] looks like a match: {verdict} "
-          "(best-effort only -- see this script's own top-of-file note)")
+    verdict = "PASS" if vaporshell_out == bash_out else "DIFFERS"
+    print(f"\n[verdict] {verdict}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tests", nargs="*", help="Test file(s) to run")
+    parser.add_argument("--all-own", action="store_true",
+                         help="Run every test in tests/own/")
     parser.add_argument("--all-smoosh", action="store_true",
                          help="Run every vendored smoosh test")
     parser.add_argument("--nuttx-dir", default=None,
                          help="Path to a built nuttx/ directory (contains "
-                              "the nuttx binary). Omit to skip vaporshell "
-                              "and just compare bash vs dash.")
+                              "the nuttx binary, hostfs enabled). Omit to "
+                              "skip vaporshell and just compare bash vs dash.")
     args = parser.parse_args()
 
     tests = [Path(t) for t in args.tests]
+    if args.all_own:
+        tests += sorted(OWN_DIR.glob("*.sh"))
     if args.all_smoosh:
         tests += sorted(SMOOSH_DIR.glob("*.test"))
 
     if not tests:
-        parser.error("give test file(s), or pass --all-smoosh")
+        parser.error("give test file(s), or pass --all-own/--all-smoosh")
 
     for t in tests:
         run_one(t, args.nuttx_dir)

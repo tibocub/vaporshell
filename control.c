@@ -1,16 +1,18 @@
 /*
- * control.c -- if/then/elif/else/fi: the first real control-flow
- * construct. Works identically whether it's all on one line
- * (';'-separated) or spans multiple lines (the common script style)
- * -- both are handled the same way here, since line.c's own
- * split_line() now treats '\n' the same as ';' (see its own comment
- * on why that change was needed for this file to work at all: a
- * multi-line body handed to run_line() as one string would otherwise
- * tokenize into a single, wrong command instead of a sequence of
- * them).
+ * control.c -- shared control-flow infrastructure (keyword/depth/
+ * quote-aware scanning, multi-line accumulation, separating a
+ * construct from whatever text follows its own closing keyword) plus
+ * "if"/"then"/"elif"/"else"/"fi" itself. "for"/"while"/"until" live in
+ * loops.c, "case" in case.c -- both reuse this file's own shared
+ * scanning (control_internal.h) rather than reimplementing it.
  *
- * Not yet handling for/while/case/functions -- see the project's own
- * README/roadmap. Only "if" is recognized right now.
+ * Works identically whether a construct is all on one line
+ * (';'-separated) or spans multiple (the common script style) --
+ * both are handled the same way, since line.c's own split_line() now
+ * treats '\n' the same as ';' (see its own comment on why that change
+ * was needed for any of this to work at all: a multi-line body handed
+ * to run_line() as one string would otherwise tokenize into a single,
+ * wrong command instead of a sequence of them).
  */
 
 #include <nuttx/config.h>
@@ -20,24 +22,9 @@
 
 #include "vaporshell.h"
 #include "control.h"
+#include "control_internal.h"
 
 #define MAX_BRANCHES 16
-#define MAX_MARKERS  (MAX_BRANCHES * 3)
-
-enum marker_kind_e
-{
-  MARKER_THEN,
-  MARKER_ELIF,
-  MARKER_ELSE,
-  MARKER_FI
-};
-
-struct marker_s
-{
-    enum marker_kind_e kind;
-    FAR char *start; /* start of the keyword itself */
-    FAR char *after; /* just after the keyword */
-};
 
 struct branch_s
 {
@@ -45,41 +32,32 @@ struct branch_s
     FAR char *body;
 };
 
-static bool is_ident_char(char c)
+bool is_ident_char(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
            (c >= '0' && c <= '9') || c == '_';
 }
 
-/* A real shell word boundary -- whitespace, ';', newline, or start/
- * end of string. Deliberately *not* "not an identifier character":
- * confirmed directly, the hard way, that using !is_ident_char() here
- * instead treats punctuation like '-' as a boundary too, which is
- * wrong -- "echo multiline-then-ok" is one ordinary word in real
- * shells (word-splitting is whitespace-based, not punctuation-based),
- * but checking only "is the previous character not a letter/digit/
- * underscore" saw the '-' before "then" and happily treated it as a
- * fresh word start, matching the real keyword "then" that's actually
- * just embedded, harmlessly, inside a longer argument.
- */
-
-static bool is_word_boundary(char c)
+bool is_word_boundary(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
            c == ';' || c == '\0';
 }
 
-/* Skips leading whitespace/newlines, then the leading "if" keyword
- * itself -- shared by find_markers() and build_branches(), both of
- * which need to start scanning right after it. Confirmed directly
- * this needs the leading-whitespace skip specifically for *nested*
- * constructs: an outer if's own extracted body text starts with the
- * newline that followed its "then" (e.g. "\n    if false\n..."), not
- * with "if" as the very first character the way a fresh, top-level
- * construct's text always does.
- */
+bool starts_with_word(FAR const char *text, FAR const char *word)
+{
+    FAR const char *p = text;
+    size_t wordlen = strlen(word);
 
-static FAR char *skip_leading_if(FAR char *p)
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
+    {
+        p++;
+    }
+
+    return strncmp(p, word, wordlen) == 0 && is_word_boundary(p[wordlen]);
+}
+
+FAR char *skip_leading_keyword(FAR char *p)
 {
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
     {
@@ -96,38 +74,115 @@ static FAR char *skip_leading_if(FAR char *p)
 
 bool is_control_start(FAR const char *line)
 {
-    FAR const char *p = line;
-
-    /* Skips '\n'/'\r' too, not just ' '/'\t' -- confirmed directly
-     * this matters for a *nested* if specifically: build_branches()'s
-     * own extracted body text for an outer if/then starts right
-     * after that "then" keyword, which means it starts with the very
-     * newline that followed it in the original text (e.g. "then\n
-     * if false\n..." becomes a body of "\n    if false\n...") --
-     * without skipping that leading newline here too, this check
-     * would look at '\n' itself instead of the "if" that follows it,
-     * and never recognize the nested construct as one at all.
-     */
-
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
+    static const FAR char *const keywords[] =
     {
-        p++;
+        "if", "for", "while", "until", "case", NULL
+    };
+    int i;
+
+    for (i = 0; keywords[i] != NULL; i++)
+    {
+        if (starts_with_word(line, keywords[i]))
+        {
+            return true;
+        }
     }
 
-    if (strncmp(p, "if", 2) != 0)
+    return false;
+}
+
+/* Every construct keyword that opens a new nesting level -- shared by
+ * depth_delta() (deciding when enough input has been read),
+ * find_markers() (deciding which markers belong to *this* construct,
+ * not a nested one), and case.c's own pattern-scanning pass (a nested
+ * construct within one of a case's own bodies still needs its own
+ * ')'/'"'/'\'' etc. correctly skipped over, not mistaken for case's
+ * own pattern/body delimiters).
+ */
+
+bool is_opener(FAR const char *word, size_t len)
+{
+    return (len == 2 && strncmp(word, "if", 2) == 0) ||
+           (len == 3 && strncmp(word, "for", 3) == 0) ||
+           (len == 5 && strncmp(word, "while", 5) == 0) ||
+           (len == 5 && strncmp(word, "until", 5) == 0) ||
+           (len == 4 && strncmp(word, "case", 4) == 0);
+}
+
+/* Every keyword that closes one -- "fi" closes "if", "done" closes
+ * "for"/"while"/"until", "esac" closes "case". *kind_out is set to
+ * which one matched, for find_markers()'s own benefit (it needs to
+ * know which closer actually ended the construct, not just that some
+ * closer did).
+ */
+
+bool is_closer(FAR const char *word, size_t len,
+               FAR enum marker_kind_e *kind_out)
+{
+    if (len == 2 && strncmp(word, "fi", 2) == 0)
     {
-        return false;
+        *kind_out = MARKER_FI;
+        return true;
     }
 
-    return is_word_boundary(p[2]);
+    if (len == 4 && strncmp(word, "done", 4) == 0)
+    {
+        *kind_out = MARKER_DONE;
+        return true;
+    }
+
+    if (len == 4 && strncmp(word, "esac", 4) == 0)
+    {
+        *kind_out = MARKER_ESAC;
+        return true;
+    }
+
+    return false;
+}
+
+/* True for keywords immediately followed by a real command --
+ * "if"/"elif"/"while"/"until" by their own condition, "do" by a
+ * loop's first body statement, "then"/"else" by an if's own first
+ * branch statement. Used to decide whether the *next* word scanned is
+ * itself at a "command start" position, where recognizing if/for/
+ * while/until/case/fi/done/esac as meaningful keywords is actually
+ * correct -- confirmed directly, the hard way, that recognizing them
+ * *anywhere* a whole word happens to match is wrong: comparing a
+ * variable against the literal string "done" (`[ "$x" = done ]`, an
+ * entirely ordinary, common pattern -- confirmed directly this
+ * breaks a real "until" loop written exactly that way) was being
+ * misread as the real closing "done" keyword, since nothing
+ * distinguished "keyword in command position" from "keyword as an
+ * ordinary value inside some other command's own arguments". Every
+ * other keyword ("for", "case", "in", and any ordinary, non-keyword
+ * word) is not immediately followed by a new command in that same
+ * sense, so command-start tracking turns off after them -- "for"/
+ * "case"/"in" are followed by a list/pattern, not a command; ";"/
+ * newline/"&&"/"||" (handled separately, not here) already reopen
+ * command-start position for whatever comes after "fi"/"done"/"esac"
+ * anyway, so those three don't need to appear here either.
+ */
+
+static bool starts_new_command(FAR const char *word, size_t len)
+{
+    return (len == 2 && strncmp(word, "if", 2) == 0) ||
+           (len == 4 && strncmp(word, "elif", 4) == 0) ||
+           (len == 5 && strncmp(word, "while", 5) == 0) ||
+           (len == 5 && strncmp(word, "until", 5) == 0) ||
+           (len == 2 && strncmp(word, "do", 2) == 0) ||
+           (len == 4 && strncmp(word, "then", 4) == 0) ||
+           (len == 4 && strncmp(word, "else", 4) == 0);
 }
 
 /****************************************************************************
- * Net change in if-nesting depth this text causes: +1 per whole-word
- * "if", -1 per whole-word "fi", ignoring anything inside quotes.
- * Shared by both the accumulation loop (deciding when enough input
- * has been read) and find_markers() below (deciding which "then"/
- * "elif"/"else"/"fi" belong to *this* if, not a nested one).
+ * Net change in nesting depth this text causes: +1 per whole-word
+ * opener (if/for/while/until/case), -1 per whole-word closer (fi/
+ * done/esac), ignoring anything inside quotes, and only counting a
+ * match at all when it's actually in "command start" position (see
+ * starts_new_command()'s own comment for why that check exists).
+ * Shared by the accumulation loop below and find_markers()
+ * (control_internal.h) -- both need the identical logic, or the same
+ * misreading bug would just reappear in whichever one lacked it.
  ****************************************************************************/
 
 static int depth_delta(FAR const char *text)
@@ -135,6 +190,7 @@ static int depth_delta(FAR const char *text)
     int delta = 0;
     char quote = '\0';
     FAR const char *p = text;
+    bool at_command_start = true;
 
     while (*p != '\0')
     {
@@ -153,42 +209,74 @@ static int depth_delta(FAR const char *text)
         {
             quote = *p;
             p++;
+            at_command_start = false;
+            continue;
+        }
+
+        if (*p == ';' || *p == '\n')
+        {
+            at_command_start = true;
+            p++;
+            continue;
+        }
+
+        if ((*p == '&' && p[1] == '&') || (*p == '|' && p[1] == '|'))
+        {
+            at_command_start = true;
+            p += 2;
+            continue;
+        }
+
+        if (*p == ' ' || *p == '\t' || *p == '\r')
+        {
+            p++;
             continue;
         }
 
         if (is_ident_char(*p) && (p == text || is_word_boundary(p[-1])))
         {
             FAR const char *word_start = p;
+            size_t wordlen;
+            enum marker_kind_e unused_kind;
+            bool this_word_starts_command = at_command_start;
 
             while (is_ident_char(*p))
             {
                 p++;
             }
 
+            wordlen = (size_t)(p - word_start);
+
             if (!is_word_boundary(*p))
             {
                 /* Extracted word is followed immediately by more,
                  * non-identifier text of the same word (e.g. "if-
-                 * something") -- not a real, standalone "if"/"fi",
-                 * same reasoning as the before-check above.
+                 * something") -- not a real, standalone keyword, same
+                 * reasoning as the before-check above.
                  */
 
+                at_command_start = false;
                 continue;
             }
 
-            if (p - word_start == 2 && strncmp(word_start, "if", 2) == 0)
+            if (this_word_starts_command)
             {
-                delta++;
-            }
-            else if (p - word_start == 2 && strncmp(word_start, "fi", 2) == 0)
-            {
-                delta--;
+                if (is_opener(word_start, wordlen))
+                {
+                    delta++;
+                }
+                else if (is_closer(word_start, wordlen, &unused_kind))
+                {
+                    delta--;
+                }
             }
 
+            at_command_start = this_word_starts_command &&
+                                starts_new_command(word_start, wordlen);
             continue;
         }
 
-
+        at_command_start = false;
         p++;
     }
 
@@ -214,12 +302,12 @@ static bool append_line(FAR char **buf, FAR const char *more)
 }
 
 /****************************************************************************
- * Keeps calling read_line() until the if this text started has a
- * matching "fi" (tracking nested if/fi pairs via depth_delta() above,
- * so a nested if's own "fi" doesn't end the outer construct early).
- * Takes ownership of first_line. Returns NULL (having freed
- * everything already read) on EOF before the construct closed, or on
- * allocation failure.
+ * Keeps calling read_line() until the construct this text started has
+ * a matching closer (tracking nested opener/closer pairs via
+ * depth_delta() above, so a nested construct's own closer doesn't end
+ * the outer one early). Takes ownership of first_line. Returns NULL
+ * (having freed everything already read) on EOF before the construct
+ * closed, or on allocation failure.
  ****************************************************************************/
 
 static FAR char *accumulate_construct(FAR char *first_line,
@@ -262,23 +350,15 @@ static FAR char *accumulate_construct(FAR char *first_line,
     return text;
 }
 
-/****************************************************************************
- * Records every top-level (depth == 1, i.e. belonging to the
- * outermost if this text starts with, not a nested one) "then"/
- * "elif"/"else"/"fi" in order. Assumes 'text' already starts with
- * "if" and is fully balanced (accumulate_construct() guarantees
- * both).
- ****************************************************************************/
-
-static int find_markers(FAR char *text, struct marker_s markers[],
-                         int max_markers)
+int find_markers(FAR char *text, struct marker_s markers[], int max_markers)
 {
     int count = 0;
     int depth = 1;
     char quote = '\0';
     FAR char *p = text;
+    bool at_command_start = true;
 
-    p = skip_leading_if(p);
+    p = skip_leading_keyword(p);
 
     while (*p != '\0' && depth > 0)
     {
@@ -297,6 +377,27 @@ static int find_markers(FAR char *text, struct marker_s markers[],
         {
             quote = *p;
             p++;
+            at_command_start = false;
+            continue;
+        }
+
+        if (*p == ';' || *p == '\n')
+        {
+            at_command_start = true;
+            p++;
+            continue;
+        }
+
+        if ((*p == '&' && p[1] == '&') || (*p == '|' && p[1] == '|'))
+        {
+            at_command_start = true;
+            p += 2;
+            continue;
+        }
+
+        if (*p == ' ' || *p == '\t' || *p == '\r')
+        {
+            p++;
             continue;
         }
 
@@ -304,6 +405,8 @@ static int find_markers(FAR char *text, struct marker_s markers[],
         {
             FAR char *word_start = p;
             size_t wordlen;
+            enum marker_kind_e closer_kind;
+            bool this_word_starts_command = at_command_start;
 
             while (is_ident_char(*p))
             {
@@ -314,28 +417,42 @@ static int find_markers(FAR char *text, struct marker_s markers[],
 
             if (!is_word_boundary(*p))
             {
-                /* Same reasoning as depth_delta()'s own identical
-                 * check: a word like "if-something" or "then2" isn't
-                 * a real, standalone keyword just because it starts
-                 * with one.
-                 */
-
+                at_command_start = false;
                 continue;
             }
 
-            if (wordlen == 2 && strncmp(word_start, "if", 2) == 0)
+            /* this_word_starts_command only gates is_opener()/
+             * is_closer() below -- "then"/"elif"/"else"/"in"/"do"
+             * (the else-if branch further down) are deliberately NOT
+             * gated the same way: unlike if/fi/done/esac, they're not
+             * themselves preceded by a command-start-triggering
+             * keyword in real grammar -- "in" follows an ordinary
+             * word (a for-loop's own variable name, or case's own
+             * word expression), "do" follows a condition or list, not
+             * a keyword. Gating them the same way as openers/closers
+             * broke recognizing "in"/"do" entirely, confirmed
+             * directly building and running against a real for loop.
+             */
+
+            if (is_opener(word_start, wordlen))
             {
-                depth++;
-            }
-            else if (wordlen == 2 && strncmp(word_start, "fi", 2) == 0)
-            {
-                depth--;
-                if (depth == 0 && count < max_markers)
+                if (this_word_starts_command)
                 {
-                    markers[count].kind = MARKER_FI;
-                    markers[count].start = word_start;
-                    markers[count].after = p;
-                    count++;
+                    depth++;
+                }
+            }
+            else if (is_closer(word_start, wordlen, &closer_kind))
+            {
+                if (this_word_starts_command)
+                {
+                    depth--;
+                    if (depth == 0 && count < max_markers)
+                    {
+                        markers[count].kind = closer_kind;
+                        markers[count].start = word_start;
+                        markers[count].after = p;
+                        count++;
+                    }
                 }
             }
             else if (depth == 1 && count < max_markers)
@@ -361,11 +478,27 @@ static int find_markers(FAR char *text, struct marker_s markers[],
                     markers[count].after = p;
                     count++;
                 }
+                else if (wordlen == 2 && strncmp(word_start, "in", 2) == 0)
+                {
+                    markers[count].kind = MARKER_IN;
+                    markers[count].start = word_start;
+                    markers[count].after = p;
+                    count++;
+                }
+                else if (wordlen == 2 && strncmp(word_start, "do", 2) == 0)
+                {
+                    markers[count].kind = MARKER_DO;
+                    markers[count].start = word_start;
+                    markers[count].after = p;
+                    count++;
+                }
             }
 
+            at_command_start = starts_new_command(word_start, wordlen);
             continue;
         }
 
+        at_command_start = false;
         p++;
     }
 
@@ -373,26 +506,31 @@ static int find_markers(FAR char *text, struct marker_s markers[],
 }
 
 /****************************************************************************
- * Returns a pointer just past the matching "fi" that closes the if
- * construct 'text' starts with, or NULL if 'text' doesn't actually
- * contain a complete, balanced one. Lets run_line() (line.c) treat
- * "if ...; fi <more statements>" correctly: the construct itself ends
- * at that "fi", and whatever comes after it is separate, subsequent
- * text to keep processing, not part of the construct -- confirmed
- * directly this matters for a *nested* if specifically, whose own
- * body can contain "if ... fi" followed by further statements before
- * the *outer* body's own end (e.g. "if false\nthen ...\nfi\necho
- * after\n" as one outer branch's body) -- treating the entire given
- * text as one all-consuming construct silently discarded that
- * trailing "echo after" instead of running it.
+ * Returns a pointer just past the matching closer ("fi"/"done"/
+ * "esac") for the construct 'text' starts with, or NULL if 'text'
+ * doesn't actually contain a complete, balanced one. Lets a construct
+ * be separated from whatever text follows its own close on the same
+ * line/string -- e.g. "if ...; fi; echo after" -- confirmed directly
+ * this matters, the hard way: treating the entire given text as one
+ * all-consuming construct silently discarded anything after the
+ * close instead of running it.
  ****************************************************************************/
 
 FAR char *find_construct_end(FAR char *text)
 {
     struct marker_s markers[MAX_MARKERS];
     int nmarkers = find_markers(text, markers, MAX_MARKERS);
+    enum marker_kind_e last_kind;
 
-    if (nmarkers == 0 || markers[nmarkers - 1].kind != MARKER_FI)
+    if (nmarkers == 0)
+    {
+        return NULL;
+    }
+
+    last_kind = markers[nmarkers - 1].kind;
+
+    if (last_kind != MARKER_FI && last_kind != MARKER_DONE &&
+        last_kind != MARKER_ESAC)
     {
         return NULL;
     }
@@ -401,9 +539,9 @@ FAR char *find_construct_end(FAR char *text)
 }
 
 /****************************************************************************
- * Turns the marker list into cond/body pairs: branches[i].cond is the
- * text between "if"/"elif" and its own "then"; branches[i].body is
- * the text between that "then" and whatever comes next (another
+ * Turns the marker list into cond/body pairs for "if": branches[i].cond
+ * is the text between "if"/"elif" and its own "then"; branches[i].body
+ * is the text between that "then" and whatever comes next (another
  * "elif", an "else", or the closing "fi"). A trailing "else" becomes
  * one final branch with cond == NULL, meaning "always runs if
  * execution gets this far". Malformed marker sequences (a "then"
@@ -420,7 +558,7 @@ static int build_branches(FAR char *text, struct marker_s markers[],
     FAR char *p = text;
     int mi = 0;
 
-    p = skip_leading_if(p);
+    p = skip_leading_keyword(p);
 
     while (mi < nmarkers && nbranches < max_branches)
     {
@@ -533,6 +671,30 @@ static int run_branches(struct branch_s branches[], int nbranches,
     return 0;
 }
 
+static int run_if(FAR char *construct_copy, FAR bool *should_exit)
+{
+    struct marker_s markers[MAX_MARKERS];
+    struct branch_s branches[MAX_BRANCHES];
+    int nmarkers;
+    int nbranches;
+    int status;
+    int i;
+
+    nmarkers = find_markers(construct_copy, markers, MAX_MARKERS);
+    nbranches = build_branches(construct_copy, markers, nmarkers, branches,
+                                MAX_BRANCHES);
+
+    status = run_branches(branches, nbranches, should_exit);
+
+    for (i = 0; i < nbranches; i++)
+    {
+        free(branches[i].cond);
+        free(branches[i].body);
+    }
+
+    return status;
+}
+
 int run_control_construct(FAR char *first_line, next_line_fn read_line,
                            FAR void *ctx, FAR bool *should_exit)
 {
@@ -540,12 +702,7 @@ int run_control_construct(FAR char *first_line, next_line_fn read_line,
     FAR char *construct_end;
     FAR char *construct_copy;
     size_t construct_len;
-    struct marker_s markers[MAX_MARKERS];
-    struct branch_s branches[MAX_BRANCHES];
-    int nmarkers;
-    int nbranches;
     int status;
-    int i;
 
     *should_exit = false;
 
@@ -554,23 +711,20 @@ int run_control_construct(FAR char *first_line, next_line_fn read_line,
     {
         fprintf(stderr,
                 "vaporshell: unexpected end of input looking for matching "
-                "'fi'\n");
+                "'fi'/'done'/'esac'\n");
         return 1;
     }
 
     /* accumulate_construct() only guarantees 'text' *contains* a
      * complete, balanced construct -- not that the construct is all
-     * there is. "if ...; fi; echo after" (all on one line) and a
-     * nested if's own body containing "if ... fi" followed by more
-     * statements both need the construct itself separated from
-     * whatever text follows its closing "fi", which is run
-     * afterward, separately, via run_line() -- not treated as part of
-     * this construct at all. This is the one place that split has to
-     * happen: every caller (line.c's own nested-if handling, and
-     * both vaporshell_main.c's interactive loop and script.c) goes
-     * through this same function now, specifically so this logic
-     * lives once, here, rather than being duplicated (and, before
-     * this, inconsistently applied) in each of them.
+     * there is. The construct itself has to be separated from
+     * whatever text follows its own close, which is run afterward,
+     * separately, via run_line() -- not treated as part of this
+     * construct at all. This is the one place that split happens:
+     * every caller (line.c's own nested-construct handling, and both
+     * vaporshell_main.c's interactive loop and script.c) goes through
+     * this same function now, specifically so this logic lives once,
+     * here.
      */
 
     construct_end = find_construct_end(text);
@@ -590,16 +744,33 @@ int run_control_construct(FAR char *first_line, next_line_fn read_line,
     memcpy(construct_copy, text, construct_len);
     construct_copy[construct_len] = '\0';
 
-    nmarkers = find_markers(construct_copy, markers, MAX_MARKERS);
-    nbranches = build_branches(construct_copy, markers, nmarkers, branches,
-                                MAX_BRANCHES);
-
-    status = run_branches(branches, nbranches, should_exit);
-
-    for (i = 0; i < nbranches; i++)
+    if (starts_with_word(construct_copy, "if"))
     {
-        free(branches[i].cond);
-        free(branches[i].body);
+        status = run_if(construct_copy, should_exit);
+    }
+    else if (starts_with_word(construct_copy, "for"))
+    {
+        status = run_for(construct_copy, should_exit);
+    }
+    else if (starts_with_word(construct_copy, "while"))
+    {
+        status = run_while_until(construct_copy, should_exit, true);
+    }
+    else if (starts_with_word(construct_copy, "until"))
+    {
+        status = run_while_until(construct_copy, should_exit, false);
+    }
+    else if (starts_with_word(construct_copy, "case"))
+    {
+        status = run_case(construct_copy, should_exit);
+    }
+    else
+    {
+        /* is_control_start() already guaranteed this is one of the
+         * five keywords above -- shouldn't be reachable.
+         */
+
+        status = 1;
     }
 
     free(construct_copy);
