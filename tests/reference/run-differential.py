@@ -37,6 +37,11 @@ import tempfile
 import time
 from pathlib import Path
 
+red = '\033[91m'
+green = '\033[92m'
+yellow = '\033[93m'
+reset = '\033[0m'
+
 REFERENCE_DIR = Path(__file__).resolve().parent
 SMOOSH_DIR = REFERENCE_DIR / "smoosh-shell"
 OWN_DIR = REFERENCE_DIR.parent / "own"
@@ -69,9 +74,9 @@ def run_native(shell, script_path, timeout=10):
             )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
-        return "", "(timed out)", None
+        return "", "{red}(timed out){reset}", None
     except FileNotFoundError:
-        return "", f"({shell} not found)", None
+        return "", f"({red}{shell} not found{reset})", None
 
 
 def wait_for(master_fd, needle, timeout, poll_interval=0.05):
@@ -114,7 +119,7 @@ def run_vaporshell(nuttx_dir, script_path, boot_timeout=8, cmd_timeout=8,
     nuttx_dir = Path(nuttx_dir)
     nuttx_bin = nuttx_dir / "nuttx"
     if not nuttx_bin.exists():
-        return f"(no nuttx binary at {nuttx_bin})"
+        return f"{red}(no nuttx binary at {nuttx_bin}){reset}"
 
     # hostfs mounts nuttx_dir itself (the cwd nuttx is launched from) --
     # drop the script there under a fixed name so it's reachable at a
@@ -195,8 +200,8 @@ def run_one(test_path, nuttx_dir):
         print(f"(stderr) {dash_err}", end="")
 
     if bash_out != dash_out:
-        print("\n[note] bash and dash disagree -- likely exercises a "
-              "bash-specific extension, not a pure POSIX behavior.")
+        print(f"\n{yellow}[note] bash and dash disagree -- likely exercises a "
+              f"bash-specific extension, not a pure POSIX behavior.{reset}")
 
     if nuttx_dir is None:
         print("\n--- vaporshell: skipped (no --nuttx-dir given) ---")
@@ -206,7 +211,7 @@ def run_one(test_path, nuttx_dir):
     print("\n--- vaporshell ---")
     print(vaporshell_out, end="")
 
-    verdict = "PASS" if vaporshell_out == bash_out else "DIFFERS"
+    verdict = f"{green}PASS{reset}" if vaporshell_out == bash_out else f"{red}DIFFERS{reset}"
     print(f"\n[verdict] {verdict}")
 
 
