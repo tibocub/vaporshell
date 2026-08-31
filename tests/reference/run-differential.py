@@ -49,6 +49,7 @@ OWN_DIR = REFERENCE_DIR.parent / "own"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 CR_RE = re.compile(r"\r+")
 
+FAILS = 0
 
 def run_native(shell, script_path, timeout=10):
     """Runs inside a fresh, isolated temporary directory -- confirmed
@@ -211,7 +212,12 @@ def run_one(test_path, nuttx_dir):
     print("\n--- vaporshell ---")
     print(vaporshell_out, end="")
 
-    verdict = f"{green}PASS{reset}" if vaporshell_out == bash_out else f"{red}DIFFERS{reset}"
+    if vaporshell_out == bash_out:
+        verdict = f"{green}PASS{reset}" 
+    else:
+        verdict = f"{red}DIFFERS{reset}"
+        global FAILS
+        FAILS += 1
     print(f"\n[verdict] {verdict}")
 
 
@@ -239,6 +245,11 @@ def main():
 
     for t in tests:
         run_one(t, args.nuttx_dir)
+
+    if FAILS == 0:
+        print(f"\n{green}All test passed{reset}\n")
+    else:
+        print(f"\n{red}{FAILS} test failed{reset}\n")
 
 
 if __name__ == "__main__":
