@@ -74,7 +74,43 @@ def run_native(shell, script_path, timeout=10):
         return "", f"({shell} not found)", None
 
 
-def run_vaporshell(nuttx_dir, script_path, boot_wait=3, run_wait=5):
+def wait_for(master_fd, needle, timeout, poll_interval=0.05):
+    """Reads from master_fd, in short poll_interval steps rather than
+    one long fixed sleep, until 'needle' (bytes) appears in the
+    accumulated output or 'timeout' seconds elapse. Returns as soon as
+    the expected output actually shows up -- boot, a mount, and a
+    script run each take genuinely different, usually much-less-than-
+    'timeout' amounts of real time, and a fixed sleep() pays the same,
+    worst-case cost every single time regardless. 'timeout' is a
+    safety net for a real hang, not the normal-case wait -- confirmed
+    directly this was the actual, whole cause of vaporshell's own test
+    runs looking slow: the previous version's fixed sleeps (boot_wait=3
+    + 1.0 + run_wait=5 + 1.5 = 10.5s) ran to completion on *every* test
+    regardless of how fast NuttX/vaporshell genuinely responded, which
+    is instant interactively -- nothing about vaporshell itself was
+    ever slow.
+    """
+
+    buf = b""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        remaining = deadline - time.time()
+        r, _, _ = select.select([master_fd], [], [], min(poll_interval, remaining))
+        if master_fd in r:
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            if needle in buf:
+                break
+    return buf
+
+
+def run_vaporshell(nuttx_dir, script_path, boot_timeout=8, cmd_timeout=8,
+                    run_timeout=15):
     nuttx_dir = Path(nuttx_dir)
     nuttx_bin = nuttx_dir / "nuttx"
     if not nuttx_bin.exists():
@@ -100,31 +136,22 @@ def run_vaporshell(nuttx_dir, script_path, boot_wait=3, run_wait=5):
 
     os.close(slave)
 
-    def drain(timeout):
-        buf = b""
-        while True:
-            r, _, _ = select.select([master], [], [], timeout)
-            if master in r:
-                try:
-                    buf += os.read(master, 4096)
-                except OSError:
-                    break
-            else:
-                break
-        return buf
-
-    time.sleep(boot_wait)
-    drain(0.5)
+    wait_for(master, b"nsh> ", boot_timeout)
     os.write(master, b"mount -t hostfs -o fs=. /data\n")
-    time.sleep(1.0)
-    drain(0.5)
+    wait_for(master, b"nsh> ", cmd_timeout)
 
     os.write(master, b"vaporshell /data/difftest_input.sh\n")
-    output = drain(run_wait)
+    # wait_for() starts each call with a fresh, empty local buffer --
+    # bytes already read by the mount step's own wait_for() above are
+    # consumed, not re-delivered -- so this correctly waits for the
+    # *next* "nsh> " (vaporshell's own completion), not the one
+    # already handled above.
+    output = wait_for(master, b"nsh> ", run_timeout, poll_interval=0.02)
 
     os.write(master, b"poweroff\n")
-    time.sleep(1.5)
-    drain(0.5)
+    time.sleep(0.3)  # poweroff itself is near-instant; just a brief,
+                      # fixed drain before the kill below, not worth
+                      # adaptive waiting for
     try:
         os.kill(pid, 9)
     except OSError:
