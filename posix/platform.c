@@ -37,6 +37,12 @@ bool vs_plat_export_all(void)
   return false;
 }
 
+bool vs_plat_external_fallback(const char *name)
+{
+  (void)name;
+  return false;                 /* pipeline stages fork instead */
+}
+
 static bool is_executable_file(const char *path, int *err)
 {
   struct stat st;

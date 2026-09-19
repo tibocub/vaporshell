@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -44,11 +45,63 @@ bool vs_plat_export_all(void)
   return true;
 }
 
+bool vs_plat_external_fallback(const char *name)
+{
+  return is_tbx_command(name);
+}
+
+/* The name is returned as given, not as a path: posix_spawnp() resolves
+ * NuttX's builtin apps by bare name. The lookup only decides "does this
+ * exist?" -- in $PATH (NuttX exposes its builtin apps as /bin/<name>) or as
+ * a tbx command.
+ */
+
 char *vs_plat_find_command(const char *name, const char *path_var, int *err)
 {
-  (void)path_var;
-  (void)err;
-  return vs_xstrdup(name);
+  const char *path = path_var != NULL ? path_var : "/bin";
+  struct sbuf_s cand;
+  struct stat st;
+
+  *err = ENOENT;
+  if (name[0] == '\0')
+    {
+      return NULL;
+    }
+
+  if (strchr(name, '/') != NULL)
+    {
+      return stat(name, &st) == 0 ? vs_xstrdup(name) : NULL;
+    }
+
+  sb_init(&cand);
+  for (; ; )
+    {
+      size_t len = strcspn(path, ":");
+
+      cand.len = 0;
+      if (len > 0)
+        {
+          sb_addn(&cand, path, len);
+          sb_addc(&cand, '/');
+        }
+
+      sb_adds(&cand, name);
+      if (stat(cand.s, &st) == 0)
+        {
+          sb_free(&cand);
+          return vs_xstrdup(name);
+        }
+
+      if (path[len] == '\0')
+        {
+          break;
+        }
+
+      path += len + 1;
+    }
+
+  sb_free(&cand);
+  return is_tbx_command(name) ? vs_xstrdup(name) : NULL;
 }
 
 int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],

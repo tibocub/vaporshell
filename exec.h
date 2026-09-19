@@ -59,7 +59,7 @@ struct builtin_s
   const char *help;
 };
 
-extern const struct builtin_s g_builtins[];     /* name == NULL terminated */
+extern const struct builtin_s g_vs_builtins[];     /* name == NULL terminated */
 const struct builtin_s *builtin_find(const char *name);
 
 /* help.c, test.c, traps.c */

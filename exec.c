@@ -940,7 +940,9 @@ static int run_stages(struct node_s *first, int nst)
       fv_init(&argv);
       if (stage->type != N_SIMPLE || stage->redirs != NULL ||
           stage->assigns != NULL || expand_words(stage->words, &argv) != 0 ||
-          argv.n == 0 || builtin_find(argv.v[0]) != NULL ||
+          argv.n == 0 ||
+          (builtin_find(argv.v[0]) != NULL &&
+           !vs_plat_external_fallback(argv.v[0])) ||
           func_find(argv.v[0]) != NULL)
         {
           vs_err("pipelines can only run external programs on this "
@@ -1198,8 +1200,14 @@ char *run_cmdsub(const char *text, size_t len)
 
   if (!vs_plat_have_fork())
     {
-      char *r = vs_plat_capture_via_self(text, &status);
+      /* 'text' is a slice of a word, not a C string: hand the platform
+       * layer a terminated copy of exactly 'len' bytes.
+       */
 
+      char *copy = vs_xstrndup(text, len);
+      char *r = vs_plat_capture_via_self(copy, &status);
+
+      free(copy);
       g_sh.cmdsub_status = status;
       if (r == NULL)
         {

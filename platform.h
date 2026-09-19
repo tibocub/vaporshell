@@ -44,6 +44,13 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
                   int in_fd, int out_fd, const int *close_fds, int nclose,
                   pid_t *pid);
 
+/* Can a builtin of this name also be run as a separate program? Where
+ * pipelines cannot fork (NuttX), such a builtin is started as that program
+ * when it is a pipeline stage (true, false, pwd, test, ...).
+ */
+
+bool vs_plat_external_fallback(const char *name);
+
 /* Replace this process (host only). Returns only on failure. */
 
 int vs_plat_exec(const char *path, char *const argv[], char *const envp[]);

@@ -58,7 +58,8 @@ vaporshell/
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
   docs/design.md      the design doc -- read this first for anything non-trivial
-  tests/              own/ (vs bash), smoosh corpus, posix-check.sh, smoosh-check.sh
+  tests/              own/ (vs bash), smoosh corpus, posix-check.sh,
+                      smoosh-check.sh, nuttx-sim-smoke.py, nuttx-symcheck.sh
 ```
 
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx) as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for `toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
@@ -69,7 +70,17 @@ wired in automatically.
 [#build](#build)
 
 NuttX: unchanged -- the `Makefile` is NuttX's app-directory shape and is
-used whenever `APPDIR` is set.
+used whenever `APPDIR` is set. Every root `.c` file must be listed there
+(`platform_nuttx.c` and `dispatch.c` are NuttX-only). After a build:
+
+```
+sh tests/nuttx-symcheck.sh ../nuttx/staging      # global-name collisions
+python3 tests/nuttx-sim-smoke.py ../nuttx/nuttx  # run it in the simulator
+```
+
+Everything in `libapps.a` shares one flat symbol namespace, so give any new
+global a `vs_`/`g_vs_` style name; `symcheck` finds the ones that clash
+(the first version collided with NuttX's own `g_builtins`).
 
 Standalone (Linux, macOS, BSD), from a plain checkout:
 
@@ -104,10 +115,16 @@ same rule. The rest are listed in `tests/smoosh-known-failures.txt`.
 
 Platform notes: on the standalone build `( )`, `&`, pipelines with
 builtins/functions, and `$(...)` fork. NuttX has no `fork()`, so there
-those cases are limited (`$(...)` runs a child `vaporshell -c`, and
-variables are exported so it can see them; `( )`, `&` and non-external
-pipeline stages report "not supported on this platform yet"). The NuttX
-platform layer has not been built or run since the rewrite.
+those cases are limited: `$(...)` runs a child `vaporshell -c` (and
+variables are exported so it can see them), a pipeline stage must be an
+external program (or a builtin tbx also provides: `true`, `false`, `pwd`,
+`test`, `[`), and `( )`, `&`, `exec` and other builtins in a pipeline
+report "not supported on this platform yet". An in-process subshell is the
+intended fix.
+
+NuttX: built and run in the simulator against `releases/13.0` with the
+vaporOS `sim:nsh` configuration (`tests/nuttx-sim-smoke.py` drives it).
+Real-hardware targets have not been tried.
 
 Also worth knowing: `CONFIG_LINE_MAX` (vaporOS-nuttx's own build.sh)
 still needs to be raised from NuttX's default of 80 for interactive input,

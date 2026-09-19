@@ -47,7 +47,7 @@ int bi_help(int argc, char **argv)
     }
 
   puts("vaporshell builtins (* = POSIX special builtin):");
-  for (b = g_builtins; b->name != NULL; b++)
+  for (b = g_vs_builtins; b->name != NULL; b++)
     {
       printf("  %-9s%s %s\n", b->name, b->special ? "*" : " ", b->help);
     }

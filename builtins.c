@@ -1005,7 +1005,7 @@ static int bi_umask(int argc, char **argv)
 
 /* ---- The table --------------------------------------------------------------------------- */
 
-const struct builtin_s g_builtins[] =
+const struct builtin_s g_vs_builtins[] =
 {
   { ":",        bi_colon,    true,  "do nothing, successfully" },
   { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell" },
@@ -1042,7 +1042,7 @@ const struct builtin_s *builtin_find(const char *name)
 {
   const struct builtin_s *b;
 
-  for (b = g_builtins; b->name != NULL; b++)
+  for (b = g_vs_builtins; b->name != NULL; b++)
     {
       if (strcmp(b->name, name) == 0)
         {
