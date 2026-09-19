@@ -4,7 +4,7 @@
 # NuttX build never reads this file.
 #
 #   make                build ./build/vaporshell
-#   make check          run tests/own against bash, compare stdout+status
+#   make check          every differential suite, each vs its reference shell
 #   make check-smoosh   run the smoosh POSIX corpus, report regressions
 #   make asan           build ./build-asan/vaporshell (ASan + UBSan)
 #   make check-asan     same tests, against the sanitizer build
@@ -44,7 +44,7 @@ $(BUILDDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 check: $(BIN)
-	sh tests/posix-check.sh $(BIN) $(REFSHELL)
+	sh tests/check-all.sh $(BIN)
 
 check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
@@ -55,7 +55,7 @@ asan:
 	$(MAKE) BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
 
 check-asan: asan
-	ASAN_OPTIONS=detect_leaks=0 sh tests/posix-check.sh build-asan/vaporshell $(REFSHELL)
+	ASAN_OPTIONS=detect_leaks=0 sh tests/check-all.sh build-asan/vaporshell
 
 # Ubuntu-style toolchains enable _FORTIFY_SOURCE by default, and its
 # glibc wrappers quietly declare functions (realpath, ...) that strict

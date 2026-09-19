@@ -191,7 +191,8 @@ static int bi_eval(int argc, char **argv)
   g_sh.syntax_error = false;
   status = run_string(text.s != NULL ? text.s : "", text.len);
   sb_free(&text);
-  if (g_sh.syntax_error && !g_sh.interactive && g_sh.unwind == UW_NONE)
+  if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
+      !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = UW_EXIT;         /* a syntax error in eval is fatal */
       g_sh.last_status = 2;
@@ -200,7 +201,10 @@ static int bi_eval(int argc, char **argv)
   return status;
 }
 
-/* Finds a file for `.`: as given if it has a '/', else via $PATH. */
+/* Finds a file for `.`: as given if it has a '/', else via $PATH, else (in
+ * profiles with VF_DOT_SEARCH_CWD, i.e. bash's default) the current
+ * directory. NULL: not found.
+ */
 
 static char *find_sourced(const char *name)
 {
@@ -239,7 +243,7 @@ static char *find_sourced(const char *name)
     }
 
   sb_free(&cand);
-  return vs_xstrdup(name);
+  return vs_feat(VF_DOT_SEARCH_CWD) ? vs_xstrdup(name) : NULL;
 }
 
 static int bi_dot(int argc, char **argv)
@@ -258,6 +262,12 @@ static int bi_dot(int argc, char **argv)
     }
 
   file = find_sourced(argv[1]);
+  if (file == NULL)
+    {
+      vs_err("%s: file not found in PATH", argv[1]);
+      vs_special_error();
+      return 1;
+    }
 
   if (argc > 2)
     {
@@ -272,7 +282,8 @@ static int bi_dot(int argc, char **argv)
 
   g_sh.syntax_error = false;
   status = run_file(file);
-  if (g_sh.syntax_error && !g_sh.interactive && g_sh.unwind == UW_NONE)
+  if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
+      !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = UW_EXIT;
       g_sh.last_status = 2;
@@ -363,11 +374,7 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
             if (eq != NULL && var_set(name, eq + 1) != 0)
               {
                 status = 1;
-                if (!g_sh.interactive)
-                  {
-                    g_sh.unwind = UW_EXIT;
-                    g_sh.last_status = 1;
-                  }
+                vs_special_error();
               }
 
             var_set_flags(name, flag);
@@ -468,8 +475,14 @@ static int set_option(char flag, bool on)
     }
 }
 
-static int set_named_option(const char *name, bool on)
+int vs_set_named_option(const char *name, bool on)
 {
+  if (strcmp(name, "posix") == 0)
+    {
+      vs_mode_set(on ? VS_PROFILE_POSIX : VS_PROFILE_BASH);
+      return 0;
+    }
+
   static const struct
   {
     const char *name;
@@ -533,7 +546,7 @@ static int bi_set(int argc, char **argv)
       on = (a[0] == '-');
       if (strcmp(a + 1, "o") == 0)
         {
-          if (i + 1 >= argc || set_named_option(argv[i + 1], on) != 0)
+          if (i + 1 >= argc || vs_set_named_option(argv[i + 1], on) != 0)
             {
               vs_err("set: %s: invalid option name",
                      i + 1 < argc ? argv[i + 1] : "(missing)");
@@ -1007,35 +1020,35 @@ static int bi_umask(int argc, char **argv)
 
 const struct builtin_s g_vs_builtins[] =
 {
-  { ":",        bi_colon,    true,  "do nothing, successfully" },
-  { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell" },
-  { "break",    bi_break,    true,  "break [n]: leave a loop" },
-  { "continue", bi_continue, true,  "continue [n]: next loop iteration" },
-  { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command" },
-  { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections" },
-  { "exit",     bi_exit,     true,  "exit [n]: leave the shell" },
-  { "export",   bi_export,   true,  "export [-p] [name[=value]]: mark variables for export" },
-  { "readonly", bi_readonly, true,  "readonly [-p] [name[=value]]: make variables read-only" },
-  { "return",   bi_return,   true,  "return [n]: leave a function or sourced file" },
-  { "set",      bi_set,      true,  "set [-euxfC] [-o name] [--] [args]: options and positional parameters" },
-  { "shift",    bi_shift,    true,  "shift [n]: drop positional parameters" },
-  { "source",   bi_dot,      true,  "source file [args]: same as ." },
-  { "trap",     bi_trap,     true,  "trap [action sig...]: run action on signals / exit" },
-  { "unset",    bi_unset,    true,  "unset [-fv] name...: remove variables or functions" },
-  { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression" },
-  { "cd",       bi_cd,       false, "cd [dir | -]: change directory" },
-  { "command",  bi_command,  false, "command [-v] name [args]: run bypassing functions" },
-  { "false",    bi_false,    false, "do nothing, unsuccessfully" },
-  { "help",     bi_help,     false, "help [name]: list builtins" },
-  { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal" },
-  { "pwd",      bi_pwd,      false, "print the working directory" },
-  { "read",     bi_read,     false, "read [-r] name...: read a line into variables" },
-  { "test",     bi_test,     false, "test expr: evaluate a conditional expression" },
-  { "true",     bi_true,     false, "do nothing, successfully" },
-  { "type",     bi_type,     false, "type name...: say how a name resolves" },
-  { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask" },
-  { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs" },
-  { NULL, NULL, false, NULL }
+  { ":",        bi_colon,    true,  "do nothing, successfully", VS_M_ALL },
+  { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell", VS_M_ALL },
+  { "break",    bi_break,    true,  "break [n]: leave a loop", VS_M_ALL },
+  { "continue", bi_continue, true,  "continue [n]: next loop iteration", VS_M_ALL },
+  { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command", VS_M_ALL },
+  { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections", VS_M_ALL },
+  { "exit",     bi_exit,     true,  "exit [n]: leave the shell", VS_M_ALL },
+  { "export",   bi_export,   true,  "export [-p] [name[=value]]: mark variables for export", VS_M_ALL },
+  { "readonly", bi_readonly, true,  "readonly [-p] [name[=value]]: make variables read-only", VS_M_ALL },
+  { "return",   bi_return,   true,  "return [n]: leave a function or sourced file", VS_M_ALL },
+  { "set",      bi_set,      true,  "set [-euxfC] [-o name] [--] [args]: options and positional parameters", VS_M_ALL },
+  { "shift",    bi_shift,    true,  "shift [n]: drop positional parameters", VS_M_ALL },
+  { "source",   bi_dot,      true,  "source file [args]: same as .", VS_M_BASH },
+  { "trap",     bi_trap,     true,  "trap [action sig...]: run action on signals / exit", VS_M_ALL },
+  { "unset",    bi_unset,    true,  "unset [-fv] name...: remove variables or functions", VS_M_ALL },
+  { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression", VS_M_ALL },
+  { "cd",       bi_cd,       false, "cd [dir | -]: change directory", VS_M_ALL },
+  { "command",  bi_command,  false, "command [-v] name [args]: run bypassing functions", VS_M_ALL },
+  { "false",    bi_false,    false, "do nothing, unsuccessfully", VS_M_ALL },
+  { "help",     bi_help,     false, "help [name]: list builtins", VS_M_ALL },
+  { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal", VS_M_ALL },
+  { "pwd",      bi_pwd,      false, "print the working directory", VS_M_ALL },
+  { "read",     bi_read,     false, "read [-r] name...: read a line into variables", VS_M_ALL },
+  { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VS_M_ALL },
+  { "true",     bi_true,     false, "do nothing, successfully", VS_M_ALL },
+  { "type",     bi_type,     false, "type name...: say how a name resolves", VS_M_ALL },
+  { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VS_M_ALL },
+  { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VS_M_ALL },
+  { NULL, NULL, false, NULL, 0 }
 };
 
 const struct builtin_s *builtin_find(const char *name)
@@ -1044,7 +1057,7 @@ const struct builtin_s *builtin_find(const char *name)
 
   for (b = g_vs_builtins; b->name != NULL; b++)
     {
-      if (strcmp(b->name, name) == 0)
+      if ((b->modes & vs_mode_bit()) != 0 && strcmp(b->name, name) == 0)
         {
           return b;
         }

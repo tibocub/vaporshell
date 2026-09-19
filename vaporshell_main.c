@@ -5,7 +5,12 @@
  *   vaporshell -c cmd [name [args]]  run one command string
  *   vaporshell script [args]         run a script file
  *
- * Leading options: -e -u -x -f -C (see `set`), -i (interactive), -- ends them.
+ * Leading options: -e -u -x -f -C (see `set`), -i (interactive), -o/+o NAME,
+ * --posix, and -- to end them.
+ *
+ * The language mode (mode.h) is bash's by default. POSIX mode is chosen by
+ * --posix, -o posix, being invoked as `sh`, or POSIXLY_CORRECT in the
+ * environment -- the same rules bash uses.
  */
 
 #include <nuttx/config.h>
@@ -18,6 +23,7 @@
 
 #include "vaporshell.h"
 #include "exec.h"
+#include "mode.h"
 #include "platform.h"
 
 /* readline() never prints the prompt itself (confirmed against NuttX's
@@ -87,7 +93,18 @@ int main(int argc, char *argv[])
 
   shell_init("vaporshell");
 
-  for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
+  {
+    const char *base = strrchr(argv[0], '/');
+
+    base = (base != NULL) ? base + 1 : argv[0];
+    if (strcmp(base, "sh") == 0 || var_get("POSIXLY_CORRECT") != NULL)
+      {
+        vs_mode_set(VS_PROFILE_POSIX);
+      }
+  }
+
+  for (; i < argc && (argv[i][0] == '-' || argv[i][0] == '+') &&
+         argv[i][1] != '\0'; i++)
     {
       const char *f;
 
@@ -95,6 +112,29 @@ int main(int argc, char *argv[])
         {
           i++;
           break;
+        }
+
+      if (strcmp(argv[i], "--posix") == 0)
+        {
+          vs_mode_set(VS_PROFILE_POSIX);
+          continue;
+        }
+
+      if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "+o") == 0)
+        {
+          if (i + 1 >= argc ||
+              vs_set_named_option(argv[i + 1], argv[i][0] == '-') != 0)
+            {
+              return usage_error("invalid option name", argv[i]);
+            }
+
+          i++;
+          continue;
+        }
+
+      if (argv[i][0] == '+')
+        {
+          return usage_error("invalid option", argv[i]);
         }
 
       for (f = argv[i] + 1; *f != '\0'; f++)

@@ -11,20 +11,28 @@
 #include <string.h>
 
 #include "vaporshell.h"
+#include "mode.h"
 #include "parse.h"
+
+/* Operators, longest first. 'feature' >= 0 means the operator only exists
+ * when that feature bit is on (otherwise its characters lex as the shorter
+ * operators, exactly as in a shell without the extension).
+ */
 
 static const struct
 {
   const char *text;
   enum tok_e type;
+  int feature;
 } g_ops[] =
 {
-  { "<<-", T_DLESSDASH }, { "&&", T_ANDIF },   { "||", T_ORIF },
-  { ";;", T_DSEMI },      { "<<", T_DLESS },   { ">>", T_DGREAT },
-  { "<&", T_LESSAND },    { ">&", T_GREATAND }, { "<>", T_LESSGREAT },
-  { ">|", T_CLOBBER },    { "<", T_LESS },     { ">", T_GREAT },
-  { ";", T_SEMI },        { "&", T_AMP },      { "|", T_PIPE },
-  { "(", T_LPAREN },      { ")", T_RPAREN }
+  { "&>>", T_ANDDGREAT, VF_AMP_REDIR }, { "&>", T_ANDGREAT, VF_AMP_REDIR },
+  { "<<-", T_DLESSDASH, -1 }, { "&&", T_ANDIF, -1 },   { "||", T_ORIF, -1 },
+  { ";;", T_DSEMI, -1 },      { "<<", T_DLESS, -1 },   { ">>", T_DGREAT, -1 },
+  { "<&", T_LESSAND, -1 },    { ">&", T_GREATAND, -1 }, { "<>", T_LESSGREAT, -1 },
+  { ">|", T_CLOBBER, -1 },    { "<", T_LESS, -1 },     { ">", T_GREAT, -1 },
+  { ";", T_SEMI, -1 },        { "&", T_AMP, -1 },      { "|", T_PIPE, -1 },
+  { "(", T_LPAREN, -1 },      { ")", T_RPAREN, -1 }
 };
 
 void lexer_init(struct lexer_s *lx, vs_line_fn fn, void *ctx)
@@ -390,6 +398,11 @@ int lex_token(struct lexer_s *lx, struct token_s *tok)
   for (i = 0; i < sizeof(g_ops) / sizeof(g_ops[0]); i++)
     {
       size_t n = strlen(g_ops[i].text);
+
+      if (g_ops[i].feature >= 0 && !vs_feat((enum vs_feature_e)g_ops[i].feature))
+        {
+          continue;
+        }
 
       if (lx->len - lx->pos >= n &&
           strncmp(lx->buf + lx->pos, g_ops[i].text, n) == 0)

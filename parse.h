@@ -45,7 +45,9 @@ enum tok_e
   T_AMP,
   T_PIPE,
   T_LPAREN,
-  T_RPAREN
+  T_RPAREN,
+  T_ANDGREAT,                 /* &>  (only when VF_AMP_REDIR) */
+  T_ANDDGREAT                 /* &>> */
 };
 
 struct token_s

@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "vaporshell.h"
+#include "mode.h"
 #include "parse.h"
 
 #define MAX_DEPTH 200
@@ -67,6 +68,8 @@ static const char *op_text(enum tok_e t)
       case T_PIPE:      return "|";
       case T_LPAREN:    return "(";
       case T_RPAREN:    return ")";
+      case T_ANDGREAT:  return "&>";
+      case T_ANDDGREAT: return "&>>";
       case T_NEWLINE:   return "newline";
       default:          return "?";
     }
@@ -175,6 +178,35 @@ static bool name_char(char c)
   return name_start(c) || (c >= '0' && c <= '9');
 }
 
+/* POSIX: a function name is a name. Bash's default accepts almost any
+ * word (foo-bar, a.b, ...) that is not an expansion or an assignment.
+ */
+
+static bool is_func_name(const char *s)
+{
+  size_t i;
+
+  if (!vs_feat(VF_FUNC_NAME_ANY))
+    {
+      return is_valid_name(s, strlen(s));
+    }
+
+  if (s[0] == '\0')
+    {
+      return false;
+    }
+
+  for (i = 0; s[i] != '\0'; i++)
+    {
+      if (s[i] == '$' || s[i] == '`' || s[i] == '=')
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
 static bool is_assign_word(const char *text)
 {
   size_t i = 0;
@@ -198,7 +230,8 @@ static bool is_redir_tok(enum tok_e t)
 {
   return t == T_IO_NUMBER || t == T_LESS || t == T_GREAT || t == T_DLESS ||
          t == T_DGREAT || t == T_LESSAND || t == T_GREATAND ||
-         t == T_LESSGREAT || t == T_DLESSDASH || t == T_CLOBBER;
+         t == T_LESSGREAT || t == T_DLESSDASH || t == T_CLOBBER ||
+         t == T_ANDGREAT || t == T_ANDDGREAT;
 }
 
 /* Heredoc delimiter: quote removal, and whether any quoting was present. */
@@ -276,6 +309,8 @@ static bool parse_redir(struct parser_s *p, struct redir_s ***tail)
       case T_LESSAND:   r->op = R_DUPIN;   break;
       case T_GREATAND:  r->op = R_DUPOUT;  break;
       case T_LESSGREAT: r->op = R_RDWR;    break;
+      case T_ANDGREAT:  r->op = R_OUT_ERR;    break;
+      case T_ANDDGREAT: r->op = R_APPEND_ERR; break;
       case T_DLESS:
       case T_DLESSDASH:
         r->op = R_HEREDOC;
@@ -415,7 +450,7 @@ static struct node_s *parse_simple(struct parser_s *p)
         }
 
       if (!seen_word && n->assigns == NULL && n->redirs == NULL &&
-          !t->quoted && is_valid_name(t->text, strlen(t->text)))
+          !t->quoted && is_func_name(t->text))
         {
           char *name = t->text;
 

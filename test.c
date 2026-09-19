@@ -17,6 +17,7 @@
 
 #include "vaporshell.h"
 #include "exec.h"
+#include "mode.h"
 
 struct tst_s
 {
@@ -50,7 +51,9 @@ static bool is_binary(const char *s)
     {
       if (strcmp(s, ops[i]) == 0)
         {
-          return true;
+          /* == is a bash extension; POSIX test only has = . */
+
+          return strcmp(s, "==") != 0 || vs_feat(VF_TEST_EXT);
         }
     }
 

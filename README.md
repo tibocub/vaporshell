@@ -47,6 +47,7 @@ vaporshell/
   glob.c              patterns: globbing, case, ${x#pat}
   exec.c redir.c      run an AST; redirections; command substitution
   vars.c              variable table, positional parameters, functions
+  mode.c              language modes (bash / POSIX) as feature bits; mode.h
   builtins.c test.c   the builtin table; test / [
   traps.c             trap, kill
   help.c              help (reads the builtin table)
@@ -59,7 +60,8 @@ vaporshell/
   Kconfig, Makefile   standard NuttX app-directory shape
   docs/design.md      the design doc -- read this first for anything non-trivial
   tests/              own/ (vs bash), smoosh corpus, posix-check.sh,
-                      smoosh-check.sh, nuttx-sim-smoke.py, nuttx-symcheck.sh
+                      smoosh-check.sh, check-all.sh, modes/ (per-mode suites),
+                      nuttx-sim-smoke.py, nuttx-symcheck.sh
 ```
 
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx) as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for `toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
@@ -86,8 +88,9 @@ Standalone (Linux, macOS, BSD), from a plain checkout:
 
 ```
 make -f posix.mk            # build/vaporshell   (or just `make`)
-make check                  # tests/own vs bash
-make check-smoosh           # the smoosh POSIX corpus, regressions named
+make check                  # every suite, each vs its reference shell
+vaporshell --posix          # POSIX mode (also -o posix, or invoked as sh)
+make check-smoosh           # the smoosh corpus in --posix mode, regressions named
 make check-asan             # same tests under ASan + UBSan
 make strict                 # fortify off, -Werror (what Fedora sees)
 ```
@@ -102,6 +105,12 @@ expansion, so one word can become many fields (IFS splitting, `"$@"`,
 globbing). Variables live in a table, not in `environ`: only exported ones
 reach a child. See `docs/design.md`, "Architecture".
 
+Modes: bash's behaviour is the default and `--posix` selects POSIX; both are
+presets of feature bits over one engine (`mode.h`, `docs/modes.md`). Only a
+handful of bits exist so far -- each one is a measured difference with a
+test -- and bash's larger features (`[[`, arrays, brace expansion, ...) are
+not built yet.
+
 Working: quoting, all POSIX expansions (parameter operators, `$(...)`,
 backticks, `$(( ))`, tilde, field splitting, pathname expansion), all
 POSIX redirections and here-documents, pipelines, `&&`/`||`/`!`, `;`/`&`,
@@ -109,9 +118,10 @@ POSIX redirections and here-documents, pipelines, `&&`/`||`/`!`, `;`/`&`,
 parameters, `break`/`continue N`/`return`, `set -e -u -x -f -C`, `trap`
 (EXIT and signals), and the builtins in `help`.
 
-Smoosh corpus (`make check-smoosh`): 145 of 184 by a rough pass rule (see
-`tests/smoosh-check.sh`); dash scores 147 and `bash --posix` 143 by the
-same rule. The rest are listed in `tests/smoosh-known-failures.txt`.
+Smoosh corpus (`make check-smoosh`, run in `--posix` mode): 143 of 184 by a
+rough pass rule (see `tests/smoosh-check.sh`); dash scores 147 and
+`bash --posix` 143 by the same rule. (Two tests call bash's `source`, which
+POSIX mode deliberately does not have.) The rest are listed in `tests/smoosh-known-failures.txt`.
 
 Platform notes: on the standalone build `( )`, `&`, pipelines with
 builtins/functions, and `$(...)` fork. NuttX has no `fork()`, so there

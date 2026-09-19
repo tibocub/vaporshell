@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #include "ast.h"
+#include "mode.h"
 #include "parse.h"
 
 /* exec.c */
@@ -57,10 +58,21 @@ struct builtin_s
   int (*fn)(int argc, char **argv);
   bool special;               /* POSIX special builtin */
   const char *help;
+  unsigned modes;             /* VS_M_* profiles this builtin exists in */
 };
 
 extern const struct builtin_s g_vs_builtins[];     /* name == NULL terminated */
 const struct builtin_s *builtin_find(const char *name);
+
+/* A special builtin failed in a way POSIX makes fatal: end a non-interactive
+ * shell if the profile says so (VF_SPECIAL_ERR_FATAL).
+ */
+
+void vs_special_error(void);
+
+/* builtins.c: `set -o NAME` / `+o NAME`; returns -1 for an unknown name. */
+
+int vs_set_named_option(const char *name, bool on);
 
 /* help.c, test.c, traps.c */
 

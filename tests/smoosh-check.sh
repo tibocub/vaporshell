@@ -6,6 +6,7 @@
 #   sh tests/smoosh-check.sh path/to/vaporshell           # report
 #   sh tests/smoosh-check.sh path/to/vaporshell --update  # rewrite the list
 #
+# Runs vaporshell in POSIX mode (--posix): the corpus tests POSIX.
 # A test passes if its stdout equals its .out file; tests without a .out
 # pass on exit status 0. Rough, but stable enough to track. Each test runs
 # in its own throwaway directory (several create files). Exit status is
@@ -41,7 +42,7 @@ for t in "$DIR"/*.test; do
 
     work=$TMP/work
     rm -rf "$work"; mkdir "$work"
-    out=$(cd "$work" && TEST_SHELL="$VS" $TIMEOUT "$VS" "$t" 2>/dev/null </dev/null)
+    out=$(cd "$work" && TEST_SHELL="$VS --posix" $TIMEOUT "$VS" --posix "$t" 2>/dev/null </dev/null)
     rc=$?
 
     ok=0

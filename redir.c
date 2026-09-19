@@ -16,6 +16,7 @@
 #include "vaporshell.h"
 #include "expand.h"
 #include "exec.h"
+#include "mode.h"
 #include "platform.h"
 
 /* Larger bodies than this do not go through a pipe (it could fill up
@@ -121,6 +122,26 @@ static bool is_number(const char *s)
   return i > 0;
 }
 
+/* Makes 'fd' refer to what 'src' refers to, remembering how to undo it. */
+
+static int install_fd(struct redir_saved_s *sv, bool persist, int fd, int src)
+{
+  if (!persist)
+    {
+      /* A negative result just means fd was not open: undoing closes it. */
+
+      save_add(sv, fd, vs_plat_dup_high(fd));
+    }
+
+  if (src != fd && dup2(src, fd) < 0)
+    {
+      vs_err("%d: %s", fd, strerror(errno));
+      return -1;
+    }
+
+  return 0;
+}
+
 /* Performs one redirection. Returns 0, or -1 after printing why. */
 
 static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
@@ -132,6 +153,8 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
   bool close_only = false;
   char *word = NULL;
   int flags;
+
+  bool both = (r->op == R_OUT_ERR || r->op == R_APPEND_ERR);
 
   if (fd < 0)
     {
@@ -200,6 +223,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
           switch (r->op)
             {
               case R_OUT:
+              case R_OUT_ERR:
                 flags = O_WRONLY | O_CREAT | O_TRUNC;
                 if (g_sh.opt_C)
                   {
@@ -215,7 +239,10 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
 
                 break;
               case R_CLOBBER: flags = O_WRONLY | O_CREAT | O_TRUNC; break;
-              case R_APPEND:  flags = O_WRONLY | O_CREAT | O_APPEND; break;
+              case R_APPEND:
+              case R_APPEND_ERR:
+                flags = O_WRONLY | O_CREAT | O_APPEND;
+                break;
               case R_RDWR:    flags = O_RDWR | O_CREAT; break;
               default:        break;
             }
@@ -232,36 +259,31 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
 
   free(word);
 
-  if (!persist)
-    {
-      int saved = vs_plat_dup_high(fd);
-
-      /* saved < 0 just means fd was not open: restoring will close it. */
-
-      save_add(sv, fd, saved);
-    }
-
   if (close_only)
     {
-      close(fd);
-    }
-  else if (src != fd)
-    {
-      if (dup2(src, fd) < 0)
+      if (!persist)
         {
-          vs_err("%d: %s", fd, strerror(errno));
-          if (own)
-            {
-              close(src);
-            }
-
-          return -1;
+          save_add(sv, fd, vs_plat_dup_high(fd));
         }
 
-      if (own)
+      close(fd);
+      return 0;
+    }
+
+  if (install_fd(sv, persist, fd, src) != 0 ||
+      (both && install_fd(sv, persist, STDERR_FILENO, src) != 0))
+    {
+      if (own && src != fd)
         {
           close(src);
         }
+
+      return -1;
+    }
+
+  if (own && src != fd && !(both && src == STDERR_FILENO))
+    {
+      close(src);
     }
 
   return 0;

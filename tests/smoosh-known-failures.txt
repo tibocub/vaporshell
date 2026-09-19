@@ -1,8 +1,8 @@
-builtin.break.lexical
+builtin.break.nonlexical
 builtin.command.ec
 builtin.command.exec
 builtin.command.nospecial
-builtin.continue.lexical
+builtin.continue.nonlexical
 builtin.dot.break
 builtin.dot.path
 builtin.dot.unreadable
@@ -13,6 +13,7 @@ builtin.history.nonposix
 builtin.kill.jobs
 builtin.readonly.assign.interactive
 builtin.source.nonexistent.earlyexit
+builtin.source.setvar
 builtin.test.numeric.spaces.nonposix
 builtin.times.ioerror
 builtin.trap.supershell
@@ -37,3 +38,4 @@ semantics.var.dashu
 sh.file.weirdness
 sh.monitor.bg
 sh.monitor.fg
+sh.set.ifs

@@ -24,6 +24,7 @@
 #include "vaporshell.h"
 #include "expand.h"
 #include "exec.h"
+#include "mode.h"
 #include "platform.h"
 
 #define MAX_FUNC_DEPTH 500
@@ -125,11 +126,14 @@ static void child_run(struct node_s *n)
   _exit(g_sh.last_status & 0xff);
 }
 
-/* A special builtin's error ends a non-interactive shell (POSIX 2.8.1). */
+/* A special builtin's error ends a non-interactive shell (POSIX 2.8.1) --
+ * in profiles that say so; bash's default carries on.
+ */
 
-static void special_error(void)
+void vs_special_error(void)
 {
-  if (!g_sh.interactive && g_sh.unwind == UW_NONE)
+  if (vs_feat(VF_SPECIAL_ERR_FATAL) && !g_sh.interactive &&
+      g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = UW_EXIT;
       g_sh.last_status = 1;
@@ -179,6 +183,7 @@ static void xtrace(int argc, char **argv)
 enum cmd_kind_e classify_command(const char *name, char **path_out)
 {
   const struct builtin_s *b = builtin_find(name);
+  struct func_s *fn = func_find(name);
   int err;
   char *path;
 
@@ -187,12 +192,12 @@ enum cmd_kind_e classify_command(const char *name, char **path_out)
       *path_out = NULL;
     }
 
-  if (b != NULL && b->special)
+  if (b != NULL && b->special && (fn == NULL || vs_feat(VF_SPECIAL_BEFORE_FUNC)))
     {
       return CK_SPECIAL;
     }
 
-  if (func_find(name) != NULL)
+  if (fn != NULL)
     {
       return CK_FUNCTION;
     }
@@ -339,6 +344,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
   int status;
   int i;
   int nargs = argc - 1;
+  int saved_loops;
 
   if (g_sh.func_depth >= MAX_FUNC_DEPTH)
     {
@@ -356,7 +362,14 @@ static int call_function(struct func_s *f, int argc, char **argv)
   g_sh.func_depth++;
   arena_retain(f->arena);
 
+  /* break/continue are lexical: a loop outside the function is not one the
+   * function can leave (bash and dash agree; measured in docs/modes.md).
+   */
+
+  saved_loops = g_sh.loop_depth;
+  g_sh.loop_depth = 0;
   status = exec_node(f->body);
+  g_sh.loop_depth = saved_loops;
   if (g_sh.unwind == UW_RETURN)
     {
       g_sh.unwind = UW_NONE;
@@ -382,7 +395,8 @@ int run_argv(int argc, char **argv, bool skip_functions)
   struct func_s *f = skip_functions ? NULL : func_find(argv[0]);
   int status;
 
-  if (b != NULL && (b->special || f == NULL))
+  if (b != NULL &&
+      (f == NULL || (b->special && vs_feat(VF_SPECIAL_BEFORE_FUNC))))
     {
       status = call_builtin(b, argc, argv);
       return status;
@@ -445,7 +459,7 @@ static int exec_assign_only(struct node_s *n)
       if (val == NULL || var_set(name, val) != 0)
         {
           status = 1;
-          special_error();
+          vs_special_error();
         }
 
       free(val);
@@ -462,6 +476,7 @@ static int exec_assign_only(struct node_s *n)
       status = g_sh.cmdsub_status;
     }
 
+  errexit_check(status);
   return status;
 }
 
@@ -509,6 +524,7 @@ static int exec_simple(struct node_s *n)
   bool have_redirs = false;
   bool can_exec = g_sh.can_exec;
   const struct builtin_s *b;
+  struct func_s *fn;
   struct word_s *w;
   int status = 0;
   bool keep_assign = false;
@@ -542,7 +558,7 @@ static int exec_simple(struct node_s *n)
           status = 1;
           if (b != NULL && b->special)
             {
-              special_error();
+              vs_special_error();
             }
 
           goto out;
@@ -589,18 +605,16 @@ static int exec_simple(struct node_s *n)
 
   xtrace(argv.n, argv.v);
 
-  if (b != NULL && b->special)
+  fn = func_find(argv.v[0]);
+  if (b != NULL &&
+      (fn == NULL || (b->special && vs_feat(VF_SPECIAL_BEFORE_FUNC))))
     {
-      keep_assign = true;
+      keep_assign = b->special && vs_feat(VF_SPECIAL_ASSIGN_KEEP);
       status = call_builtin(b, argv.n, argv.v);
     }
-  else if (func_find(argv.v[0]) != NULL)
+  else if (fn != NULL)
     {
-      status = call_function(func_find(argv.v[0]), argv.n, argv.v);
-    }
-  else if (b != NULL)
-    {
-      status = call_builtin(b, argv.n, argv.v);
+      status = call_function(fn, argv.n, argv.v);
     }
   else
     {
@@ -1240,6 +1254,11 @@ char *run_cmdsub(const char *text, size_t len)
       dup2(fds[1], STDOUT_FILENO);
       close(fds[1]);
       g_sh.interactive = false;
+      if (!vs_feat(VF_ERREXIT_IN_CMDSUB))
+        {
+          g_sh.opt_e = false;    /* bash's default: $(...) does not inherit -e */
+        }
+
       trap_reset_in_child();
       status = run_string_child(text, len);
       if (g_sh.unwind != UW_NONE)

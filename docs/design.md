@@ -335,13 +335,9 @@ was replaced. Layers, each calling only downward:
 - **Out of memory is fatal** (`vs_xmalloc`), which keeps every caller free
   of NULL checks.
 
-### Modes (planned, not built)
+### Modes
 
-POSIX and bash are meant to share this pipeline, with a single options
-struct consulted in three places: the lexer/parser (keywords and operators
-such as `[[`, `((`, `<<<`), the expander (extra `${}` operators, brace
-expansion, arrays) and the builtin table (a per-entry mode). Some
-behaviour differs by semantics, not syntax -- e.g. `break` inside a
-function (bash breaks the caller's loop, dash does not; today the bash
-behaviour is implemented) and `echo`'s escape handling -- so the options
-struct must be able to change semantics as well as enable syntax.
+Superseded by `docs/modes.md`, which has the measured bash / `bash --posix`
+/ dash differences, the feature-bit model (`mode.h`), the extension points
+for bash's larger features, the module layout, and the plan for the
+interactive layer and plugins.

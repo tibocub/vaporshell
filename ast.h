@@ -39,7 +39,9 @@ enum redir_op_e
   R_DUPIN,                    /* <& */
   R_DUPOUT,                   /* >& */
   R_RDWR,                     /* <> */
-  R_HEREDOC                   /* << and <<- */
+  R_HEREDOC,                  /* << and <<- */
+  R_OUT_ERR,                  /* &>  (bash: stdout and stderr) */
+  R_APPEND_ERR                /* &>> */
 };
 
 struct redir_s

@@ -46,9 +46,15 @@ int bi_help(int argc, char **argv)
       return status;
     }
 
-  puts("vaporshell builtins (* = POSIX special builtin):");
+  printf("vaporshell builtins, %s mode (* = POSIX special builtin):\n",
+         vs_mode_name());
   for (b = g_vs_builtins; b->name != NULL; b++)
     {
+      if ((b->modes & vs_mode_bit()) == 0)
+        {
+          continue;
+        }
+
       printf("  %-9s%s %s\n", b->name, b->special ? "*" : " ", b->help);
     }
 
