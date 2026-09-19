@@ -22,6 +22,18 @@
 /* main.c */
 extern int g_last_status;
 
+/* What subst.c spawns for command substitution: "vaporshell" (resolved
+ * through $PATH) by default, an absolute path on the standalone build
+ * (see posix/self_path.c).
+ */
+
+extern FAR const char *g_self_exe;
+
+#ifdef VAPORSHELL_POSIX
+/* posix/self_path.c */
+FAR char *vs_resolve_self(FAR const char *argv0);
+#endif
+
 /* tokenize.c */
 int tokenize(FAR char *line, FAR char *argv[], FAR bool no_expand[],
              int max_tokens);

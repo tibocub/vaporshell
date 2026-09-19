@@ -22,12 +22,19 @@
 
 void run_help(void)
 {
+#ifndef VAPORSHELL_POSIX
     int i;
     FAR DIR *dir;
     FAR struct dirent *entry;
+#endif
 
     printf("vaporshell builtins:\n");
     printf("  cd exit quit help . source\n");
+
+#ifndef VAPORSHELL_POSIX
+    /* tbx and /bin only mean something on vaporOS -- on a host OS,
+     * everything else is just whatever $PATH resolves.
+     */
 
     printf("\ncommands (via tbx):\n");
     printf(" ");
@@ -65,6 +72,8 @@ void run_help(void)
 
         closedir(dir);
     }
+
+#endif
 
     printf("\n");
 }

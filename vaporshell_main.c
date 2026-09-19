@@ -33,6 +33,7 @@
 #include "control.h"
 
 int g_last_status = 0;
+FAR const char *g_self_exe = "vaporshell";
 
 /****************************************************************************
  * readline() never prints the prompt itself -- confirmed directly,
@@ -79,6 +80,20 @@ static FAR char *interactive_next_line(FAR void *ctx, bool continuation)
 int main(int argc, FAR char *argv[])
 {
     char cwd[MAX_PWD];
+
+#ifdef VAPORSHELL_POSIX
+    /* Has to happen before anything can chdir() -- argv[0] may be a
+     * relative path. Failure keeps the default name; see
+     * posix/self_path.c for why that default is only right on NuttX.
+     */
+
+    FAR char *self = vs_resolve_self(argv[0]);
+
+    if (self != NULL)
+    {
+        g_self_exe = self;
+    }
+#endif
 
     /* $SHELL reflects what's actually running, same as any real
      * shell would set it to itself. $PWD synced to the real cwd at

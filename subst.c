@@ -56,12 +56,12 @@ FAR char *capture_command_output(FAR const char *cmd_text)
     posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
     posix_spawn_file_actions_addclose(&actions, pipefd[1]);
 
-    argv[0] = "vaporshell";
+    argv[0] = (FAR char *)g_self_exe;
     argv[1] = "-c";
     argv[2] = (FAR char *)cmd_text;
     argv[3] = NULL;
 
-    ret = posix_spawnp(&pid, "vaporshell", &actions, NULL, argv, environ);
+    ret = posix_spawnp(&pid, g_self_exe, &actions, NULL, argv, environ);
 
     posix_spawn_file_actions_destroy(&actions);
 

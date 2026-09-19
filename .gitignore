@@ -15,3 +15,8 @@ Make.dep
 **/*.gcno
 **/*.gcda
 tests/reference/__pycache__
+
+# standalone build output (posix.mk)
+/build/
+/build-asan/
+/build-strict/
