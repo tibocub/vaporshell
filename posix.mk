@@ -5,6 +5,7 @@
 #
 #   make                build ./build/vaporshell
 #   make check          run tests/own against bash, compare stdout+status
+#   make check-smoosh   run the smoosh POSIX corpus, report regressions
 #   make asan           build ./build-asan/vaporshell (ASan + UBSan)
 #   make check-asan     same tests, against the sanitizer build
 #   make strict         warnings-as-errors with distro fortify off (see below)
@@ -24,11 +25,13 @@ CFLAGS    += -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
 
 # Every top-level .c is part of the NuttX build too (see the Makefile's
 # MAINSRC/CSRCS); posix/ holds what the standalone build adds on top.
-SRCS      := $(wildcard *.c) $(wildcard posix/*.c)
+# platform_nuttx.c and dispatch.c (the tbx table) only exist for NuttX.
+SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
+             $(wildcard posix/*.c)
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all check asan check-asan strict install uninstall clean
+.PHONY: all check check-smoosh asan check-asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -42,6 +45,9 @@ $(BUILDDIR)/%.o: %.c
 
 check: $(BIN)
 	sh tests/posix-check.sh $(BIN) $(REFSHELL)
+
+check-smoosh: $(BIN)
+	sh tests/smoosh-check.sh $(BIN)
 
 SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 

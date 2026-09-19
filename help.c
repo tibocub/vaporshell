@@ -1,79 +1,91 @@
 /*
- * help.c -- prints every command vaporshell can actually run, in
- * three groups: vaporshell's own builtins (hardcoded, there are only
- * a few), the commands run via tbx (from g_tbx_commands, the same
- * table run_command() itself checks -- toybox- and NSH-sourced alike,
- * see dispatch.c's own comment), and everything else spawnable from
- * /bin (read via opendir()/readdir() -- confirmed safe against a
- * NAMED, absolute path here, unlike the bare "." case dirtree.c's own
- * NuttX fixes were about; "ls /bin" already works correctly through
- * that same distinction). This third group is what actually answers
- * "is X a real program" for things like vhello/vlua/vi/vcat/tbx
- * itself -- information g_tbx_commands doesn't have.
+ * help.c -- `help`: lists the builtins straight from the builtin table,
+ * so it can never drift from what the shell actually has. On NuttX it
+ * also lists the commands reachable through tbx and the programs in /bin.
  */
 
 #include <nuttx/config.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
-#include <dirent.h>
+
+#ifndef VAPORSHELL_POSIX
+#  include <dirent.h>
+#  include <errno.h>
+#endif
 
 #include "vaporshell.h"
+#include "exec.h"
 
-void run_help(void)
-{
 #ifndef VAPORSHELL_POSIX
-    int i;
-    FAR DIR *dir;
-    FAR struct dirent *entry;
+extern const char *const g_tbx_commands[];   /* dispatch.c */
 #endif
 
-    printf("vaporshell builtins:\n");
-    printf("  cd exit quit help . source\n");
+int bi_help(int argc, char **argv)
+{
+  const struct builtin_s *b;
+  int i;
 
-#ifndef VAPORSHELL_POSIX
-    /* tbx and /bin only mean something on vaporOS -- on a host OS,
-     * everything else is just whatever $PATH resolves.
-     */
-
-    printf("\ncommands (via tbx):\n");
-    printf(" ");
-    for (i = 0; g_tbx_commands[i] != NULL; i++)
+  if (argc > 1)
     {
-        printf(" %s", g_tbx_commands[i]);
-    }
+      int status = 0;
 
-    printf("\n\nother programs (/bin):\n");
-    printf(" ");
-
-    dir = opendir("/bin");
-    if (dir == NULL)
-    {
-        printf(" (couldn't read /bin: %s)", strerror(errno));
-    }
-    else
-    {
-        while ((entry = readdir(dir)) != NULL)
+      for (i = 1; i < argc; i++)
         {
-            /* binfs has no "." or ".." entries of its own (confirmed
-             * directly, same as the pseudo-fs behavior dirtree.c had
-             * to work around for real directories) -- this check is
-             * defensive, not covering a known gap here.
-             */
-
-            if (strcmp(entry->d_name, ".") == 0 ||
-                strcmp(entry->d_name, "..") == 0)
+          b = builtin_find(argv[i]);
+          if (b == NULL)
             {
-                continue;
+              vs_err("help: no help for `%s'", argv[i]);
+              status = 1;
             }
-
-            printf(" %s", entry->d_name);
+          else
+            {
+              printf("%s: %s\n", b->name, b->help);
+            }
         }
 
-        closedir(dir);
+      return status;
     }
 
-#endif
+  puts("vaporshell builtins (* = POSIX special builtin):");
+  for (b = g_builtins; b->name != NULL; b++)
+    {
+      printf("  %-9s%s %s\n", b->name, b->special ? "*" : " ", b->help);
+    }
+
+#ifndef VAPORSHELL_POSIX
+  {
+    DIR *dir;
+    struct dirent *entry;
+
+    printf("\ncommands (via tbx):\n ");
+    for (i = 0; g_tbx_commands[i] != NULL; i++)
+      {
+        printf(" %s", g_tbx_commands[i]);
+      }
+
+    printf("\n\nother programs (/bin):\n ");
+    dir = opendir("/bin");
+    if (dir == NULL)
+      {
+        printf(" (couldn't read /bin: %s)", strerror(errno));
+      }
+    else
+      {
+        while ((entry = readdir(dir)) != NULL)
+          {
+            if (strcmp(entry->d_name, ".") != 0 &&
+                strcmp(entry->d_name, "..") != 0)
+              {
+                printf(" %s", entry->d_name);
+              }
+          }
+
+        closedir(dir);
+      }
 
     printf("\n");
+  }
+#endif
+
+  return 0;
 }

@@ -1,33 +1,66 @@
+/*
+ * expand.h -- word expansion and pattern matching.
+ *
+ * A word is expanded in POSIX order: tilde, parameter / command /
+ * arithmetic expansion, field splitting, pathname expansion, quote
+ * removal. One raw word can yield any number of fields, which is why
+ * the result is a vector rather than a string.
+ */
+
 #ifndef VAPORSHELL_EXPAND_H
 #define VAPORSHELL_EXPAND_H
 
-#include "vaporshell.h"
+#include <stdbool.h>
+#include <stddef.h>
 
-/* Detects "NAME=VALUE" (NAME a valid identifier: starts with a letter
- * or underscore, continues with letters/digits/underscores, followed
- * immediately by '=', no space before it -- "variable = x" is a
- * command named "variable" with arguments "=" "x", not an assignment,
- * same distinction real shells make and learnxinyminutes.com/bash
- * calls out explicitly). On a match, sets *name and *value to
- * newly-malloc()'d strings (caller frees both) and returns true.
- *
- * Deliberately narrow for now: only recognizes a *whole command line*
- * that's just one assignment ("x=1"), not "x=1 command args" (a
- * temporary, command-scoped variable, real shells' own more advanced
- * case) -- that's a real, known gap, not an oversight.
+#include "ast.h"
+
+struct fieldv_s
+{
+  char **v;
+  int n;
+  int cap;
+};
+
+void fv_init(struct fieldv_s *f);
+void fv_add(struct fieldv_s *f, char *owned);   /* takes ownership */
+void fv_free(struct fieldv_s *f);
+
+/* A pattern is text plus a parallel array marking characters that were
+ * quoted (and so match literally). q may be NULL: nothing quoted.
  */
 
-bool is_assignment(FAR const char *token, FAR char **name, FAR char **value);
+struct pat_s
+{
+  char *s;
+  char *q;
+  size_t len;
+};
 
-/* Expands $NAME and ${NAME} references in 'token' against the current
- * environment (getenv()) -- unset variables expand to empty, same as
- * real shells. Returns a newly-malloc()'d string (caller frees) --
- * never modifies 'token' in place, since the expanded result can be a
- * different length than the original. 'in_single_quotes' skips
- * expansion entirely and just returns a copy, matching real shells:
- * single quotes suppress all expansion.
+/* expand.c */
+
+int expand_words(const struct word_s *w, struct fieldv_s *out);
+char *expand_word_str(const char *raw);       /* no split, no glob */
+char *expand_assign_str(const char *raw);     /* also ~ after ':' and '=' */
+char *expand_heredoc(const char *body);
+struct pat_s expand_pattern(const char *raw);
+void pat_free(struct pat_s *p);
+
+/* Runs a command substitution's text and returns its output with
+ * trailing newlines stripped (exec.c).
  */
 
-FAR char *expand_token(FAR const char *token, bool in_single_quotes);
+char *run_cmdsub(const char *text, size_t len);
+
+/* arith.c: returns 0 and stores the value, or -1 after printing why. */
+
+int arith_eval(const char *expr, long *result);
+
+/* glob.c */
+
+bool pat_match(const char *p, const char *pq, size_t plen, const char *str);
+bool pat_has_glob(const char *p, const char *pq, size_t plen);
+int glob_expand(const char *p, const char *pq, size_t plen,
+                struct fieldv_s *out);
 
 #endif

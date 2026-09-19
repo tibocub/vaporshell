@@ -34,55 +34,85 @@ and open questions -- this file is the short version.
 
 ## LAYOUT
 
+[#layout](#layout)
+
 ```
 vaporshell/
-  vaporshell_main.c    entry point + interactive loop
-  tokenize.c            whitespace/quote tokenizing
-  dispatch.c            the tbx multicall command table
-  help.c                the help builtin
-  script.c              script-file execution
-  builtins.c            cd, ./source, help
-  exec.c                PATH resolution + posix_spawnp
-  expand.c              $VAR/${VAR} expansion, assignment
-  subst.c                command substitution ($(...), `...`)
-  line.c                 splits/runs a line (;, &&, ||)
-  pipeline.c             cmd1 | cmd2 | cmd3 execution
-  control.c              if/then/elif/else/fi
-  loops.c                for/while/until
-  case.c                 case/esac
-  control_internal.h     shared control-flow scanning
-  vaporshell.h          shared header
-  Kconfig, Makefile     standard NuttX app-directory shape
-  docs/design.md        the real design doc -- read this first for
-                        anything non-trivial
+  vaporshell_main.c   entry point, interactive loop, -c / script / stdin
+  lexer.c parser.c    text -> tokens -> AST (POSIX grammar); parse.h
+  wordscan.c          where quotes / ${} / $() end -- shared by lexer + expander
+  ast.h arena.c       the AST, and the arena it lives in
+  expand.c            word expansion (fields, IFS splitting, params, $(...))
+  arith.c             $(( )) evaluation
+  glob.c              patterns: globbing, case, ${x#pat}
+  exec.c redir.c      run an AST; redirections; command substitution
+  vars.c              variable table, positional parameters, functions
+  builtins.c test.c   the builtin table; test / [
+  traps.c             trap, kill
+  help.c              help (reads the builtin table)
+  util.c              allocation, string buffers, errors
+  platform.h          what differs between NuttX and a host OS
+  platform_nuttx.c    NuttX: no fork, posix_spawnp, tbx fallback (dispatch.c)
+  posix/              standalone build only: platform.c (fork, PATH, spawn),
+                      readline.c, and stand-in <nuttx/...> headers
+  posix.mk            standalone build (see BUILD)
+  Kconfig, Makefile   standard NuttX app-directory shape
+  docs/design.md      the design doc -- read this first for anything non-trivial
+  tests/              own/ (vs bash), smoosh corpus, posix-check.sh, smoosh-check.sh
 ```
 
-Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx)
-as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for
-`toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
+Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx) as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for `toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
 wired in automatically.
 
+## BUILD
+
+[#build](#build)
+
+NuttX: unchanged -- the `Makefile` is NuttX's app-directory shape and is
+used whenever `APPDIR` is set.
+
+Standalone (Linux, macOS, BSD), from a plain checkout:
+
+```
+make -f posix.mk            # build/vaporshell   (or just `make`)
+make check                  # tests/own vs bash
+make check-smoosh           # the smoosh POSIX corpus, regressions named
+make check-asan             # same tests under ASan + UBSan
+make strict                 # fortify off, -Werror (what Fedora sees)
+```
 
 ## STATUS
 
-Interactive and script use both work: tokenizing, quoting (including
-mid-token, e.g. `name="tibo smith"`), backslash escaping, `#`
-comments, `$VAR`/`${VAR}`/`$?` expansion, command substitution
-(`$(...)` and `` `...` ``), variable assignment, `;`/`&&`/`||`/`|`
-(real pipelines), `.`/`source`, `test`/`[` (comparison, string
-comparison, and file test operators), and full control flow --
-`if`/`then`/`elif`/`else`/`fi`, `for`/`while`/`until`/`done`, and
-`case`/`esac` -- all working single-line, multi-line, and nested. See
-the TODO below for the real, current gap list -- kept accurate and
-updated as things get implemented, not left to go stale.
+[#status](#status)
+
+The front end is a real lexer + parser producing an AST, and an executor
+that walks it -- not text rescanning. Words keep their quoting until
+expansion, so one word can become many fields (IFS splitting, `"$@"`,
+globbing). Variables live in a table, not in `environ`: only exported ones
+reach a child. See `docs/design.md`, "Architecture".
+
+Working: quoting, all POSIX expansions (parameter operators, `$(...)`,
+backticks, `$(( ))`, tilde, field splitting, pathname expansion), all
+POSIX redirections and here-documents, pipelines, `&&`/`||`/`!`, `;`/`&`,
+`if`/`for`/`while`/`until`/`case`, `{ }`, `( )`, functions, positional
+parameters, `break`/`continue N`/`return`, `set -e -u -x -f -C`, `trap`
+(EXIT and signals), and the builtins in `help`.
+
+Smoosh corpus (`make check-smoosh`): 145 of 184 by a rough pass rule (see
+`tests/smoosh-check.sh`); dash scores 147 and `bash --posix` 143 by the
+same rule. The rest are listed in `tests/smoosh-known-failures.txt`.
+
+Platform notes: on the standalone build `( )`, `&`, pipelines with
+builtins/functions, and `$(...)` fork. NuttX has no `fork()`, so there
+those cases are limited (`$(...)` runs a child `vaporshell -c`, and
+variables are exported so it can see them; `( )`, `&` and non-external
+pipeline stages report "not supported on this platform yet"). The NuttX
+platform layer has not been built or run since the rewrite.
 
 Also worth knowing: `CONFIG_LINE_MAX` (vaporOS-nuttx's own build.sh)
-needs to be raised from NuttX's own default of 80 for any of this to
-be usable interactively past a short line -- `readline()` itself
-allocates exactly `LINE_MAX` bytes and silently truncates anything
-longer, confirmed directly the hard way (a `while` loop typed on one
-line kept losing its own trailing text at exactly the 79th character
-until this was raised).
+still needs to be raised from NuttX's default of 80 for interactive input,
+because `readline()` there truncates at exactly `LINE_MAX`. Script files
+and `-c` strings have no such limit.
 
 ## TODO
 
@@ -95,22 +125,10 @@ is invisible while that priority order gets worked through. Updated
 whenever something gets implemented -- if this drifts from reality,
 treat that as a bug in the list, not in the code.
 
-**Two corrections from the previous version of this list**, found
-while implementing `test`/`[`:
-- `[[ ]]` was checked off, but isn't actually true: `[[` is not
-  registered in vaporshell's own dispatch table (`test` and `[` are;
-  `[[` isn't), so `[[ ... ]]` fails with "command not found" today.
-  Even once registered, toybox's own `test.c` (which is what runs
-  under all three names) doesn't implement `[[`'s *real* bash
-  semantics -- unquoted `<`/`>` without needing escaping, no word
-  splitting or globbing on the arguments, `=~` regex matching with
-  bash's own quoting rules -- it just treats `[[` as another name
-  alias for plain `test`. Real `[[ ]]` needs its own parsing path in
-  vaporshell, not just a dispatch table entry.
-- `( )` was checked off, but that's conflating it with `$(...)`
-  (command substitution, genuinely done). Subshells -- `( cmd1; cmd2 )`
-  running in an isolated child environment, e.g. so a `cd` inside
-  doesn't affect the calling shell -- were never implemented at all.
+**Note on `[[ ]]`:** `[[` is a keyword with its own grammar (no word
+splitting or globbing inside, unquoted `<`/`>`, `=~`), not just another
+name for `test`. It needs its own parsing path in the parser; `test` and
+`[` are done and are in the builtin table.
 
 ### Basic shell features
 - [x] execute a script file
@@ -130,16 +148,16 @@ while implementing `test`/`[`:
       waitpid() got called (confirmed directly in NuttX's own Kconfig
       help text for that option), which pipelines hit routinely since
       every stage has to be spawned before any of them are waited on
-- [ ] redirection: `>`, `<`, `>>`, `2>`, `2>&1`, `&>`, `n>&m`
-- [ ] here-documents (`<<`) and here-strings (`<<<`)
+- [x] redirection: `>`, `<`, `>>`, `2>`, `2>&1`, `&>`, `n>&m` -- `&>` (bash) not yet
+- [x] here-documents (`<<`) and here-strings (`<<<`) -- `<<` and `<<-` done; here-strings (bash) not yet
 - [ ] process substitution (`<(...)`, `>(...)`)
-- [ ] subshells: `( cmd1; cmd2 )` in an isolated child environment
-- [ ] command grouping: `{ cmd1; cmd2; }` in the *current* environment
+- [x] subshells: `( cmd1; cmd2 )` in an isolated child environment
+- [x] command grouping: `{ cmd1; cmd2; }` in the *current* environment
       (distinct from subshells -- no isolation, just sequencing)
-- [ ] globbing / wildcard expansion (`*`, `?`, `[...]`)
+- [x] globbing / wildcard expansion (`*`, `?`, `[...]`)
 - [ ] brace expansion (`{a,b,c}`, `{1..5}`)
-- [ ] tilde expansion (`~`, `~user`)
-- [ ] background execution (`&`) and `jobs`/`fg`/`bg`/`wait` -- real
+- [x] tilde expansion (`~`, `~user`)
+- [x] background execution (`&`) and `jobs`/`fg`/`bg`/`wait` -- real -- `&` and `wait` done (standalone build only); no job control (`jobs`/`fg`/`bg`) yet
       job control depends on process groups, which NuttX itself only
       stubs (see `docs/c-posix-compatibility.md` in vaporOS-nuttx);
       worth revisiting what's actually achievable here specifically
@@ -171,35 +189,35 @@ while implementing `test`/`[`:
       text, `*`, `?`, and `|` alternation; bracket expressions
       (`[abc]`/`[a-z]`) are a real, known gap, not implemented
 - [ ] `select ...; do ...; done` (bash-specific menu construct)
-- [ ] `break` / `continue` (including `break N` / `continue N`)
+- [x] `break` / `continue` (including `break N` / `continue N`)
 - [ ] real `[[ ... ]]` semantics (see correction above)
 
 ### Functions
-- [ ] `name() { ...; }` / `function name { ...; }`
+- [x] `name() { ...; }` / `function name { ...; }` -- `name() { ...; }` done; the bash `function name` form not yet
 - [ ] `local` (function-scoped variables)
-- [ ] `return`
-- [ ] recursion
+- [x] `return`
+- [x] recursion
 
 ### Special variables / positional parameters
-- [ ] `$0` (script/shell name), `$1`-`$9`, `${10}`+ (positional args)
-- [ ] `$#` (argument count)
-- [ ] `$*` / `$@` (all positional args -- and the real, easy-to-get-
+- [x] `$0` (script/shell name), `$1`-`$9`, `${10}`+ (positional args)
+- [x] `$#` (argument count)
+- [x] `$*` / `$@` (all positional args -- and the real, easy-to-get-
       wrong difference between them under `"$*"` vs `"$@"` quoting)
 - [x] `$?` (exit status of the last command) -- kept current per
       *segment*, not just once per line, so `false; echo $?` correctly
       sees `false`'s status rather than whatever the previous line
       left behind
-- [ ] `$$` (this shell's PID)
-- [ ] `$!` (PID of the last background job)
+- [x] `$$` (this shell's PID)
+- [x] `$!` (PID of the last background job)
 - [ ] `$_` (last argument of the previous command)
-- [ ] `shift`
-- [ ] `set --` (rewriting positional parameters)
+- [x] `shift`
+- [x] `set --` (rewriting positional parameters)
 
 ### Arithmetic
-- [ ] `$(( ))` arithmetic expansion
+- [x] `$(( ))` arithmetic expansion
 - [ ] `(( ))` as a command/conditional (exit status from truthiness)
 - [ ] `let`
-- [ ] compound assignment inside arithmetic contexts (`+=`, `-=`,
+- [x] compound assignment inside arithmetic contexts (`+=`, `-=`, -- `+=` `-=` etc. done; `++`/`--` not yet
       `*=`, `/=`, `%=`, `++`, `--`)
 
 ### Arrays
@@ -208,13 +226,13 @@ while implementing `test`/`[`:
 - [ ] associative arrays: `declare -A`, `${assoc[key]}`
 
 ### Parameter expansion (string manipulation)
-- [ ] `${var:-default}` / `${var:=default}` / `${var:?msg}` /
+- [x] `${var:-default}` / `${var:=default}` / `${var:?msg}` /
       `${var:+alt}`
-- [ ] `${#var}` (string length)
+- [x] `${#var}` (string length)
 - [ ] `${var:offset}` / `${var:offset:length}` (substring)
-- [ ] `${var#pattern}` / `${var##pattern}` (remove shortest/longest
+- [x] `${var#pattern}` / `${var##pattern}` (remove shortest/longest
       matching prefix)
-- [ ] `${var%pattern}` / `${var%%pattern}` (remove shortest/longest
+- [x] `${var%pattern}` / `${var%%pattern}` (remove shortest/longest
       matching suffix)
 - [ ] `${var/pat/repl}` / `${var//pat/repl}` (replace first/all)
 - [ ] `${var^}` / `${var^^}` / `${var,}` / `${var,,}` (case conversion)
@@ -222,17 +240,17 @@ while implementing `test`/`[`:
 
 ### Builtins
 - [x] `cd`, `exit`/`quit`, `help`, `.`/`source`
-- [ ] `read`
-- [ ] `export`, `unset`, `readonly`
+- [x] `read`
+- [x] `export`, `unset`, `readonly`
 - [ ] `declare`/`typeset`, `local`
 - [ ] `alias`/`unalias`
-- [ ] `trap`
-- [ ] `eval`
-- [ ] `exec` (replacing the shell process, and fd manipulation)
+- [x] `trap`
+- [x] `eval`
+- [x] `exec` (replacing the shell process, and fd manipulation)
 - [ ] `getopts`
-- [ ] `set` (shell options: `-e`, `-u`, `-x`, `-o pipefail`, ...)
+- [x] `set` (shell options: `-e`, `-u`, `-x`, `-o pipefail`, ...) -- `-e -u -x -f -C` and `-o` names done; `pipefail` not yet
 - [ ] `shopt` (bash-specific shell options)
-- [ ] `type`, `command`, `builtin`, `hash`
+- [x] `type`, `command`, `builtin`, `hash` -- `type` and `command` done; `builtin` and `hash` not yet
 - [ ] `times`, `ulimit`, `disown`
 
 ### Interactive quality-of-life (GOALS' own "once POSIX is solid" tier)
@@ -245,13 +263,13 @@ while implementing `test`/`[`:
 
 ### File Test Operators
 - [x] `-e`, `-d`, `-f`
-- [ ] `-r`, `-w`, `-x` (readable/writable/executable)
-- [ ] `-h`/`-L` (symlink) -- blocked on NuttX itself: no symlink
+- [x] `-r`, `-w`, `-x` (readable/writable/executable)
+- [x] `-h`/`-L` (symlink) -- blocked on NuttX itself: no symlink -- works via `lstat` on the standalone build; still blocked on NuttX itself
       support at the VFS layer at all (confirmed directly, see
       `docs/c-posix-compatibility.md`), not something fixable in
       vaporshell/toybox alone
-- [ ] `-s` (non-empty)
-- [ ] `-nt` / `-ot` / `-ef` (newer/older/same-file) -- these are
+- [x] `-s` (non-empty)
+- [x] `-nt` / `-ot` / `-ef` (newer/older/same-file) -- these are
       already implemented in the ported `test.c` itself (upstream
       toybox has them); just not yet exercised/confirmed on-device
 

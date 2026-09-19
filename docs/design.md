@@ -290,3 +290,58 @@ move into this repo).
    `READLINE_EDIT` decision above).
 5. Clipboard -- only after the open question above is actually
    answered, not before.
+
+
+## Architecture (engine rewrite)
+
+The first version re-scanned command text: every feature carried its own
+quote-tracking loop, quoting was lost at tokenization (`echo '$x'"$x"`
+expanded wrongly), expansion was strictly one token to one argument (so no
+field splitting, globbing or `"$@"` was possible), and variables lived in
+`environ`. That could not grow into POSIX, let alone bash, so the front end
+was replaced. Layers, each calling only downward:
+
+    input lines --> lexer --> parser --> AST --> executor --> platform
+                      |         |                  |  ^
+                      +- wordscan.c (one place that knows quoting)
+                                       expand.c ---+  (words -> fields)
+                                       vars.c, builtins.c, redir.c
+
+- **Words stay raw** in the AST (quotes and `$` constructs intact).
+  `wordscan.c` finds where `'..'`, `".."`, `${..}`, `$(..)`, `$((..))` and
+  backticks end; both the lexer and the expander use it. `$(` is scanned by
+  running the real parser (a `)` inside a `case` pattern is legal).
+- **Expansion builds fields whose characters each carry a "quoted" flag.**
+  Unquoted expansion results are IFS-split as they are added, unquoted glob
+  characters are active in pathname expansion, and quote removal is just
+  dropping the flags.
+- **Input is line-callback based**, so the same parser serves the
+  interactive prompt (PS1/PS2), script files (any line length), `-c`
+  strings and `eval`. It asks for another line only when a construct cannot
+  end yet, and heredoc bodies are read when the newline after `<<EOF` is
+  consumed.
+- **Control flow is state, not jumps:** `g_sh.unwind` (break / continue /
+  return / exit) is checked after each command. `set -e` is a counter of
+  contexts where failure is expected.
+- **Redirections** are applied in the shell process and undone afterwards,
+  so builtins, functions, compound commands and external programs share one
+  mechanism.
+- **Platform layer** (`platform.h`): the only code that differs between
+  NuttX and a host OS. Host: `fork` for subshells, `&`, pipelines and
+  command substitution, own PATH search, `posix_spawn`. NuttX: no `fork`
+  (only the sim has one), so those constructs are limited -- an in-process
+  subshell (snapshot/restore of variables, cwd and fds) is the intended fix
+  and is not built yet.
+- **Out of memory is fatal** (`vs_xmalloc`), which keeps every caller free
+  of NULL checks.
+
+### Modes (planned, not built)
+
+POSIX and bash are meant to share this pipeline, with a single options
+struct consulted in three places: the lexer/parser (keywords and operators
+such as `[[`, `((`, `<<<`), the expander (extra `${}` operators, brace
+expansion, arrays) and the builtin table (a per-entry mode). Some
+behaviour differs by semantics, not syntax -- e.g. `break` inside a
+function (bash breaks the caller's loop, dash does not; today the bash
+behaviour is implemented) and `echo`'s escape handling -- so the options
+struct must be able to change semantics as well as enable syntax.
