@@ -126,3 +126,107 @@ void sb_free(struct sbuf_s *b)
   free(b->s);
   sb_init(b);
 }
+
+/* ---- Paths -------------------------------------------------------------- */
+
+/* Lexically resolves "." and ".." (no symlink lookups), making 'path'
+ * absolute against 'cwd' if it is relative. Returns 0, or -1 if 'out' is
+ * too small. This is what POSIX `cd -L` needs, and what NuttX needs before
+ * handing any path with dots to its VFS.
+ */
+
+int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n)
+{
+  size_t len = 0;
+  const char *p;
+
+  if (n < 2)
+    {
+      return -1;
+    }
+
+  out[0] = '/';
+  out[1] = '\0';
+  len = 1;
+
+  p = path;
+  if (path[0] != '/' && cwd != NULL)
+    {
+      /* Start from the working directory: normalize it first. */
+
+      if (vs_path_normalize("/", cwd, out, n) != 0)
+        {
+          return -1;
+        }
+
+      len = strlen(out);
+    }
+
+  while (*p != '\0')
+    {
+      const char *e;
+      size_t clen;
+
+      while (*p == '/')
+        {
+          p++;
+        }
+
+      e = p;
+      while (*e != '\0' && *e != '/')
+        {
+          e++;
+        }
+
+      clen = (size_t)(e - p);
+      if (clen == 0)
+        {
+          break;
+        }
+
+      if (clen == 1 && p[0] == '.')
+        {
+          /* nothing */
+        }
+      else if (clen == 2 && p[0] == '.' && p[1] == '.')
+        {
+          while (len > 1 && out[len - 1] != '/')
+            {
+              len--;
+            }
+
+          if (len > 1)
+            {
+              len--;                /* the '/' before the removed component */
+            }
+
+          out[len] = '\0';
+        }
+      else
+        {
+          if (len + 1 + clen + 1 > n)
+            {
+              return -1;
+            }
+
+          if (len > 1)
+            {
+              out[len++] = '/';
+            }
+
+          memcpy(out + len, p, clen);
+          len += clen;
+          out[len] = '\0';
+        }
+
+      p = e;
+    }
+
+  if (len == 0)
+    {
+      out[0] = '/';
+      out[1] = '\0';
+    }
+
+  return 0;
+}

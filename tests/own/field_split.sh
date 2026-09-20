@@ -22,4 +22,4 @@ echo *.txt; echo *; echo .h*; echo */*.txt; echo "*.txt" '*.txt' \*.txt; echo [a
 echo nomatch*.zzz
 set -f; echo *.txt; set +f
 q='*.txt'; echo $q "$q"
-cd ..; rm -rf gdir
+cd ..; rm -rf gdir 2>/dev/null

@@ -55,6 +55,9 @@ struct token_s
   enum tok_e type;
   char *text;                 /* T_WORD / T_IO_NUMBER, arena-allocated */
   bool quoted;                /* the word contained quoting characters */
+  size_t start;               /* offsets into lexer buf: [start, end) */
+  size_t end;
+  int line;                   /* 1-based source line of the token */
 };
 
 struct hd_pending_s
@@ -76,6 +79,9 @@ struct lexer_s
   struct hd_pending_s *hd_head;   /* heredocs waiting for their bodies */
   char err[160];
   bool err_eof;               /* the error is "input ended too early" */
+  int line_base;              /* newlines in text already dropped from buf */
+  size_t lc_off;              /* cache: newlines counted up to this offset */
+  int lc_line;
 };
 
 struct parser_s
@@ -86,6 +92,18 @@ struct parser_s
   int depth;
   char err[160];
   bool err_eof;
+
+  /* Alias expansion (see try_alias in parser.c). */
+
+  bool no_alias;              /* nested look-ahead parsers must not splice */
+  bool alias_blank;           /* the last alias ended in a blank */
+  size_t alias_blank_pos;
+  struct
+  {
+    const char *name;
+    size_t end;               /* buf offset where this expansion's text ends */
+  } aa[8];
+  int naa;
 };
 
 enum parse_result_e

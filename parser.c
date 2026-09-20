@@ -409,10 +409,119 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
   return fn;
 }
 
+
+/* ---- Alias expansion ------------------------------------------------------
+ *
+ * POSIX substitutes an alias by re-reading its text in place of the word,
+ * which is exactly what this does: the token is cut out of the lexer buffer
+ * and the alias text spliced in, then lexing resumes at the same offset. A
+ * name is not expanded again while the parser is still inside its own text
+ * (recursion), tracked by the buffer offset where each expansion ends.
+ */
+
+static bool is_reserved_word(const char *w)
+{
+  static const char *const words[] =
+  {
+    "if", "then", "else", "elif", "fi", "do", "done", "case", "esac",
+    "while", "until", "for", "in", "{", "}", "!"
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+    {
+      if (strcmp(w, words[i]) == 0)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static bool try_alias(struct parser_s *p, struct token_s *t)
+{
+  struct lexer_s *lx = &p->lx;
+  const struct alias_s *al;
+  size_t start = t->start;
+  size_t end = t->end;
+  size_t vlen;
+  size_t newlen;
+  int i;
+  int k;
+
+  if (p->no_alias || t->type != T_WORD || t->quoted || g_sh.aliases == NULL ||
+      !(g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS)) ||
+      is_reserved_word(t->text))
+    {
+      return false;
+    }
+
+  al = alias_find(t->text);
+  if (al == NULL)
+    {
+      return false;
+    }
+
+  /* Forget expansions we have left; refuse one we are inside. */
+
+  for (i = 0, k = 0; i < p->naa; i++)
+    {
+      if (p->aa[i].end > start)
+        {
+          p->aa[k++] = p->aa[i];
+        }
+    }
+
+  p->naa = k;
+  for (i = 0; i < p->naa; i++)
+    {
+      if (strcmp(p->aa[i].name, t->text) == 0)
+        {
+          return false;
+        }
+    }
+
+  vlen = strlen(al->value);
+  newlen = lx->len - (end - start) + vlen;
+  if (newlen + 1 > lx->cap)
+    {
+      lx->cap = (newlen + 1) * 2;
+      lx->buf = vs_xrealloc(lx->buf, lx->cap);
+    }
+
+  memmove(lx->buf + start + vlen, lx->buf + end, lx->len - end);
+  memcpy(lx->buf + start, al->value, vlen);
+  lx->len = newlen;
+  lx->pos = start;
+  lx->lc_off = 0;
+  lx->lc_line = 0;
+
+  /* Enclosing expansions grow or shrink with the splice. */
+
+  for (i = 0; i < p->naa; i++)
+    {
+      p->aa[i].end = p->aa[i].end - (end - start) + vlen;
+    }
+
+  if (p->naa < (int)(sizeof(p->aa) / sizeof(p->aa[0])))
+    {
+      p->aa[p->naa].name = al->name;
+      p->aa[p->naa].end = start + vlen;
+      p->naa++;
+    }
+
+  p->alias_blank = vlen > 0 && (al->value[vlen - 1] == ' ' || al->value[vlen - 1] == '\t');
+  p->alias_blank_pos = start + vlen;
+  p->have = false;
+  return true;
+}
+
 static struct node_s *parse_simple(struct parser_s *p)
 {
   struct node_s *n = new_node(p, N_SIMPLE);
   struct word_s **wtail = &n->words;
+  bool first = true;
   struct word_s **atail = &n->assigns;
   struct redir_s **rtail = &n->redirs;
   bool seen_word = false;
@@ -424,6 +533,38 @@ static struct node_s *parse_simple(struct parser_s *p)
       if (p->err[0] != '\0')
         {
           return NULL;
+        }
+
+      if (first)
+        {
+          n->line = t->line;
+          first = false;
+        }
+
+      /* After an alias whose text ends in a blank the next word is looked
+       * at for aliases too (POSIX 2.3.1).
+       */
+
+      if (t->type == T_WORD && seen_word && p->alias_blank &&
+          t->start >= p->alias_blank_pos)
+        {
+          size_t at = t->start;
+
+          p->alias_blank = false;
+          if (try_alias(p, t))
+            {
+              if (!p->alias_blank)
+                {
+                  /* The replacement's own first word is also "the next
+                   * word": x -> y -> `echo second` (dash does this).
+                   */
+
+                  p->alias_blank = true;
+                  p->alias_blank_pos = at;
+                }
+
+              continue;
+            }
         }
 
       if (is_redir_tok(t->type))
@@ -704,6 +845,11 @@ static struct node_s *parse_command(struct parser_s *p)
   struct node_s *n = NULL;
   struct token_s *t = peek(p);
 
+  while (t->type == T_WORD && try_alias(p, t))
+    {
+      t = peek(p);
+    }
+
   if (++p->depth > MAX_DEPTH)
     {
       snprintf(p->err, sizeof(p->err), "syntax error: nesting too deep");
@@ -960,13 +1106,27 @@ enum parse_result_e parse_command_line(struct parser_s *p,
   p->err[0] = p->lx.err[0] = '\0';
   p->err_eof = p->lx.err_eof = false;
   p->depth = 0;
+  p->naa = 0;
+  p->alias_blank = false;
 
   if (!p->have)
     {
       p->lx.fresh = (p->lx.pos >= p->lx.len);
       if (p->lx.fresh)
         {
+          size_t k;
+
+          for (k = 0; k < p->lx.len; k++)
+            {
+              if (p->lx.buf[k] == '\n')
+                {
+                  p->lx.line_base++;
+                }
+            }
+
           p->lx.pos = p->lx.len = 0;
+          p->lx.lc_off = 0;
+          p->lx.lc_line = 0;
         }
     }
 
@@ -1022,6 +1182,7 @@ int ws_skip_cmdsub(const char *s, size_t len, size_t i, size_t *end)
   parser_init_mem(&sub, s + i, len - i);
   sub.lx.arena = arena;
   sub.lx.fresh = false;
+  sub.no_alias = true;          /* the text is only being measured */
 
   parse_list(&sub, true);
   if (sub.err[0] != '\0')

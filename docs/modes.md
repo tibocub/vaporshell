@@ -15,9 +15,12 @@ original language -- should be additions, not forks.
 
 ## 2. Measured differences [measured]
 
-Probed with bash 5.2.21, `bash --posix`, and dash 0.5.12 (Ubuntu 24.04; the
-target is bash 5.3 -- re-measure the bash columns when a 5.3 is at hand), and
-vaporshell before/after this change (`tests/modes/` holds each as a test).
+Probed with bash 5.2.21, `bash --posix`, and dash 0.5.12 (Ubuntu 24.04), and
+re-measured with bash 5.3.0 built from source: the only row that changed
+between the two bash versions is the function name (bash's NEWS item *tt*).
+vaporshell's behaviour is checked by `tests/modes/`, one test per row.
+`docs/bash-coverage.md` and `docs/posix-coverage.md` hold the much larger,
+generated measurement of everything else.
 "POSIX here" means what the standard requires; where `bash --posix` and dash
 disagree the strict reading (dash) is what our POSIX profile follows.
 
@@ -28,7 +31,7 @@ disagree the strict reading (dash) is what our POSIX profile follows.
 | function overrides a special builtin           | yes     | no           | no           | mode-dependent    |
 | syntax error in `eval` exits                   | no      | yes          | yes          | mode-dependent    |
 | `.` falls back to the current dir              | yes     | no           | no           | mode-dependent    |
-| function name `foo-bar`                        | allowed | rejected     | rejected     | mode-dependent    |
+| function name `foo-bar`                        | allowed | rejected in 5.2, **allowed in 5.3** | rejected | mode-dependent |
 | `$(...)` inherits `set -e`                     | no      | yes          | yes          | mode-dependent    |
 | `[ a == a ]`                                   | true    | true         | error        | mode-dependent    |
 | `&>file` is a redirect                         | yes     | **yes**      | no (`&`,`>`) | mode-dependent    |
@@ -42,17 +45,24 @@ Two things this table taught us, both now recorded as tests:
   vaporshell only because they exercised the common ground; nothing forced a
   choice. Now every row above is a named feature (`mode.h`) and a test.
 - `bash --posix` is not strict POSIX (`&>`, `==`, brace expansion stay on).
-  So "POSIX mode" needs its own reference: `tests/modes/posix/` is checked
-  against `bash --posix`, `tests/modes/posix-strict/` against dash.
+  So "POSIX mode" needs its own reference: dash. `tests/modes/posix/` and
+  `tests/own` (run with `--posix`) are checked against dash; the bash-mode
+  suites against bash. (5.3 made `bash --posix` looser still, which is the
+  function-name row above.)
+
+Built since (each a feature bit, with a test): `local`, `getopts`, `hash`,
+`alias`/`unalias` (POSIX mode expands aliases in scripts, bash mode does not),
+`echo`/`printf` (deeply different in the two dialects), `ulimit`, `times`,
+`$LINENO`, `set -o pipefail`/`-a`/`-n`/`-v`, `let`, `builtin`, `type -t`,
+`read -p -n -d -t`, `test -v`, `$_`, computed variables (`RANDOM`, `SECONDS`,
+`BASH_VERSION`, ...), and arithmetic `**`, comma, `base#n`, `++`/`--`.
 
 Still bash-only and not built (each will become a feature bit, [plan]):
 `[[ ]]`, `(( ))`, arrays and associative arrays, `${x:o:l}` `${x/p/r}`
 `${x^^}` `${!x}`, brace expansion, process substitution, `<<<`, `$'...'`,
-`local`/`declare`/`typeset`, `function name {`, `time`, `select`,
-`coproc`, `;&` `;;&`, extglob, `**` and `++`/`--` in arithmetic, `$RANDOM`
-`$BASH_*`, aliases in scripts (POSIX requires them, so this one is a
-POSIX-side gap too). Missing POSIX pieces: `$LINENO`, `getopts`, `hash`,
-`alias`, `echo`/`printf` builtins, `ulimit`, `times`.
+`declare`/`typeset`, `function name {`, `time`, `select`, `coproc`, `;&`
+`;;&`, extglob, `shopt`, `pushd`/`popd`, `mapfile`, `trap ERR/DEBUG`.
+Missing POSIX pieces: job control (`jobs`, `fg`, `bg`), `fc`, `ulimit -a`.
 
 ## 3. The model [built]
 

@@ -12,6 +12,9 @@
 #include <nuttx/config.h>
 #include <errno.h>
 #include <limits.h>
+#ifdef VAPORSHELL_POSIX
+#  include <poll.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,6 +133,13 @@ static int bi_return(int argc, char **argv)
       status = 2;
     }
 
+  if (g_sh.func_depth == 0 && g_sh.dot_depth == 0 &&
+      vs_feat(VF_RETURN_TOPLEVEL_ERR))
+    {
+      vs_err("return: can only `return' from a function or sourced script");
+      return 2;
+    }
+
   g_sh.last_status = status & 0xff;
   g_sh.unwind = UW_RETURN;
   return g_sh.last_status;
@@ -230,7 +240,7 @@ static char *find_sourced(const char *name)
         }
 
       sb_adds(&cand, name);
-      if (stat(cand.s, &st) == 0 && S_ISREG(st.st_mode))
+      if (stat(VS_FS(cand.s), &st) == 0 && S_ISREG(st.st_mode))
         {
           return sb_take(&cand);
         }
@@ -269,6 +279,11 @@ static int bi_dot(int argc, char **argv)
       return 1;
     }
 
+  if (argc > 2 && !vs_feat(VF_DOT_ARGS))
+    {
+      argc = 2;                   /* dash 0.5.12 ignores them */
+    }
+
   if (argc > 2)
     {
       args = vs_xmalloc((size_t)(argc - 2) * sizeof(char *));
@@ -281,7 +296,9 @@ static int bi_dot(int argc, char **argv)
     }
 
   g_sh.syntax_error = false;
+  g_sh.dot_depth++;
   status = run_file(file);
+  g_sh.dot_depth--;
   if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
       !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
@@ -325,6 +342,7 @@ static int bi_shift(int argc, char **argv)
   if (n > g_sh.npos)
     {
       vs_err("shift: shift count out of range");
+      vs_special_error();
       return 1;
     }
 
@@ -336,6 +354,12 @@ static int bi_shift(int argc, char **argv)
   memmove(g_sh.pos, g_sh.pos + n, (size_t)(g_sh.npos - n) * sizeof(char *));
   g_sh.npos -= n;
   return 0;
+}
+
+static int cmp_var_name(const void *a, const void *b)
+{
+  return strcmp((*(struct var_s *const *)a)->name,
+                (*(struct var_s *const *)b)->name);
 }
 
 /* export / readonly: NAME[=VALUE]..., or -p / no arguments to list. */
@@ -382,6 +406,66 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
 
         free(name);
       }
+    }
+
+  if (list && vs_feat(VF_BASH_INFO_FORMATS))
+    {
+      /* bash: sorted `declare -x NAME="value"` lines. */
+
+      struct var_s **vec;
+      struct var_s *v;
+      size_t n = 0;
+      size_t k;
+
+      for (v = g_sh.vars; v != NULL; v = v->next)
+        {
+          n += (v->flags & flag) != 0;
+        }
+
+      vec = vs_xmalloc((n + 1) * sizeof(*vec));
+      n = 0;
+      for (v = g_sh.vars; v != NULL; v = v->next)
+        {
+          if ((v->flags & flag) != 0)
+            {
+              vec[n++] = v;
+            }
+        }
+
+      qsort(vec, n, sizeof(*vec), cmp_var_name);
+      for (k = 0; k < n; k++)
+        {
+          const char *p;
+
+          v = vec[k];
+          printf("declare -%s%s %s", (v->flags & VF_READONLY) != 0 ? "r" : "",
+                 (v->flags & VF_EXPORT) != 0 ? "x" : "", v->name);
+          if ((v->flags & (VF_READONLY | VF_EXPORT)) == 0)
+            {
+              fputs("", stdout);
+            }
+
+          if (v->value != NULL)
+            {
+              fputs("=\"", stdout);
+              for (p = v->value; *p != '\0'; p++)
+                {
+                  if (*p == '"' || *p == '\\' || *p == '$' || *p == '`')
+                    {
+                      putchar('\\');
+                    }
+
+                  putchar(*p);
+                }
+
+              putchar('"');
+            }
+
+          putchar('\n');
+        }
+
+      free(vec);
+      return status;
     }
 
   if (list)
@@ -471,38 +555,126 @@ static int set_option(char flag, bool on)
       case 'x': g_sh.opt_x = on; return 0;
       case 'f': g_sh.opt_f = on; return 0;
       case 'C': g_sh.opt_C = on; return 0;
+      case 'a': g_sh.opt_a = on; return 0;
+      case 'n': g_sh.opt_n = on; return 0;
+      case 'v': g_sh.opt_v = on; return 0;
+
+      /* Accepted, not implemented: monitor mode (no job control yet),
+       * asynchronous notification, ignoreeof.
+       */
+
+      case 'm':
+      case 'b':
+      case 'I': return 0;
       default:  return -1;
+    }
+}
+
+/* The named (-o) options. 'flag' is the single-letter form; pipefail has
+ * none. bash_only ones exist only where VF_SET_O_BASH does.
+ */
+
+static const struct
+{
+  const char *name;
+  char flag;
+  bool bash_only;
+} g_named_opts[] =
+{
+  { "allexport", 'a', false }, { "errexit", 'e', false },
+  { "noexec", 'n', false },    { "noglob", 'f', false },
+  { "nounset", 'u', false },   { "verbose", 'v', false },
+  { "xtrace", 'x', false },    { "noclobber", 'C', false },
+  { "pipefail", 0, true }
+};
+
+#define NNAMED ((int)(sizeof(g_named_opts) / sizeof(g_named_opts[0])))
+
+static bool named_opt_state(int i)
+{
+  switch (g_named_opts[i].flag)
+    {
+      case 'a': return g_sh.opt_a;
+      case 'e': return g_sh.opt_e;
+      case 'n': return g_sh.opt_n;
+      case 'f': return g_sh.opt_f;
+      case 'u': return g_sh.opt_u;
+      case 'v': return g_sh.opt_v;
+      case 'x': return g_sh.opt_x;
+      case 'C': return g_sh.opt_C;
+      default:  return g_sh.opt_pipefail;
     }
 }
 
 int vs_set_named_option(const char *name, bool on)
 {
-  if (strcmp(name, "posix") == 0)
+  int i;
+
+  if (strcmp(name, "posix") == 0 && vs_feat(VF_SET_O_BASH))
     {
       vs_mode_set(on ? VS_PROFILE_POSIX : VS_PROFILE_BASH);
       return 0;
     }
 
-  static const struct
-  {
-    const char *name;
-    char flag;
-  } names[] =
-  {
-    { "errexit", 'e' }, { "nounset", 'u' }, { "xtrace", 'x' },
-    { "noglob", 'f' }, { "noclobber", 'C' }
-  };
-  size_t i;
-
-  for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+  for (i = 0; i < NNAMED; i++)
     {
-      if (strcmp(name, names[i].name) == 0)
+      if (strcmp(name, g_named_opts[i].name) != 0)
         {
-          return set_option(names[i].flag, on);
+          continue;
         }
+
+      if (g_named_opts[i].bash_only && !vs_feat(VF_SET_O_BASH))
+        {
+          return -1;
+        }
+
+      if (g_named_opts[i].flag == 0)
+        {
+          g_sh.opt_pipefail = on;
+          return 0;
+        }
+
+      return set_option(g_named_opts[i].flag, on);
     }
 
   return -1;
+}
+
+/* `set -o` (human readable) and `set +o` (re-readable). */
+
+static void list_options(bool reusable)
+{
+  bool bash = vs_feat(VF_BASH_INFO_FORMATS);
+  int i;
+
+  if (!reusable && !bash)
+    {
+      puts("Current option settings");
+    }
+
+  for (i = 0; i < NNAMED; i++)
+    {
+      bool on;
+
+      if (g_named_opts[i].bash_only && !vs_feat(VF_SET_O_BASH))
+        {
+          continue;
+        }
+
+      on = named_opt_state(i);
+      if (reusable)
+        {
+          printf("set %co %s\n", on ? '-' : '+', g_named_opts[i].name);
+        }
+      else if (bash)
+        {
+          printf("%-15s\t%s\n", g_named_opts[i].name, on ? "on" : "off");
+        }
+      else
+        {
+          printf("%-15s %s\n", g_named_opts[i].name, on ? "on" : "off");
+        }
+    }
 }
 
 static int bi_set(int argc, char **argv)
@@ -544,12 +716,20 @@ static int bi_set(int argc, char **argv)
         }
 
       on = (a[0] == '-');
+      if (strcmp(a + 1, "o") == 0 && (i + 1 >= argc || argv[i + 1][0] == '-' ||
+                                      argv[i + 1][0] == '+'))
+        {
+          list_options(!on);
+          continue;
+        }
+
       if (strcmp(a + 1, "o") == 0)
         {
           if (i + 1 >= argc || vs_set_named_option(argv[i + 1], on) != 0)
             {
               vs_err("set: %s: invalid option name",
                      i + 1 < argc ? argv[i + 1] : "(missing)");
+              vs_special_error();
               return 2;
             }
 
@@ -565,6 +745,7 @@ static int bi_set(int argc, char **argv)
             if (set_option(*f, on) != 0)
               {
                 vs_err("set: %c%c: invalid option", a[0], *f);
+                vs_special_error();
                 return 2;
               }
           }
@@ -615,22 +796,71 @@ static int bi_exec(int argc, char **argv)
 
 /* ---- Regular builtins ------------------------------------------------------------------ */
 
-static int bi_cd(int argc, char **argv)
-{
-  const char *dir;
-  char cwd[512];
-  char *old;
-  bool print = false;
-  int i = 1;
+/* True if 'a' and 'b' name the same directory. */
 
-  while (i < argc && (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "-P") == 0))
+static bool same_dir(const char *a, const char *b)
+{
+  struct stat sa;
+  struct stat sb;
+
+  return stat(VS_FS(a), &sa) == 0 && stat(VS_FS(b), &sb) == 0 &&
+         sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+}
+
+/* The logical working directory: $PWD if it still names the cwd, else
+ * whatever the OS says. Returns false if neither is available.
+ */
+
+static bool logical_cwd(char *out, size_t n)
+{
+  const char *pwd = var_get("PWD");
+
+  if (pwd != NULL && pwd[0] == '/' && strlen(pwd) < n && same_dir(pwd, "."))
     {
-      i++;
+      strcpy(out, pwd);
+      return true;
     }
 
-  if (i < argc && strcmp(argv[i], "--") == 0)
+  return getcwd(out, n) != NULL;
+}
+
+/* cd [-L|-P] [dir | -]. -L (the default) works on the logical path: "."
+ * and ".." are resolved lexically against $PWD, as POSIX specifies, and
+ * $PWD keeps the logical result; -P resolves symlinks and sets $PWD from
+ * getcwd(). CDPATH is honoured for relative names.
+ */
+
+static int bi_cd(int argc, char **argv)
+{
+  bool physical = false;
+  bool print = false;
+  const char *dir;
+  const char *target;
+  char oldpwd[VS_PATH_MAX];
+  char curpath[VS_PATH_MAX];
+  char cdcand[VS_PATH_MAX];
+  int i = 1;
+
+  for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
     {
-      i++;
+      if (strcmp(argv[i], "-L") == 0)
+        {
+          physical = false;
+        }
+      else if (strcmp(argv[i], "-P") == 0)
+        {
+          physical = true;
+        }
+      else if (strcmp(argv[i], "--") == 0)
+        {
+          i++;
+          break;
+        }
+      else
+        {
+          vs_err("cd: %s: invalid option", argv[i]);
+          return 2;
+        }
     }
 
   if (i >= argc)
@@ -658,38 +888,130 @@ static int bi_cd(int argc, char **argv)
       dir = argv[i];
     }
 
-  old = getcwd(cwd, sizeof(cwd)) != NULL ? vs_xstrdup(cwd) : NULL;
-  if (chdir(dir) != 0)
+  if (dir[0] == '\0')
     {
-      vs_err("cd: %s: %s", dir, strerror(errno));
-      free(old);
+      vs_err("cd: null directory");
       return 1;
     }
 
-  if (old != NULL)
-    {
-      var_set("OLDPWD", old);
-    }
+  target = dir;
 
-  if (getcwd(cwd, sizeof(cwd)) != NULL)
+  /* CDPATH applies to names that are not absolute or explicitly relative. */
+
+  if (dir[0] != '/' && strcmp(dir, ".") != 0 && strcmp(dir, "..") != 0 &&
+      strncmp(dir, "./", 2) != 0 && strncmp(dir, "../", 3) != 0 &&
+      var_get("CDPATH") != NULL)
     {
-      var_set("PWD", cwd);
-      if (print)
+      const char *cp = var_get("CDPATH");
+
+      for (; ; )
         {
-          puts(cwd);
+          size_t len = strcspn(cp, ":");
+          struct stat st;
+
+          if (len == 0)
+            {
+              snprintf(cdcand, sizeof(cdcand), "./%s", dir);
+            }
+          else
+            {
+              snprintf(cdcand, sizeof(cdcand), "%.*s/%s", (int)len, cp, dir);
+            }
+
+          if (stat(VS_FS(cdcand), &st) == 0 && S_ISDIR(st.st_mode))
+            {
+              target = cdcand;
+              print = print || len > 0;
+              break;
+            }
+
+          if (cp[len] == '\0')
+            {
+              break;
+            }
+
+          cp += len + 1;
         }
     }
 
-  free(old);
+  if (!logical_cwd(oldpwd, sizeof(oldpwd)))
+    {
+      oldpwd[0] = '\0';
+    }
+
+  if (physical || oldpwd[0] == '\0')
+    {
+      if (chdir(VS_FS(target)) != 0)
+        {
+          vs_err("cd: %s: %s", dir, strerror(errno));
+          return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+        }
+
+      if (getcwd(curpath, sizeof(curpath)) == NULL)
+        {
+          curpath[0] = '\0';
+        }
+    }
+  else
+    {
+      if (vs_path_normalize(oldpwd, target, curpath, sizeof(curpath)) != 0 ||
+          chdir(VS_FS(curpath)) != 0)
+        {
+          vs_err("cd: %s: %s", dir, strerror(errno != 0 ? errno : ENAMETOOLONG));
+          return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+        }
+    }
+
+  if (oldpwd[0] != '\0')
+    {
+      var_set("OLDPWD", oldpwd);
+    }
+
+  if (curpath[0] != '\0')
+    {
+      var_set("PWD", curpath);
+      if (print)
+        {
+          puts(curpath);
+        }
+    }
+
   return 0;
 }
 
 static int bi_pwd(int argc, char **argv)
 {
-  char cwd[512];
+  bool physical = false;
+  char cwd[VS_PATH_MAX];
+  int i;
 
-  (void)argc;
-  (void)argv;
+  for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
+    {
+      if (strcmp(argv[i], "-P") == 0)
+        {
+          physical = true;
+        }
+      else if (strcmp(argv[i], "-L") == 0)
+        {
+          physical = false;
+        }
+      else if (strcmp(argv[i], "--") == 0)
+        {
+          break;
+        }
+      else
+        {
+          vs_err("pwd: %s: invalid option", argv[i]);
+          return 2;
+        }
+    }
+
+  if (!physical && logical_cwd(cwd, sizeof(cwd)))
+    {
+      puts(cwd);
+      return 0;
+    }
+
   if (getcwd(cwd, sizeof(cwd)) == NULL)
     {
       vs_err("pwd: %s", strerror(errno));
@@ -700,8 +1022,28 @@ static int bi_pwd(int argc, char **argv)
   return 0;
 }
 
+#ifdef VAPORSHELL_POSIX
+/* Waits up to ms for fd to be readable: 1 ready, 0 timed out. */
+
+static int wait_readable(int fd, long ms)
+{
+  struct pollfd pfd;
+
+  pfd.fd = fd;
+  pfd.events = POLLIN;
+  pfd.revents = 0;
+  return poll(&pfd, 1, (int)ms) > 0 ? 1 : 0;
+}
+#endif
+
 static int bi_read(int argc, char **argv)
 {
+  int rfd = STDIN_FILENO;
+  int delim = '\n';
+  long maxn = -1;
+  long timeout_ms = -1;
+  const char *prompt = NULL;
+  bool silent = false;
   bool raw = false;
   int i = 1;
   struct sbuf_s line;
@@ -722,6 +1064,25 @@ static int bi_read(int argc, char **argv)
         {
           i++;
           break;
+        }
+      else if (vs_feat(VF_READ_EXT) && strcmp(argv[i], "-s") == 0)
+        {
+          silent = true;
+        }
+      else if (i + 1 < argc && strlen(argv[i]) == 2 &&
+               (argv[i][1] == 'p' ||
+                (vs_feat(VF_READ_EXT) && strchr("ndtu", argv[i][1]) != NULL)))
+        {
+          const char *val = argv[++i];
+
+          switch (argv[i - 1][1])
+            {
+              case 'p': prompt = val; break;
+              case 'n': maxn = atol(val); break;
+              case 'd': delim = val[0] != '\0' ? (unsigned char)val[0] : 0; break;
+              case 't': timeout_ms = (long)(atof(val) * 1000.0); break;
+              default:  rfd = atoi(val); break;
+            }
         }
       else
         {
@@ -749,13 +1110,40 @@ static int bi_read(int argc, char **argv)
         }
     }
 
+  /* bash shows -p only when reading from a terminal. */
+
+  if (prompt != NULL && vs_plat_isatty(rfd))
+    {
+      fputs(prompt, stderr);
+      fflush(stderr);
+    }
+
+  (void)silent;                 /* no terminal echo control yet */
+  if (timeout_ms >= 0)
+    {
+#ifdef VAPORSHELL_POSIX
+      if (!wait_readable(rfd, timeout_ms))
+        {
+          return timeout_ms == 0 ? 1 : 142;
+        }
+
+      if (timeout_ms == 0)
+        {
+          return 0;               /* input is available */
+        }
+#else
+      vs_err("read: -t: not supported on this platform yet");
+      return 2;
+#endif
+    }
+
   /* One byte at a time: a shell must not consume input past the newline. */
 
   sb_init(&line);
   for (; ; )
     {
       char c;
-      ssize_t n = read(STDIN_FILENO, &c, 1);
+      ssize_t n = read(rfd, &c, 1);
 
       if (n <= 0)
         {
@@ -763,14 +1151,14 @@ static int bi_read(int argc, char **argv)
           break;
         }
 
-      if (c == '\n')
+      if (c == delim)
         {
           break;
         }
 
       if (c == '\\' && !raw)
         {
-          n = read(STDIN_FILENO, &c, 1);
+          n = read(rfd, &c, 1);
           if (n <= 0)
             {
               eof = true;
@@ -786,6 +1174,10 @@ static int bi_read(int argc, char **argv)
         }
 
       sb_addc(&line, c);
+      if (maxn > 0 && (long)line.len >= maxn)
+        {
+          break;
+        }
     }
 
   /* Split into at most nvars fields; the last gets the remainder. */
@@ -847,6 +1239,50 @@ static int bi_read(int argc, char **argv)
   return eof ? 1 : 0;
 }
 
+/* let expr...: each argument is an arithmetic expression; status is 0 if
+ * the last one is non-zero.
+ */
+
+static int bi_let(int argc, char **argv)
+{
+  long v = 0;
+  int i;
+
+  if (argc < 2)
+    {
+      vs_err("let: expression expected");
+      return 1;
+    }
+
+  for (i = 1; i < argc; i++)
+    {
+      if (arith_eval(argv[i], &v) != 0)
+        {
+          return 1;
+        }
+    }
+
+  return v != 0 ? 0 : 1;
+}
+
+/* builtin cmd args: run a builtin, bypassing functions. */
+
+static int bi_builtin(int argc, char **argv)
+{
+  if (argc < 2)
+    {
+      return 0;
+    }
+
+  if (builtin_find(argv[1]) == NULL)
+    {
+      vs_err("builtin: %s: not a shell builtin", argv[1]);
+      return 1;
+    }
+
+  return run_argv(argc - 1, argv + 1, true);
+}
+
 static int bi_command(int argc, char **argv)
 {
   int i = 1;
@@ -905,7 +1341,7 @@ static int bi_command(int argc, char **argv)
                 free(path);
                 break;
               default:
-                status = 1;
+                status = vs_feat(VF_NOTFOUND_127) ? 127 : 1;
                 break;
             }
         }
@@ -919,15 +1355,53 @@ static int bi_command(int argc, char **argv)
 static int bi_type(int argc, char **argv)
 {
   int status = 0;
-  int i;
+  bool terse = false;
+  int i = 1;
 
-  for (i = 1; i < argc; i++)
+  if (i < argc && strcmp(argv[i], "-t") == 0 && vs_feat(VF_BASH_INFO_FORMATS))
+    {
+      terse = true;
+      i++;
+    }
+
+  for (; i < argc; i++)
     {
       char *path;
 
       if (is_reserved_word(argv[i]))
         {
-          printf("%s is a shell keyword\n", argv[i]);
+          if (terse)
+            {
+              puts("keyword");
+            }
+          else
+            {
+              printf("%s is a shell keyword\n", argv[i]);
+            }
+
+          continue;
+        }
+
+      if (terse)
+        {
+          switch (classify_command(argv[i], &path))
+            {
+              case CK_SPECIAL:
+              case CK_BUILTIN:
+                puts("builtin");
+                break;
+              case CK_FUNCTION:
+                puts("function");
+                break;
+              case CK_EXTERNAL:
+                puts("file");
+                free(path);
+                break;
+              default:
+                status = 1;
+                break;
+            }
+
           continue;
         }
 
@@ -947,8 +1421,17 @@ static int bi_type(int argc, char **argv)
             free(path);
             break;
           default:
-            vs_err("type: %s: not found", argv[i]);
-            status = 1;
+            if (vs_feat(VF_NOTFOUND_127))
+              {
+                printf("%s: not found\n", argv[i]);   /* dash: on stdout */
+                status = 127;
+              }
+            else
+              {
+                vs_err("type: %s: not found", argv[i]);
+                status = 1;
+              }
+
             break;
         }
     }
@@ -991,27 +1474,139 @@ static int bi_wait(int argc, char **argv)
   return status;
 }
 
-static int bi_umask(int argc, char **argv)
+/* Applies a symbolic mode (u=rwx,go=rx / +w / -x) to 'perm' (the
+ * permissions umask leaves, not the mask itself). Returns false if the
+ * text is not one.
+ */
+
+static bool apply_symbolic(const char *spec, unsigned *perm)
 {
-  mode_t m;
+  const char *p = spec;
 
-  if (argc > 1)
+  for (; ; )
     {
-      char *end;
-      long v = strtol(argv[1], &end, 8);
+      unsigned who = 0;
+      unsigned bits;
 
-      if (*argv[1] == '\0' || *end != '\0' || v < 0 || v > 0777)
+      while (*p == 'u' || *p == 'g' || *p == 'o' || *p == 'a')
         {
-          vs_err("umask: %s: invalid mode", argv[1]);
-          return 1;
+          who |= (*p == 'u') ? 0700 : (*p == 'g') ? 0070 : (*p == 'o') ? 0007 : 0777;
+          p++;
         }
 
-      umask((mode_t)v);
+      if (who == 0)
+        {
+          who = 0777;
+        }
+
+      if (*p != '=' && *p != '+' && *p != '-')
+        {
+          return false;
+        }
+
+      {
+        char op = *p++;
+
+        bits = 0;
+        for (; *p != '\0' && *p != ','; p++)
+          {
+            if (*p == 'r') bits |= 0444;
+            else if (*p == 'w') bits |= 0222;
+            else if (*p == 'x') bits |= 0111;
+            else return false;
+          }
+
+        bits &= who;
+        if (op == '=')
+          {
+            *perm = (*perm & ~who) | bits;
+          }
+        else if (op == '+')
+          {
+            *perm |= bits;
+          }
+        else
+          {
+            *perm &= ~bits;
+          }
+      }
+
+      if (*p == '\0')
+        {
+          return true;
+        }
+
+      p++;                              /* the comma */
+    }
+}
+
+static int bi_umask(int argc, char **argv)
+{
+  bool symbolic = false;
+  mode_t m;
+  int i = 1;
+
+  if (i < argc && strcmp(argv[i], "-S") == 0)
+    {
+      symbolic = true;
+      i++;
+    }
+
+  if (i < argc)
+    {
+      char *end;
+      long v = strtol(argv[i], &end, 8);
+
+      if (*argv[i] != '\0' && *end == '\0' && v >= 0 && v <= 0777)
+        {
+          umask((mode_t)v);
+          return 0;
+        }
+
+      m = umask(0);
+      umask(m);
+      {
+        unsigned perm = (~(unsigned)m) & 0777;
+
+        if (!apply_symbolic(argv[i], &perm))
+          {
+            umask(m);
+            vs_err("umask: %s: invalid mode", argv[i]);
+            return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+          }
+
+        umask((mode_t)(~perm & 0777));
+      }
+
       return 0;
     }
 
   m = umask(0);
   umask(m);
+  if (symbolic)
+    {
+      unsigned perm = (~(unsigned)m) & 0777;
+      char out[40];
+      char *o = out;
+      int k;
+
+      for (k = 0; k < 3; k++)
+        {
+          unsigned bits = (perm >> (6 - 3 * k)) & 7;
+
+          *o++ = "ugo"[k];
+          *o++ = '=';
+          if (bits & 4) *o++ = 'r';
+          if (bits & 2) *o++ = 'w';
+          if (bits & 1) *o++ = 'x';
+          if (k < 2) *o++ = ',';
+        }
+
+      *o = '\0';
+      puts(out);
+      return 0;
+    }
+
   printf("%04o\n", (unsigned)m);
   return 0;
 }
@@ -1038,14 +1633,27 @@ const struct builtin_s g_vs_builtins[] =
   { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression", VS_M_ALL },
   { "cd",       bi_cd,       false, "cd [dir | -]: change directory", VS_M_ALL },
   { "command",  bi_command,  false, "command [-v] name [args]: run bypassing functions", VS_M_ALL },
+  { "alias",    bi_alias,    false, "alias [name[=value]...]: define or show aliases", VS_M_ALL },
+  { "unalias",  bi_unalias,  false, "unalias [-a] name...: remove aliases", VS_M_ALL },
+  { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VS_M_ALL },
+  { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VS_M_ALL },
+  { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VS_M_ALL },
+#ifdef VAPORSHELL_POSIX
+  { "times",    bi_times,    true,  "print accumulated process times", VS_M_ALL },
+  { "ulimit",   bi_ulimit,   false, "ulimit [-HS] [-cdfnstv] [limit]: resource limits", VS_M_ALL },
+#endif
+  { "echo",     bi_echo,     false, "echo [-neE] [arg...]: print arguments", VS_M_ALL },
   { "false",    bi_false,    false, "do nothing, unsuccessfully", VS_M_ALL },
-  { "help",     bi_help,     false, "help [name]: list builtins", VS_M_ALL },
+  { "help",     bi_help,     false, "help [name]: list builtins", VS_M_BASH },
   { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal", VS_M_ALL },
+  { "printf",   bi_printf,   false, "printf [-v var] format [arg...]: formatted output", VS_M_ALL },
   { "pwd",      bi_pwd,      false, "print the working directory", VS_M_ALL },
   { "read",     bi_read,     false, "read [-r] name...: read a line into variables", VS_M_ALL },
   { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VS_M_ALL },
   { "true",     bi_true,     false, "do nothing, successfully", VS_M_ALL },
   { "type",     bi_type,     false, "type name...: say how a name resolves", VS_M_ALL },
+  { "let",      bi_let,      false, "let expr...: evaluate arithmetic expressions", VS_M_BASH },
+  { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VS_M_BASH },
   { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VS_M_ALL },
   { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VS_M_ALL },
   { NULL, NULL, false, NULL, 0 }

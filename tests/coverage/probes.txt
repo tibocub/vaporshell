@@ -1,0 +1,733 @@
+# Probes: `## name | category | note` then the script. See probe.py.
+
+## echo_-n | echo
+echo -n a; echo b
+
+## echo_-e | echo
+echo -e "a\tb"
+
+## echo_-E | echo
+echo -E "a\tb"
+
+## echo_default_esc | echo
+echo "a\tb"
+
+## echo_-ne | echo
+echo -ne "x\n"; echo y
+
+## echo_-en_(x) | echo
+echo -en "x"; echo y
+
+## echo_\c | echo
+echo -e "a\cb"; echo z
+
+## echo_\0nnn | echo
+echo -e "\0101"
+
+## echo_\nnn | echo
+echo -e "\101"
+
+## echo_\xHH | echo
+echo -e "\x41"
+
+## echo_\e | echo
+echo -e "\e[0m" | od -c | head -1
+
+## echo_--_x | echo
+echo -- x
+
+## echo_-z | echo
+echo -z
+
+## echo_no_args | echo
+echo | od -c | head -1
+
+## printf_%s_%d | printf
+printf "%s=%d\n" a 5 b 6
+
+## printf_reuse_fmt | printf
+printf "%s\n" a b c
+
+## printf_no_args | printf
+printf "x%sy%dz\n"
+
+## printf_widths | printf
+printf "%5s|%-5s|%.2s\n" ab cd efgh
+
+## printf_%x_%o_%X | printf
+printf "%x %o %X %#x\n" 255 8 255 255
+
+## printf_%c | printf
+printf "%c%c\n" abc xyz
+
+## printf_%b | printf
+printf "%b\n" "a\tb\\n"
+
+## printf_\ddd_fmt | printf
+printf "\101\n"
+
+## printf_%% | printf
+printf "100%%\n"
+
+## printf_%d_bad | printf
+printf "%d\n" abc 2>/dev/null; echo rc=$?
+
+## printf_%d_0x1f | printf
+printf "%d %d\n" 0x1f 010
+
+## printf_%d_quote | printf
+printf '%d\n' "'A"
+
+## printf_%f | printf
+printf "%.2f\n" 3.14159
+
+## printf_%*d | printf
+printf "%*d|\n" 5 42
+
+## printf_-v | printf
+printf -v x "%s-%s" a b; echo "$x"
+
+## printf_%q | printf
+printf "%q\n" "a b"
+
+## printf_no_fmt | printf
+printf 2>/dev/null; echo rc=$?
+
+## printf_%s_short | printf
+printf "%s %s\n" a
+
+## printf_%i | printf
+printf "%i\n" 42
+
+## printf_%u_neg | printf
+printf "%u\n" -1
+
+## printf_newline | printf
+printf "a\nb\n"
+
+## printf_%e | printf
+printf "%e\n" 1234.5
+
+## hash_empty | hash
+hash; echo rc=$?
+
+## hash_ls | hash
+hash ls; echo rc=$?; hash
+
+## hash_nosuch | hash
+hash nosuchcmd_zz 2>/dev/null; echo rc=$?
+
+## hash_-r | hash
+hash ls; hash -r; hash; echo rc=$?
+
+## times_fmt | times
+times | head -1 | sed "s/[0-9]/N/g"
+
+## ulimit_-n | ulimit
+ulimit -n | grep -Eq "^[0-9]+$|unlimited" && echo num
+
+## ulimit_-Sn | ulimit
+ulimit -Sn | grep -Eq "^[0-9]+$|unlimited" && echo num
+
+## alias_print | alias
+alias ll="ls -l"; alias; echo rc=$?
+
+## alias_one | alias
+alias ll="ls -l"; alias ll
+
+## alias_expand_eval | alias
+alias hi="echo aliased"; eval hi
+
+## unalias | alias
+alias hi=x; unalias hi; alias hi 2>/dev/null; echo rc=$?
+
+## alias_noninter | alias
+alias hi='echo aliased'
+hi
+
+## LINENO | lineno | dash 0.5.12 has no LINENO; posix-ref=bash
+echo $LINENO
+echo $LINENO
+
+## LINENO_func | lineno | dash 0.5.12 has no LINENO; posix-ref=bash
+f() {
+  echo $LINENO
+}
+f
+
+## getopts_basic | getopts
+set -- -a -b val x y; while getopts ab: o; do echo "$o=$OPTARG"; done; echo "OPTIND=$OPTIND"
+
+## getopts_cluster | getopts
+set -- -ab; while getopts ab o; do echo "$o"; done; echo "OPTIND=$OPTIND"
+
+## getopts_attached | getopts
+set -- -bval; while getopts b: o; do echo "$o=$OPTARG"; done
+
+## getopts_bad | getopts
+set -- -z; getopts a o 2>/dev/null; echo "o=$o OPTARG=[$OPTARG] rc=$?"
+
+## getopts_silent | getopts
+set -- -z; getopts :a o; echo "o=$o OPTARG=[$OPTARG] rc=$?"
+
+## getopts_missing | getopts
+set -- -b; getopts :b: o; echo "o=$o OPTARG=[$OPTARG]"
+
+## getopts_-- | getopts
+set -- -a -- -b; while getopts ab o; do echo $o; done; echo OPTIND=$OPTIND
+
+## local | local
+f() { local v=1; echo $v; }; v=out; f; echo $v
+
+## local_unset | local
+f() { local v; echo "[${v-unset}]"; }; v=out; f
+
+## local_dynamic | local
+v=1; f() { local v=2; g; }; g() { echo $v; }; f; echo $v
+
+## quote_single | quoting
+echo 'a $b `c` "d" \e'
+## quote_double | quoting
+x=1; echo "v=$x \$x \\ \" \`"
+## quote_backslash_newline | quoting
+echo a\
+b
+## quote_dquote_nested_cmdsub | quoting
+echo "$(echo "in $(echo deep)")"
+## quote_ansi_c | quoting | bash $'...' strings
+echo $'a\tb\n'
+## quote_locale | quoting | bash $"..." translation
+echo $"hello"
+
+## param_default | param
+unset x; echo "${x:-d} ${x-d} ${x:=set} $x"
+## param_default_empty | param
+x=; echo "[${x:-d}] [${x-d}] [${x:+alt}] [${x+alt}]"
+## param_error | param
+unset x; ( echo "${x:?boom}" ) 2>/dev/null; echo rc=$?
+## param_length | param
+x=hello; echo ${#x} ${#}
+## param_trim | param
+p=/usr/local/lib/libfoo.so.1.2; echo ${p#*/} ${p##*/} ${p%.*} ${p%%.*}
+## param_trim_glob | param
+x=aXbXc; echo ${x#*X} ${x##*X} ${x%X*} ${x%%X*}
+## param_positional | param
+set -- a b c; echo $# $1 $3 "$*" "$@"
+## param_at_star_quoting | param
+set -- "a b" c; for x in "$@"; do echo "[$x]"; done; for x in "$*"; do echo "[$x]"; done
+## param_ifs_star | param
+set -- a b c; IFS=:; echo "$*"; echo $*
+## param_shift | param
+set -- 1 2 3 4; shift 2; echo $# $1
+## param_special_status | param
+false; echo $?; true; echo $?
+## param_special_pid | param
+[ "$$" -gt 0 ] && echo ok
+## param_special_bang | param
+sleep 0 & [ "$!" -gt 0 ] && echo ok; wait
+## param_special_dash | param
+set -e; case $- in *e*) echo has-e;; esac
+## param_special_zero | param
+echo "$0" | grep -q . && echo ok
+## param_substring | param | bash ${x:off:len}
+x=abcdef; echo ${x:1:3} ${x: -2}
+## param_replace | param | bash ${x/pat/rep}
+x=aXbXc; echo ${x/X/-} ${x//X/-}
+## param_case | param | bash ${x^^} ${x,,}
+x=Hello; echo ${x^^} ${x,,} ${x^}
+## param_indirect | param | bash ${!x}
+a=val; x=a; echo ${!x}
+## param_prefix_names | param | bash ${!prefix*}
+ab1=1; ab2=2; echo ${!ab*}
+## param_transform | param | bash ${x@Q}
+x="a b"; echo ${x@Q}
+
+## tilde_home | expansion
+HOME=/home/x; echo ~ ~/y
+## tilde_assign | expansion
+HOME=/home/x; v=~/a:~/b; echo $v
+## tilde_quoted | expansion
+HOME=/home/x; echo "~" '~' \~
+## cmdsub_basic | expansion
+echo $(echo a b) `echo c d`
+## cmdsub_nested | expansion
+echo $(echo $(echo deep))
+## cmdsub_trailing_nl | expansion
+x=$(printf 'a\n\n\n'); echo "[$x]"
+## cmdsub_status | expansion
+x=$(exit 3); echo $?
+## cmdsub_subshell_scope | expansion
+x=1; y=$(x=2; echo $x); echo $x $y
+## arith_basic | expansion
+echo $((1+2*3)) $(((1+2)*3)) $((7/2)) $((7%3)) $((-5))
+## arith_ops | expansion
+echo $((1<<3)) $((256>>2)) $((5&3)) $((5|3)) $((5^3)) $((~5)) $((3>2)) $((3&&0))
+## arith_assign | expansion
+x=5; echo $((x+=3)) $((x++)) $((++x)) $x
+## arith_ternary | expansion
+echo $((1?2:3)) $((0?2:3))
+## arith_var_names | expansion
+a=3; b=4; echo $((a*b))
+## arith_hex_octal | expansion
+echo $((0x1f)) $((010))
+## arith_div_zero | expansion
+( echo $((1/0)) ) 2>/dev/null; echo rc=$?
+## arith_power | expansion | bash ** operator
+echo $((2**10))
+## arith_comma | expansion
+echo $((a=1, b=2, a+b))
+## arith_base | expansion | bash base#number
+echo $((2#101)) $((16#ff))
+## brace_expansion | expansion | bash {a,b} and {1..3}
+echo {a,b,c} {1..3} x{y,z}w
+## brace_seq_step | expansion | bash {1..10..3}
+echo {1..10..3} {a..e}
+## procsub | expansion | bash <(cmd)
+cat <(echo hi)
+
+## split_default_ifs | split
+x="a  b   c"; for w in $x; do echo "[$w]"; done
+## split_custom_ifs | split
+IFS=:; x="a::b:c"; for w in $x; do echo "[$w]"; done
+## split_empty_ifs | split
+IFS=; x="a b"; for w in $x; do echo "[$w]"; done
+## split_quoted | split
+x="a b"; for w in "$x"; do echo "[$w]"; done
+## split_ifs_whitespace_mix | split
+IFS=" :"; x=" a : b "; for w in $x; do echo "[$w]"; done
+## glob_star | glob
+touch a.txt b.txt c.log; echo *.txt
+## glob_question_class | glob
+touch a1 a2 b1; echo a? [ab]1 [!a]1
+## glob_nomatch | glob
+echo nomatch*.zzz
+## glob_hidden | glob
+touch .h x; echo *; echo .h*
+## glob_dirs | glob
+mkdir d; touch d/f.txt; echo */*.txt
+## glob_noglob | glob
+touch a.txt; set -f; echo *.txt
+## glob_quoted | glob
+touch a.txt; echo "*.txt" '*.txt' \*.txt
+## glob_class_names | glob
+touch a1 B2; echo [[:alpha:]]1 [[:upper:]]2
+## glob_extglob | glob | bash shopt -s extglob patterns
+shopt -s extglob; touch a.c b.h; echo !(*.c)
+## glob_globstar | glob | bash ** recursive
+shopt -s globstar; mkdir -p d/e; touch d/e/f; echo **/f
+## glob_nullglob | glob | bash shopt -s nullglob
+shopt -s nullglob; echo x*.zzz end
+
+## redir_out_append | redirect
+echo a > f; echo b >> f; cat f
+## redir_in | redirect
+echo data > f; cat < f
+## redir_dup_out | redirect
+{ echo out; echo err >&2; } 2>&1 | cat
+## redir_close | redirect
+exec 3>f; echo x >&3; exec 3>&-; cat f
+## redir_fd_read | redirect
+printf 'one\ntwo\n' > f; exec 4<f; read a <&4; read b <&4; echo "$a $b"; exec 4<&-
+## redir_readwrite | redirect
+echo abc > f; exec 5<>f; read x <&5; echo $x; exec 5>&-
+## redir_noclobber | redirect
+set -C; echo a > f; echo b > f 2>/dev/null; echo rc=$?; echo c >| f; cat f
+## redir_heredoc | redirect
+cat <<EOF
+line $((1+1)) $(echo cmd)
+EOF
+## redir_heredoc_quoted | redirect
+cat <<'EOF'
+no $expand $(here)
+EOF
+## redir_heredoc_dash | redirect
+cat <<-EOF
+	tab stripped
+	EOF
+## redir_heredoc_multi | redirect
+cat <<A; cat <<B
+first
+A
+second
+B
+## redir_here_string | redirect | bash <<<
+cat <<<"hello"
+## redir_amp_out | redirect | bash &>file
+echo hi &>f; cat f
+## redir_amp_append | redirect | bash &>>file
+echo a &>>f; echo b &>>f; cat f
+## redir_order | redirect
+{ echo o; echo e >&2; } 2>&1 >/dev/null | cat
+## redir_error_status | redirect
+cat < /nonexistent 2>/dev/null; echo rc=$?
+## redir_on_compound | redirect
+{ echo a; echo b; } > f; cat f
+## redir_on_loop | redirect
+for i in 1 2; do echo $i; done > f; cat f
+## redir_persistent_exec | redirect
+exec > f; echo hidden; exec >&-; cat f 2>/dev/null; echo done > /dev/tty 2>/dev/null; echo end
+
+## if_elif | control
+if false; then echo a; elif true; then echo b; else echo c; fi
+## if_status | control
+if false; then :; fi; echo $?
+## while_loop | control
+i=0; while [ $i -lt 3 ]; do echo $i; i=$((i+1)); done
+## until_loop | control
+i=0; until [ $i -ge 2 ]; do echo $i; i=$((i+1)); done
+## for_list | control
+for x in a b c; do echo $x; done
+## for_no_in | control
+set -- x y; for a; do echo $a; done
+## for_break_n | control
+for i in 1 2; do for j in a b; do echo $i$j; break 2; done; done
+## for_continue_n | control
+for i in 1 2; do for j in a b; do echo $i$j; continue 2; done; done
+## for_arith | control | bash (( ; ; ))
+for ((i=0;i<3;i++)); do echo $i; done
+## case_patterns | control
+case abc in a*) echo star;; esac; case x in y|x) echo alt;; esac; case q in [a-c]) echo no;; *) echo default;; esac
+## case_fallthrough | control | bash ;& and ;;&
+case a in a) echo 1;& b) echo 2;; esac
+## case_quoted_pattern | control
+case '*' in '*') echo literal;; esac
+## and_or | control
+true && echo a || echo b; false && echo c || echo d
+## negation | control
+! false; echo $?; ! true; echo $?
+## subshell | control
+x=1; (x=2; echo $x); echo $x
+## group | control
+{ echo a; echo b; } | tail -n 1
+## pipeline_status | control
+false | true; echo $?
+## pipefail | control | bash set -o pipefail
+set -o pipefail; false | true; echo $?
+## pipestatus | control | bash PIPESTATUS array
+true | false | true; echo "${PIPESTATUS[@]}"
+## function_basic | control
+f() { echo "args: $#"; }; f a b
+## function_return | control
+f() { return 3; }; f; echo $?
+## function_recursion | control
+f() { [ $1 -le 0 ] && return 0; echo $1; f $(($1-1)); }; f 3
+## function_keyword | control | bash function f { }
+function f { echo hi; }; f
+## function_positional_scope | control
+set -- o1; f() { echo $1; set -- x; echo $1; }; f in; echo $1
+## function_unset | control
+f() { echo x; }; unset -f f; f 2>/dev/null; echo rc=$?
+## conditional_dbracket | control | bash [[ ]]
+[[ abc == a* ]] && echo match
+## conditional_dbracket_re | control | bash [[ =~ ]]
+[[ abc123 =~ [0-9]+ ]] && echo ${BASH_REMATCH[0]}
+## conditional_arith | control | bash (( ))
+(( 3 > 2 )) && echo yes
+## select_loop | control | bash select
+select x in a b; do echo $x; break; done < /dev/null; echo done
+## time_keyword | control | bash time
+time true 2>/dev/null; echo rc=$?
+## coproc | control | bash coproc
+coproc cat; echo started
+
+## test_string | test
+[ a = a ] && echo eq; [ a != b ] && echo ne; [ -n x ] && echo n; [ -z "" ] && echo z
+## test_numeric | test
+[ 2 -lt 3 ] && echo lt; [ 3 -ge 3 ] && echo ge; [ 1 -eq 1 ] && echo eq
+## test_file | test
+touch f; mkdir d; [ -e f ] && echo e; [ -f f ] && echo f; [ -d d ] && echo d; [ -s f ] || echo empty
+## test_file_perm | test
+touch f; chmod 755 f; [ -x f ] && echo x; [ -r f ] && echo r; [ -w f ] && echo w
+## test_link | test
+touch f; ln -s f l; [ -L l ] && echo link; [ -h l ] && echo h
+## test_compare_files | test
+touch a; sleep 0.01; touch b; [ b -nt a ] && echo nt; [ a -ot b ] && echo ot; [ a -ef a ] && echo ef
+## test_not_and_or | test
+[ ! -e nothere ] && echo not; [ -e / -a -d / ] && echo and; [ -e /nothere -o -d / ] && echo or
+## test_parens | test
+[ \( 1 = 1 \) ] && echo paren
+## test_unary_edge | test
+[ ] ; echo $?; [ x ]; echo $?; [ -n ]; echo $?
+## test_double_equals | test | bash [ a == a ]
+[ a == a ] && echo eq
+## test_regex_bracket | test | bash [ -v var ]
+x=1; [ -v x ] && echo set
+## test_stat_ext | test | bash [ -N file ] [ -O file ]
+touch f; [ -O f ] && echo owned
+
+## special_true_false | builtin
+true; echo $?; false; echo $?
+## special_colon | builtin
+: anything; echo $?
+## special_eval | builtin
+eval 'echo a; echo b'; x='echo $HOME'; eval "$x" > /dev/null; echo ok
+## special_eval_args | builtin
+eval echo one two
+## special_exec_redirect | builtin
+exec 3>&1; echo out >&3; exec 3>&-
+## special_exit | builtin
+( exit 7 ); echo $?
+## special_exit_trap | builtin
+trap 'echo bye' EXIT; exit 0
+## special_export | builtin
+export A=1; sh -c 'echo ${A-unset}' 2>/dev/null || echo skip
+## special_export_list | builtin
+export B=2; export | grep -c '^export B=' | grep -q 1 && echo listed
+## special_readonly | builtin
+readonly R=1; ( R=2 ) 2>/dev/null; echo rc=$?; echo $R
+## special_unset | builtin
+x=1; unset x; echo "[${x-unset}]"; f() { :; }; unset -f f; type f >/dev/null 2>&1; echo rc=$?
+## special_set_positional | builtin
+set -- a b; echo $#; set --; echo $#
+## special_set_options | builtin
+set -u; ( echo $undefined ) 2>/dev/null; echo rc=$?
+## special_set_e | builtin
+set -e; false || true; echo alive; ( false; echo notreached ) ; echo alive2
+## special_set_x | builtin
+( set -x; echo traced ) 2>&1 | grep -c 'echo traced' | grep -q 1 && echo traced
+## special_set_o | builtin
+set -o | grep -q errexit && echo listed
+## special_set_o_pipefail | builtin | bash pipefail; dash lacks it
+set -o pipefail; echo ok
+## special_shift_error | builtin
+set -- a; shift 2 2>/dev/null; echo rc=$?
+## special_break_outside | builtin
+break 2>/dev/null; echo rc=$?
+## special_return_outside | builtin
+return 2>/dev/null; echo rc=$?
+## special_trap_exit | builtin
+trap 'echo exit-trap' EXIT; echo body
+## special_trap_list | builtin
+trap 'echo x' EXIT; trap
+## special_trap_reset | builtin
+trap 'echo x' EXIT; trap - EXIT; echo done
+## special_trap_ignore | builtin
+trap '' EXIT; echo done
+## special_trap_signal | builtin
+trap 'echo got' USR1; kill -USR1 $$; echo after
+## special_trap_err | builtin | bash trap ERR
+trap 'echo err' ERR; false; echo after
+## special_trap_debug | builtin | bash trap DEBUG
+trap 'echo dbg' DEBUG; true
+## special_trap_return | builtin | bash trap RETURN
+f() { :; }; trap 'echo ret' RETURN; f
+## special_dot | builtin
+echo 'echo sourced' > s.sh; . ./s.sh
+## special_dot_args | builtin | . with arguments
+echo 'echo "got $1"' > s.sh; . ./s.sh arg
+## special_dot_path | builtin
+mkdir b; echo 'echo pathfound' > b/s.sh; PATH=$PWD/b:$PATH; . s.sh
+## special_source | builtin | bash source
+echo 'echo s' > s.sh; source ./s.sh
+## special_readonly_list | builtin
+readonly Q=1; readonly | grep -c '^readonly Q=' | grep -q 1 && echo listed
+## special_times | builtin
+times | wc -l | tr -d ' '
+## special_wait | builtin
+sleep 0 & wait; echo $?
+## special_wait_status | builtin
+( exit 4 ) & wait $!; echo $?
+## special_umask | builtin
+umask 022; umask
+## special_umask_symbolic | builtin
+umask -S
+## special_command_v | builtin
+command -v echo; command -v nosuchcmd_zz; echo rc=$?
+## special_command_bypass | builtin
+echo() { printf 'func\n'; }; command echo real; unset -f echo
+## special_command_p | builtin
+command -p ls >/dev/null && echo ok
+## special_type | builtin
+type echo | head -1 | grep -q echo && echo ok
+## special_type_missing | builtin
+type nosuchcmd_zz >/dev/null 2>&1; echo rc=$?
+## special_type_t | builtin | bash type -t
+type -t echo; type -t if
+## special_read_basic | builtin
+echo "a b c" | { read x y; echo "$x|$y"; }
+## special_read_r | builtin
+printf 'a\\b\n' | { read -r x; echo "$x"; }; printf 'a\\b\n' | { read x; echo "$x"; }
+## special_read_eof | builtin
+printf 'noeol' | { read x; echo "$? $x"; }
+## special_read_ifs | builtin
+echo "a:b:c" | { IFS=: read x y z; echo "$x $y $z"; }
+## special_read_prompt | builtin | bash read -p
+echo in | { read -p "> " x 2>/dev/null; echo "$x"; }
+## special_read_n | builtin | bash read -n
+echo abc | { read -n 2 x; echo "$x"; }
+## special_read_array | builtin | bash read -a
+echo "a b c" | { read -a arr; echo "${arr[1]}"; }
+## special_read_delim | builtin | bash read -d
+printf 'a,b' | { read -d , x; echo "$x"; }
+## special_read_timeout | builtin | bash read -t
+read -t 0 x </dev/null; echo rc=$?
+## special_kill_l | builtin
+kill -l | head -c 20 | wc -c | tr -d ' '
+## special_kill_self | builtin
+sh -c 'kill -0 $$' && echo ok
+## special_fg_bg | builtin
+type fg >/dev/null 2>&1; echo rc=$?
+## special_jobs | builtin
+jobs; echo rc=$?
+## special_fc | builtin
+type fc >/dev/null 2>&1; echo rc=$?
+## special_newgrp | builtin
+type ulimit >/dev/null 2>&1; echo rc=$?
+
+## bashvar_version | bashvar | bash BASH_VERSION
+[ -n "$BASH_VERSION" ] && echo set
+## bashvar_versinfo | bashvar | bash BASH_VERSINFO
+echo "${BASH_VERSINFO[0]}"
+## bashvar_random | bashvar | bash RANDOM
+[ "$RANDOM" -ge 0 ] && echo ok
+## bashvar_seconds | bashvar | bash SECONDS
+[ "$SECONDS" -ge 0 ] && echo ok
+## bashvar_funcname | bashvar | bash FUNCNAME
+f() { echo $FUNCNAME; }; f
+## bashvar_bash_source | bashvar | bash BASH_SOURCE
+echo "${BASH_SOURCE[0]-unset}"
+## bashvar_uid | bashvar | bash UID EUID
+[ "$UID" -ge 0 ] && [ "$EUID" -ge 0 ] && echo ok
+## bashvar_ppid | bashvar
+[ "$PPID" -gt 0 ] && echo ok
+## bashvar_hostname | bashvar | bash HOSTNAME
+[ -n "$HOSTNAME" ] && echo set
+## bashvar_ostype | bashvar | bash OSTYPE
+[ -n "$OSTYPE" ] && echo set
+## bashvar_lastarg | bashvar | $_
+echo a b > /dev/null; echo "$_"
+## bashvar_pwd_oldpwd | bashvar
+cd /; cd /tmp; echo "$PWD $OLDPWD"
+## bashvar_optind | bashvar
+echo $OPTIND
+## bashvar_ps4 | bashvar
+( PS4='+ '; set -x; : ) 2>&1 | grep -c '^+ :' | grep -q 1 && echo ok
+## bashvar_ifs_default | bashvar
+printf '%s' "$IFS" | od -c | head -1
+## bashvar_path_default | bashvar
+[ -n "$PATH" ] && echo set
+
+## array_index | array | bash indexed arrays
+a=(x y z); echo ${a[1]} ${#a[@]} "${a[@]}"
+## array_append | array | bash +=
+a=(1); a+=(2 3); echo "${a[@]}"
+## array_assoc | array | bash declare -A
+declare -A m; m[k]=v; echo ${m[k]}
+## array_indices | array | bash ${!a[@]}
+a=(p q); echo ${!a[@]}
+## array_slice | array | bash ${a[@]:1:2}
+a=(1 2 3 4); echo "${a[@]:1:2}"
+## array_unset_elem | array | bash unset a[i]
+a=(1 2 3); unset 'a[1]'; echo "${a[@]}"
+
+## bi_declare | bashbuiltin | bash declare
+declare -i n=3; n=n+2; echo $n
+## bi_declare_p | bashbuiltin | bash declare -p
+x=1; declare -p x
+## bi_typeset | bashbuiltin | bash typeset
+typeset y=2; echo $y
+## bi_let | bashbuiltin | bash let
+let "x = 2 + 3"; echo $x
+## bi_mapfile | bashbuiltin | bash mapfile
+printf 'a\nb\n' | { mapfile -t arr; echo "${arr[1]}"; }
+## bi_shopt | bashbuiltin | bash shopt
+shopt -s nullglob; shopt -q nullglob && echo on
+## bi_pushd | bashbuiltin | bash pushd popd dirs
+mkdir d; pushd d >/dev/null; case $PWD in */d) echo in;; esac; popd >/dev/null; case $PWD in */d) ;; *) echo out;; esac
+## bi_builtin | bashbuiltin | bash builtin
+echo() { :; }; builtin echo real; unset -f echo
+## bi_enable | bashbuiltin | bash enable
+enable -n echo 2>/dev/null; echo rc=$?
+## bi_caller | bashbuiltin | bash caller
+f() { caller 0; }; f | grep -c f | grep -q 1 && echo ok
+## bi_help | bashbuiltin | bash help
+help cd 2>&1 | head -1 | grep -qi cd && echo ok
+## bi_history | bashbuiltin | bash history
+history >/dev/null 2>&1; echo rc=$?
+## bi_compgen | bashbuiltin | bash compgen
+compgen -b | grep -qx echo && echo ok
+## bi_complete | bashbuiltin | bash complete
+complete -W 'a b' foo 2>/dev/null; echo rc=$?
+## bi_disown | bashbuiltin | bash disown
+sleep 0 & disown 2>/dev/null; echo rc=$?
+## bi_printf_T | bashbuiltin | bash printf %(fmt)T
+printf '%(%Y)T\n' 0 | grep -q 19 && echo ok
+## bi_getopts_silent | bashbuiltin
+set -- -q; getopts :q o; echo $o
+## bi_test_e_stat | bashbuiltin
+[ -e /nonexistent ] || echo missing
+## bi_bind | bashbuiltin | bash bind
+bind -l >/dev/null 2>&1; echo rc=$?
+## bi_exec_c | bashbuiltin | bash exec -c
+sh -c 'echo $0' 2>/dev/null | grep -q sh && echo ok
+
+## opt_posix_flag | option | bash set -o posix
+set -o posix 2>/dev/null; echo rc=$?
+## opt_noglob | option
+touch a.txt; set -f; echo *.txt; set +f; echo *.txt
+## opt_allexport | option
+set -a; X=1; sh -c 'echo ${X-unset}' 2>/dev/null; set +a
+## opt_nounset_positional | option
+set -u; ( echo $1 ) 2>/dev/null; echo rc=$?
+## opt_verbose | option
+( set -v; echo hi ) 2>&1 | grep -c 'echo hi' | grep -q 2 && echo ok
+## opt_noexec | option
+( set -n; echo notrun ); echo done
+## opt_errexit_conditions | option
+set -e; if false; then :; fi; false && :; echo alive
+## opt_errexit_subshell | option
+set -e; ( false ); echo notreached
+## opt_errexit_function | option
+set -e; f() { false; echo in-f; }; f || echo handled; echo after
+## opt_dash_c_args | option
+sh -c 'echo $0 $1' zero one 2>/dev/null
+## opt_interactive_flag | option
+case $- in *i*) echo i;; *) echo noi;; esac
+
+## misc_comment | syntax
+echo a # comment
+echo b
+## misc_semicolons | syntax
+echo a;echo b; echo c
+## misc_multiline_string | syntax
+echo "a
+b"
+## misc_line_cont_cmd | syntax
+echo one \
+two
+## misc_empty_cmd | syntax
+;
+## misc_syntax_error_status | syntax
+( eval 'if' ) 2>/dev/null; echo rc=$?
+## misc_unterminated_quote | syntax
+( eval 'echo "a' ) 2>/dev/null; echo rc=$?
+## misc_assignment_only | syntax
+x=1 y=2; echo $x $y
+## misc_assign_env_prefix | syntax
+x=1 sh -c 'echo ${x-unset}' 2>/dev/null; echo "[${x-unset}]"
+## misc_command_not_found | syntax
+nosuchcmd_zz 2>/dev/null; echo rc=$?
+## misc_not_executable | syntax
+touch f; ./f 2>/dev/null; echo rc=$?
+## misc_shebang_script | syntax
+printf '#!/bin/sh\necho ran\n' > s; chmod +x s; ./s
+## misc_noshebang_script | syntax
+printf 'echo ran\n' > s; chmod +x s; ./s
+## misc_bang_history | syntax | bash history expansion is off in scripts
+echo !!
+## misc_dollar_paren_paren | syntax
+echo $( (echo ok) )
+## misc_backtick_nested | syntax
+echo `echo \`echo deep\``
+## misc_func_name_dash | syntax | bash allows hyphens; dash rejects
+f-g() { echo ok; } 2>/dev/null; f-g
+## misc_reserved_as_arg | syntax
+echo if then fi
+## misc_case_word_split | syntax
+x="a b"; case $x in "a b") echo ok;; esac
+## misc_arith_in_dollar_quote | syntax
+echo "$((1+1))"
+## misc_amp_background | syntax
+echo a & wait
+## misc_time_p | syntax | bash time -p
+time -p true 2>&1 | grep -c real | grep -q 1 && echo ok

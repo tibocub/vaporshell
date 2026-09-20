@@ -31,7 +31,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all check check-smoosh asan check-asan strict install uninstall clean
+.PHONY: all check check-smoosh coverage asan check-asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -48,6 +48,11 @@ check: $(BIN)
 
 check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
+
+# Regenerates docs/bash-coverage.md and docs/posix-coverage.md from probes.
+# BASH=/path/to/bash and DASH=/path/to/dash pick the reference shells.
+coverage: $(BIN)
+	python3 tests/coverage/gen-docs.py $(BIN) $(if $(BASH),--bash $(BASH)) $(if $(DASH),--dash $(DASH))
 
 SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 

@@ -331,7 +331,30 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
   return 0;
 }
 
-int lex_token(struct lexer_s *lx, struct token_s *tok)
+/* 1-based line of buf offset 'off': newlines dropped earlier plus those
+ * before it. Counted incrementally; lc_* is reset whenever buf is edited.
+ */
+
+static int lex_line_at(struct lexer_s *lx, size_t off)
+{
+  if (off < lx->lc_off)
+    {
+      lx->lc_off = 0;
+      lx->lc_line = 0;
+    }
+
+  for (; lx->lc_off < off && lx->lc_off < lx->len; lx->lc_off++)
+    {
+      if (lx->buf[lx->lc_off] == '\n')
+        {
+          lx->lc_line++;
+        }
+    }
+
+  return lx->line_base + lx->lc_line + 1;
+}
+
+static int lex_token_raw(struct lexer_s *lx, struct token_s *tok)
 {
   size_t i;
 
@@ -383,6 +406,9 @@ int lex_token(struct lexer_s *lx, struct token_s *tok)
       break;
     }
 
+  tok->start = lx->pos;
+  tok->line = lex_line_at(lx, lx->pos);
+
   if (lx->buf[lx->pos] == '\n')
     {
       lx->pos++;
@@ -414,4 +440,15 @@ int lex_token(struct lexer_s *lx, struct token_s *tok)
     }
 
   return lex_word(lx, tok);
+}
+
+int lex_token(struct lexer_s *lx, struct token_s *tok)
+{
+  int r;
+
+  tok->start = tok->end = lx->pos;
+  tok->line = 0;
+  r = lex_token_raw(lx, tok);
+  tok->end = lx->pos;
+  return r;
 }

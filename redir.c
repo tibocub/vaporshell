@@ -229,7 +229,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
                   {
                     struct stat st;
 
-                    if (stat(word, &st) == 0 && S_ISREG(st.st_mode))
+                    if (stat(VS_FS(word), &st) == 0 && S_ISREG(st.st_mode))
                       {
                         vs_err("%s: cannot overwrite existing file", word);
                         free(word);
@@ -247,7 +247,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
               default:        break;
             }
 
-          src = open(word, flags, 0666);
+          src = open(VS_FS(word), flags, 0666);
           if (src < 0)
             {
               vs_err("%s: %s", word, strerror(errno));

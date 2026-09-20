@@ -11,10 +11,76 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
 #include "platform.h"
+
+struct shell_s *vs_plat_state_create(void)
+{
+  memset(&g_vs_state, 0, sizeof(g_vs_state));
+  return &g_vs_state;
+}
+
+void vs_plat_state_destroy(void)
+{
+  memset(&g_vs_state, 0, sizeof(g_vs_state));
+}
+
+const char *vs_plat_fspath(const char *path, char *buf, size_t n)
+{
+  (void)buf;
+  (void)n;
+  return path;
+}
+
+bool vs_plat_isatty(int fd)
+{
+  return isatty(fd) != 0;
+}
+
+long vs_plat_uid(void)
+{
+  return (long)getuid();
+}
+
+long vs_plat_euid(void)
+{
+  return (long)geteuid();
+}
+
+int vs_plat_hostname(char *buf, size_t n)
+{
+  return gethostname(buf, n);
+}
+
+const char *vs_plat_ostype(void)
+{
+  static char os[64];
+  struct utsname u;
+  size_t i;
+
+  if (uname(&u) != 0)
+    {
+      return "unknown";
+    }
+
+  for (i = 0; u.sysname[i] != '\0' && i < sizeof(os) - 8; i++)
+    {
+      char c = u.sysname[i];
+
+      os[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+
+  os[i] = '\0';
+  if (strcmp(os, "linux") == 0)
+    {
+      strcat(os, "-gnu");
+    }
+
+  return os;
+}
 
 bool vs_plat_interactive(void)
 {

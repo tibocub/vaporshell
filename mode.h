@@ -24,6 +24,8 @@
 
 #include <stdbool.h>
 
+#include "vaporshell.h"
+
 enum vs_feature_e
 {
   /* Semantics that differ between bash's default and POSIX. */
@@ -36,6 +38,20 @@ enum vs_feature_e
   VF_FUNC_NAME_ANY,         /* function names may contain - . and similar */
   VF_ERREXIT_IN_CMDSUB,     /* $(...) inherits set -e */
   VF_TEST_EXT,              /* test / [ accept == */
+  VF_EXIT2_ON_ERROR,        /* fatal shell errors exit with status 2 (dash), not 1 */
+  VF_ECHO_XPG,              /* echo always interprets escapes and only knows -n (dash) */
+  VF_PRINTF_EXT,            /* printf -v, %q and \e \x \u escapes */
+  VF_LOCAL_INHERITS,        /* `local x` keeps the outer value instead of unsetting */
+  VF_ALIAS_SCRIPTS,         /* aliases expand in non-interactive shells */
+  VF_BASH_INFO_FORMATS,     /* alias/hash/times/ulimit use bash's formats and units */
+  VF_ARITH_EXT,             /* ** , ++ -- and base#number in $(( )) */
+  VF_DOT_ARGS,              /* `. file args` sets the positional parameters */
+  VF_SET_O_BASH,            /* set -o pipefail / posix exist */
+  VF_NOTFOUND_127,          /* type / command -v report "not found" as 127 (dash) */
+  VF_RETURN_TOPLEVEL_ERR,   /* `return` outside a function is an error, not an exit */
+  VF_READ_EXT,              /* read -p -n -d -t -s -u */
+  VF_BASH_VARS,             /* $_, BASH_VERSION, RANDOM, SECONDS, UID, HOSTNAME... */
+  VF_OPTARG_EMPTY,          /* getopts sets OPTARG to "" (not unset) for a flag without argument */
 
   /* Syntax. */
 
@@ -58,11 +74,9 @@ enum vs_profile_e
 #define VS_M_POSIX 0x2u
 #define VS_M_ALL   (VS_M_BASH | VS_M_POSIX)
 
-extern unsigned long g_vs_features;
-
 static inline bool vs_feat(enum vs_feature_e f)
 {
-  return (g_vs_features & (1UL << (unsigned)f)) != 0;
+  return (g_sh.features & (1UL << (unsigned)f)) != 0;
 }
 
 void vs_mode_set(enum vs_profile_e p);

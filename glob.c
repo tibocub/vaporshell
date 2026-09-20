@@ -12,6 +12,7 @@
 
 #include "vaporshell.h"
 #include "expand.h"
+#include "platform.h"
 
 #define MAX_COMPONENTS 64
 
@@ -295,7 +296,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
         {
           struct stat st;
 
-          if (stat(base, &st) != 0 || !S_ISDIR(st.st_mode))
+          if (stat(VS_FS(base), &st) != 0 || !S_ISDIR(st.st_mode))
             {
               free(nb);
               return;
@@ -317,7 +318,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
       free(lit);
       if (last)
         {
-          if (lstat(np, &st) == 0)
+          if (lstat(VS_FS(np), &st) == 0)
             {
               fv_add(g->res, np);
               g->added++;
@@ -334,7 +335,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
     }
 
   {
-    DIR *dir = opendir(base[0] != '\0' ? base : ".");
+    DIR *dir = opendir(VS_FS(base[0] != '\0' ? base : "."));
     struct dirent *ent;
     char **names = NULL;
     size_t nnames = 0;
@@ -384,7 +385,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
           {
             struct stat st;
 
-            if (stat(np, &st) == 0 && S_ISDIR(st.st_mode))
+            if (stat(VS_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
               {
                 walk(g, np, idx + 1);
               }

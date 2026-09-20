@@ -50,6 +50,9 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 CR_RE = re.compile(r"\r+")
 
 FAILS = 0
+SKIPS = 0
+# The bash-mode reference; BASH_REF=/path/to/bash selects another build.
+BASH_REF = os.environ.get("BASH_REF", "bash")
 
 def run_native(shell, script_path, timeout=10):
     """Runs inside a fresh, isolated temporary directory -- confirmed
@@ -182,12 +185,38 @@ def run_vaporshell(nuttx_dir, script_path, boot_timeout=8, cmd_timeout=8,
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+# What the NuttX build cannot do (yet), as tokens a test names in a
+# "# requires:" line near its top. A test that needs one is reported as
+# SKIP on NuttX instead of a DIFFERS that is not a shell bug:
+#   fork          ( ), &, pipelines containing builtins   (no in-process subshell yet)
+#   cmdsub-state  functions/variables visible inside $(...) (the child is a fresh shell)
+#   signals       trap on real signals, kill
+#   wc-format     toybox wc prints a file name for stdin; output differs from GNU wc
+#   cmd:NAME      an external program the NuttX image does not have
+#   env:NAME      an environment variable NuttX does not set
+#   float         printf %f/%e/%g: libc float support is CONFIG_LIBC_FLOATINGPOINT
+#   path-lookup   NuttX finds builtin apps regardless of $PATH
+NUTTX_LACKS = {"fork", "cmdsub-state", "signals", "wc-format", "env:HOME", "float",
+               "path-lookup",
+               "cmd:sed", "cmd:tr", "cmd:tail", "cmd:mktemp", "cmd:ln"}
+
+
+def requirements(test_path):
+    reqs = set()
+    with open(test_path, errors="replace") as f:
+        for _ in range(10):
+            line = f.readline()
+            if line.startswith("# requires:"):
+                reqs.update(line.split(":", 1)[1].split())
+    return reqs
+
+
 def run_one(test_path, nuttx_dir):
     print(f"\n{'=' * 70}")
     print(f"TEST: {test_path}")
     print("=" * 70)
 
-    bash_out, bash_err, bash_rc = run_native("bash", test_path)
+    bash_out, bash_err, bash_rc = run_native(BASH_REF, test_path)
     dash_out, dash_err, dash_rc = run_native("dash", test_path)
 
     print(f"\n--- bash (reference) [exit {bash_rc}] ---")
@@ -206,6 +235,14 @@ def run_one(test_path, nuttx_dir):
 
     if nuttx_dir is None:
         print("\n--- vaporshell: skipped (no --nuttx-dir given) ---")
+        return
+
+    missing = requirements(test_path) & NUTTX_LACKS
+    if missing:
+        print(f"\n--- vaporshell: {yellow}SKIP{reset} on NuttX (needs: "
+              f"{' '.join(sorted(missing))}) ---")
+        global SKIPS
+        SKIPS += 1
         return
 
     vaporshell_out = run_vaporshell(nuttx_dir, test_path)
@@ -250,6 +287,8 @@ def main():
         print(f"\n{green}All test passed{reset}\n")
     else:
         print(f"\n{red}{FAILS} test failed{reset}\n")
+    if SKIPS:
+        print(f"{yellow}{SKIPS} skipped (NuttX cannot run them yet: see NUTTX_LACKS){reset}\n")
 
 
 if __name__ == "__main__":

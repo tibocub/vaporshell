@@ -11,6 +11,8 @@
 
 #include <nuttx/config.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sched.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,9 +22,160 @@
 #include <unistd.h>
 
 #include "vaporshell.h"
+#include "mode.h"
 #include "platform.h"
 
 bool is_tbx_command(const char *name);        /* dispatch.c */
+
+/* ---- Per-task shell state --------------------------------------------------
+ *
+ * In a flat NuttX build every instance of this app shares its global data,
+ * so state is looked up by task id. Entries are only ever written by the
+ * task that owns them (under sched_lock, which also protects the free
+ * slot search), and a task only ever reads its own -- so lookups need no
+ * lock.
+ */
+
+#define VS_MAX_INSTANCES 16
+
+static struct
+{
+  pid_t pid;                    /* 0: free */
+  struct shell_s *sh;
+} g_instances[VS_MAX_INSTANCES];
+
+struct shell_s *vs_plat_state_create(void)
+{
+  struct shell_s *sh = vs_xmalloc(sizeof(*sh));
+  pid_t me = getpid();
+  int i;
+
+  memset(sh, 0, sizeof(*sh));
+  sched_lock();
+  for (i = 0; i < VS_MAX_INSTANCES; i++)
+    {
+      if (g_instances[i].pid == 0)
+        {
+          g_instances[i].sh = sh;
+          g_instances[i].pid = me;
+          sched_unlock();
+          return sh;
+        }
+    }
+
+  sched_unlock();
+  free(sh);
+  fputs("vaporshell: too many shell instances\n", stderr);
+  exit(1);
+}
+
+struct shell_s *vs_state(void)
+{
+  pid_t me = getpid();
+  int i;
+
+  for (i = 0; i < VS_MAX_INSTANCES; i++)
+    {
+      if (g_instances[i].pid == me)
+        {
+          return g_instances[i].sh;
+        }
+    }
+
+  return vs_plat_state_create();       /* a task we have not seen: start fresh */
+}
+
+void vs_plat_state_destroy(void)
+{
+  pid_t me = getpid();
+  int i;
+
+  for (i = 0; i < VS_MAX_INSTANCES; i++)
+    {
+      if (g_instances[i].pid == me)
+        {
+          struct shell_s *sh = g_instances[i].sh;
+
+          sched_lock();
+          g_instances[i].pid = 0;
+          g_instances[i].sh = NULL;
+          sched_unlock();
+          free(sh);
+          return;
+        }
+    }
+}
+
+/* ---- Paths ------------------------------------------------------------------- */
+
+static bool has_dot_component(const char *path)
+{
+  const char *p = path;
+
+  while (*p != '\0')
+    {
+      const char *e = p;
+
+      while (*e != '\0' && *e != '/')
+        {
+          e++;
+        }
+
+      if ((e - p == 1 && p[0] == '.') || (e - p == 2 && p[0] == '.' && p[1] == '.'))
+        {
+          return true;
+        }
+
+      p = (*e == '/') ? e + 1 : e;
+    }
+
+  return false;
+}
+
+const char *vs_plat_fspath(const char *path, char *buf, size_t n)
+{
+  char cwd[VS_PATH_MAX];
+
+  if (!has_dot_component(path))
+    {
+      return path;
+    }
+
+  if (getcwd(cwd, sizeof(cwd)) == NULL ||
+      vs_path_normalize(cwd, path, buf, n) != 0)
+    {
+      return path;
+    }
+
+  return buf;
+}
+
+bool vs_plat_isatty(int fd)
+{
+  return isatty(fd) != 0;
+}
+
+long vs_plat_uid(void)
+{
+  return 0;
+}
+
+long vs_plat_euid(void)
+{
+  return 0;
+}
+
+int vs_plat_hostname(char *buf, size_t n)
+{
+  (void)buf;
+  (void)n;
+  return -1;                      /* NuttX has no portable hostname */
+}
+
+const char *vs_plat_ostype(void)
+{
+  return "nuttx";
+}
 
 bool vs_plat_interactive(void)
 {
@@ -70,7 +223,10 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
 
   if (strchr(name, '/') != NULL)
     {
-      return stat(name, &st) == 0 ? vs_xstrdup(name) : NULL;
+      char fbuf[VS_PATH_MAX];
+      const char *real = vs_plat_fspath(name, fbuf, sizeof(fbuf));
+
+      return stat(real, &st) == 0 ? vs_xstrdup(real) : NULL;
     }
 
   sb_init(&cand);
@@ -165,7 +321,13 @@ int vs_plat_exec(const char *path, char *const argv[], char *const envp[])
 
 int vs_plat_dup_high(int fd)
 {
-  return dup(fd);
+  /* Prefer a descriptor >= 10 so it cannot collide with one a script uses
+   * (`exec 3>file`); plain dup() (the lowest free) is the fallback.
+   */
+
+  int hi = fcntl(fd, F_DUPFD, 10);
+
+  return hi >= 0 ? hi : dup(fd);
 }
 
 char *vs_plat_capture_via_self(const char *text, int *status)
@@ -173,7 +335,7 @@ char *vs_plat_capture_via_self(const char *text, int *status)
   int pipefd[2];
   posix_spawn_file_actions_t actions;
   pid_t pid;
-  char *argv[4];
+  char *argv[6];
   char **envp;
   int ret;
   int wstatus = 0;
@@ -190,10 +352,38 @@ char *vs_plat_capture_via_self(const char *text, int *status)
   posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
   posix_spawn_file_actions_addclose(&actions, pipefd[1]);
 
-  argv[0] = (char *)g_sh.self;
-  argv[1] = "-c";
-  argv[2] = (char *)text;
-  argv[3] = NULL;
+  /* The child is a fresh shell: pass it the language mode and the options
+   * that must carry over (a real subshell would inherit them).
+   */
+
+  {
+    char opts[16];
+    int na = 0;
+    size_t k = 1;
+
+    opts[0] = '-';
+    if (g_sh.opt_e && vs_feat(VF_ERREXIT_IN_CMDSUB)) opts[k++] = 'e';
+    if (g_sh.opt_u) opts[k++] = 'u';
+    if (g_sh.opt_f) opts[k++] = 'f';
+    if (g_sh.opt_x) opts[k++] = 'x';
+    if (g_sh.opt_C) opts[k++] = 'C';
+    opts[k] = '\0';
+
+    argv[na++] = (char *)g_sh.self;
+    if (vs_mode_get() == VS_PROFILE_POSIX)
+      {
+        argv[na++] = "--posix";
+      }
+
+    if (k > 1)
+      {
+        argv[na++] = opts;
+      }
+
+    argv[na++] = "-c";
+    argv[na++] = (char *)text;
+    argv[na] = NULL;
+  }
 
   envp = var_build_env();
   ret = posix_spawnp(&pid, g_sh.self, &actions, NULL, argv, envp);

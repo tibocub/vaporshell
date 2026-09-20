@@ -59,9 +59,13 @@ vaporshell/
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
   docs/design.md      the design doc -- read this first for anything non-trivial
-  tests/              own/ (vs bash), smoosh corpus, posix-check.sh,
-                      smoosh-check.sh, check-all.sh, modes/ (per-mode suites),
+  tests/              own/ (vs bash and dash), modes/ (per-mode suites),
+                      check-all.sh, smoosh corpus + smoosh-check.sh,
+                      coverage/ (probe tool, doc generator),
+                      reference/run-differential.py (also drives NuttX),
                       nuttx-sim-smoke.py, nuttx-symcheck.sh
+  docs/               design.md, modes.md, and the generated
+                      bash-coverage.md / posix-coverage.md
 ```
 
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx) as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for `toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
@@ -89,6 +93,8 @@ Standalone (Linux, macOS, BSD), from a plain checkout:
 ```
 make -f posix.mk            # build/vaporshell   (or just `make`)
 make check                  # every suite, each vs its reference shell
+                            # (BASH=/path/to/bash selects the bash reference)
+make coverage               # regenerate docs/*-coverage.md from the probes
 vaporshell --posix          # POSIX mode (also -o posix, or invoked as sh)
 make check-smoosh           # the smoosh corpus in --posix mode, regressions named
 make check-asan             # same tests under ASan + UBSan
@@ -115,10 +121,15 @@ Working: quoting, all POSIX expansions (parameter operators, `$(...)`,
 backticks, `$(( ))`, tilde, field splitting, pathname expansion), all
 POSIX redirections and here-documents, pipelines, `&&`/`||`/`!`, `;`/`&`,
 `if`/`for`/`while`/`until`/`case`, `{ }`, `( )`, functions, positional
-parameters, `break`/`continue N`/`return`, `set -e -u -x -f -C`, `trap`
-(EXIT and signals), and the builtins in `help`.
+parameters, `break`/`continue N`/`return`, `set -e -u -x -f -C -a -n -v`, `trap`
+(EXIT and signals), aliases, `$LINENO`, and the builtins in `help`.
 
-Smoosh corpus (`make check-smoosh`, run in `--posix` mode): 143 of 184 by a
+How close each mode is to its reference is measured, not claimed: see
+[docs/bash-coverage.md](docs/bash-coverage.md) (bash 5.3.0) and
+[docs/posix-coverage.md](docs/posix-coverage.md) (dash 0.5.12), regenerated
+with `python3 tests/coverage/gen-docs.py build/vaporshell --bash /path/to/bash`.
+
+Smoosh corpus (`make check-smoosh`, run in `--posix` mode): 146 of 184 by a
 rough pass rule (see `tests/smoosh-check.sh`); dash scores 147 and
 `bash --posix` 143 by the same rule. (Two tests call bash's `source`, which
 POSIX mode deliberately does not have.) The rest are listed in `tests/smoosh-known-failures.txt`.

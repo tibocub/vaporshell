@@ -93,6 +93,7 @@ struct node_s
   char *name;
   bool flag;
   bool async;                 /* list item ended by '&' */
+  int line;                   /* N_SIMPLE: source line, for $LINENO */
   struct arena_s *arena;      /* N_FUNCDEF: arena the body lives in */
 };
 

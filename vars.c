@@ -16,8 +16,11 @@
 #include "vaporshell.h"
 #include "ast.h"
 #include "platform.h"
+#include "mode.h"
 
-struct shell_s g_sh;
+#ifdef VAPORSHELL_POSIX
+struct shell_s g_vs_state;
+#endif
 
 bool is_valid_name(const char *s, size_t len)
 {
@@ -56,9 +59,79 @@ struct var_s *var_lookup(const char *name)
   return NULL;
 }
 
+/* Variables bash computes rather than stores. A stored variable of the same
+ * name wins, so a script can still shadow them.
+ */
+
+static const char *bash_var(const char *name)
+{
+  static char buf[64];
+  static char host[256];
+
+  if (strcmp(name, "RANDOM") == 0)
+    {
+      unsigned x = g_sh.rand_state != 0 ? g_sh.rand_state
+                                        : (unsigned)time(NULL) ^ (unsigned)g_sh.pid;
+
+      x ^= x << 13;                    /* xorshift32: 0..32767 like bash */
+      x ^= x >> 17;
+      x ^= x << 5;
+      g_sh.rand_state = x;
+      snprintf(buf, sizeof(buf), "%u", (x >> 8) & 0x7fff);
+      return buf;
+    }
+
+  if (strcmp(name, "SECONDS") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%ld", (long)(time(NULL) - g_sh.seconds_base));
+      return buf;
+    }
+
+  if (strcmp(name, "BASH_VERSION") == 0)
+    {
+      return "5.3.0(1)-vaporshell";
+    }
+
+  if (strcmp(name, "UID") == 0 || strcmp(name, "EUID") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%ld",
+               (long)(name[0] == 'E' ? vs_plat_euid() : vs_plat_uid()));
+      return buf;
+    }
+
+  if (strcmp(name, "HOSTNAME") == 0)
+    {
+      return vs_plat_hostname(host, sizeof(host)) == 0 ? host : NULL;
+    }
+
+  if (strcmp(name, "OSTYPE") == 0)
+    {
+      return vs_plat_ostype();
+    }
+
+  return NULL;
+}
+
 const char *var_get(const char *name)
 {
-  struct var_s *v = var_lookup(name);
+  struct var_s *v;
+
+  /* $LINENO is computed, not stored: assigning it just shadows it. */
+
+  if (name[0] == 'L' && strcmp(name, "LINENO") == 0 && g_sh.lineno > 0 &&
+      var_lookup(name) == NULL)
+    {
+      static char buf[16];             /* per call site; read immediately */
+
+      snprintf(buf, sizeof(buf), "%d", g_sh.lineno);
+      return buf;
+    }
+
+  v = var_lookup(name);
+  if (v == NULL && vs_feat(VF_BASH_VARS))
+    {
+      return bash_var(name);
+    }
 
   return v != NULL ? v->value : NULL;
 }
@@ -77,7 +150,26 @@ static struct var_s *var_create(const char *name)
 
 int var_set(const char *name, const char *value)
 {
-  struct var_s *v = var_lookup(name);
+  struct var_s *v;
+
+  if (vs_feat(VF_BASH_VARS) && (name[0] == 'R' || name[0] == 'S'))
+    {
+      /* Assigning RANDOM seeds it; assigning SECONDS restarts the count. */
+
+      if (strcmp(name, "RANDOM") == 0)
+        {
+          g_sh.rand_state = (unsigned)atol(value) * 2654435761u + 1u;
+          return 0;
+        }
+
+      if (strcmp(name, "SECONDS") == 0)
+        {
+          g_sh.seconds_base = time(NULL) - (time_t)atol(value);
+          return 0;
+        }
+    }
+
+  v = var_lookup(name);
 
   if (v == NULL)
     {
@@ -99,8 +191,18 @@ int var_set(const char *name, const char *value)
       return -1;
     }
 
+  if (g_sh.opt_a)
+    {
+      v->flags |= VF_EXPORT;
+    }
+
   free(v->value);
   v->value = vs_xstrdup(value);
+  if (name[0] == 'P' && strcmp(name, "PATH") == 0)
+    {
+      hash_clear();                   /* remembered locations may be stale */
+    }
+
   return 0;
 }
 
@@ -306,12 +408,18 @@ void shell_init(const char *arg0)
 {
   char cwd[512];
 
-  memset(&g_sh, 0, sizeof(g_sh));
+  vs_plat_state_create();
+  vs_mode_set(VS_PROFILE_BASH);
   g_sh.arg0 = arg0;
   g_sh.pid = getpid();
   g_sh.cmdsub_status = -1;
   g_sh.self = "vaporshell";
   vars_import(environ);
+
+  /* getopts starts scanning at the first argument. */
+
+  var_set("OPTIND", "1");
+  strcpy(g_sh.getopts_last, "1");
 
   /* IFS is never inherited from the environment. */
 
@@ -339,5 +447,121 @@ void shell_init(const char *arg0)
     {
       var_set("PWD", cwd);
       var_set_flags("PWD", VF_EXPORT);
+    }
+}
+
+void shell_fini(void)
+{
+  int i;
+
+  while (g_sh.vars != NULL)
+    {
+      struct var_s *v = g_sh.vars;
+
+      g_sh.vars = v->next;
+      free(v->name);
+      free(v->value);
+      free(v);
+    }
+
+  while (g_sh.funcs != NULL)
+    {
+      func_unset(g_sh.funcs->name);
+    }
+
+  for (i = 0; i < g_sh.npos; i++)
+    {
+      free(g_sh.pos[i]);
+    }
+
+  free(g_sh.pos);
+  for (i = 0; i < VS_NTRAPS; i++)
+    {
+      free(g_sh.trap_action[i]);
+    }
+
+  var_locals_pop(0);
+  aliases_free();
+  hash_clear();
+  vs_plat_state_destroy();
+}
+
+/* ---- local ---------------------------------------------------------------- */
+
+/* Declares 'name' local to the running function. With a value it is
+ * assigned; without one bash makes it unset and dash leaves the outer
+ * value visible (VF_LOCAL_INHERITS -> 'inherit').
+ */
+
+int var_local_declare(const char *name, const char *value, bool inherit)
+{
+  struct var_s *v = var_lookup(name);
+  struct local_s *l;
+
+  for (l = g_sh.locals; l != NULL; l = l->next)
+    {
+      if (l->depth == g_sh.func_depth && strcmp(l->name, name) == 0)
+        {
+          break;                       /* already local here: keep the first save */
+        }
+    }
+
+  if (l == NULL)
+    {
+      l = vs_xmalloc(sizeof(*l));
+      l->name = vs_xstrdup(name);
+      l->had = v != NULL && v->value != NULL;
+      l->old = l->had ? vs_xstrdup(v->value) : NULL;
+      l->flags = v != NULL ? v->flags : 0;
+      l->depth = g_sh.func_depth;
+      l->next = g_sh.locals;
+      g_sh.locals = l;
+    }
+
+  if (value != NULL)
+    {
+      return var_set(name, value);
+    }
+
+  if (!inherit && v != NULL && v->value != NULL)
+    {
+      free(v->value);
+      v->value = NULL;
+    }
+
+  return 0;
+}
+
+void var_locals_pop(int depth)
+{
+  while (g_sh.locals != NULL && g_sh.locals->depth >= depth)
+    {
+      struct local_s *l = g_sh.locals;
+      struct var_s *v = var_lookup(l->name);
+
+      g_sh.locals = l->next;
+      if (l->had)
+        {
+          if (v == NULL)
+            {
+              v = var_create(l->name);
+            }
+
+          free(v->value);
+          v->value = l->old;
+          v->flags = l->flags;
+        }
+      else
+        {
+          free(l->old);
+          if (v != NULL)
+            {
+              v->flags &= ~(unsigned)VF_READONLY;
+              var_unset(l->name);
+            }
+        }
+
+      free(l->name);
+      free(l);
     }
 }

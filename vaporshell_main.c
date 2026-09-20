@@ -83,7 +83,7 @@ static int finish(int status)
   return g_sh.last_status & 0xff;
 }
 
-int main(int argc, char *argv[])
+static int shell_main(int argc, char *argv[])
 {
   const char *command = NULL;
   bool have_command = false;
@@ -201,4 +201,12 @@ int main(int argc, char *argv[])
   }
 
   return finish(status);
+}
+
+int main(int argc, char *argv[])
+{
+  int rc = shell_main(argc, argv);
+
+  shell_fini();
+  return rc;
 }

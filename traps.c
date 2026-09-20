@@ -16,13 +16,10 @@
 #include <unistd.h>
 
 #include "vaporshell.h"
+#include "mode.h"
 #include "exec.h"
 
-#define NTRAPS 65
-
-static char *g_action[NTRAPS];     /* NULL: default, "": ignore */
-static volatile int g_sig_flag[NTRAPS];
-volatile int g_trap_pending;
+#define NTRAPS VS_NTRAPS
 
 #ifdef VAPORSHELL_POSIX
 
@@ -39,7 +36,31 @@ static const struct
   { "ALRM", SIGALRM }, { "TERM", SIGTERM }, { "USR1", SIGUSR1 },
   { "USR2", SIGUSR2 }, { "CHLD", SIGCHLD }, { "CONT", SIGCONT },
   { "STOP", SIGSTOP }, { "TSTP", SIGTSTP }, { "TTIN", SIGTTIN },
-  { "TTOU", SIGTTOU }
+  { "TTOU", SIGTTOU },
+#ifdef SIGTRAP
+  { "TRAP", SIGTRAP },
+#endif
+#ifdef SIGBUS
+  { "BUS", SIGBUS },
+#endif
+#ifdef SIGURG
+  { "URG", SIGURG },
+#endif
+#ifdef SIGSYS
+  { "SYS", SIGSYS },
+#endif
+#ifdef SIGVTALRM
+  { "VTALRM", SIGVTALRM },
+#endif
+#ifdef SIGPROF
+  { "PROF", SIGPROF },
+#endif
+#ifdef SIGXCPU
+  { "XCPU", SIGXCPU },
+#endif
+#ifdef SIGXFSZ
+  { "XFSZ", SIGXFSZ },
+#endif
 };
 
 #else
@@ -108,8 +129,8 @@ static void on_signal(int sig)
 {
   if (sig > 0 && sig < NTRAPS)
     {
-      g_sig_flag[sig] = 1;
-      g_trap_pending = 1;
+      g_sh.trap_flag[sig] = 1;
+      g_sh.trap_pending = 1;
     }
 }
 
@@ -152,9 +173,9 @@ static void install(int sig, const char *action)
 
 static void set_trap(int sig, const char *action)
 {
-  free(g_action[sig]);
-  g_action[sig] = action != NULL ? vs_xstrdup(action) : NULL;
-  install(sig, g_action[sig]);
+  free(g_sh.trap_action[sig]);
+  g_sh.trap_action[sig] = action != NULL ? vs_xstrdup(action) : NULL;
+  install(sig, g_sh.trap_action[sig]);
 }
 
 static void print_traps(void)
@@ -163,12 +184,12 @@ static void print_traps(void)
 
   for (i = 0; i < NTRAPS; i++)
     {
-      if (g_action[i] != NULL)
+      if (g_sh.trap_action[i] != NULL)
         {
           const char *p;
 
           fputs("trap -- '", stdout);
-          for (p = g_action[i]; *p != '\0'; p++)
+          for (p = g_sh.trap_action[i]; *p != '\0'; p++)
             {
               if (*p == '\'')
                 {
@@ -263,7 +284,9 @@ static void run_action(const char *action)
   int count = g_sh.unwind_count;
 
   g_sh.unwind = UW_NONE;
+  g_sh.trap_depth++;
   run_string(action, strlen(action));
+  g_sh.trap_depth--;
   if (g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = uw;
@@ -276,15 +299,15 @@ void trap_run_pending(void)
 {
   int i;
 
-  g_trap_pending = 0;
+  g_sh.trap_pending = 0;
   for (i = 1; i < NTRAPS; i++)
     {
-      if (g_sig_flag[i])
+      if (g_sh.trap_flag[i])
         {
-          g_sig_flag[i] = 0;
-          if (g_action[i] != NULL && g_action[i][0] != '\0')
+          g_sh.trap_flag[i] = 0;
+          if (g_sh.trap_action[i] != NULL && g_sh.trap_action[i][0] != '\0')
             {
-              char *copy = vs_xstrdup(g_action[i]);
+              char *copy = vs_xstrdup(g_sh.trap_action[i]);
 
               run_action(copy);
               free(copy);
@@ -295,11 +318,11 @@ void trap_run_pending(void)
 
 void trap_run_exit(void)
 {
-  char *action = g_action[0];
+  char *action = g_sh.trap_action[0];
 
   if (action != NULL && action[0] != '\0')
     {
-      g_action[0] = NULL;        /* run once */
+      g_sh.trap_action[0] = NULL;        /* run once */
       run_action(action);
       free(action);
     }
@@ -313,17 +336,93 @@ void trap_reset_in_child(void)
 
   for (i = 0; i < NTRAPS; i++)
     {
-      if (g_action[i] != NULL && g_action[i][0] != '\0')
+      if (g_sh.trap_action[i] != NULL && g_sh.trap_action[i][0] != '\0')
         {
-          free(g_action[i]);
-          g_action[i] = NULL;
+          free(g_sh.trap_action[i]);
+          g_sh.trap_action[i] = NULL;
           install(i, NULL);
         }
     }
 
-  memset((void *)g_sig_flag, 0, sizeof(g_sig_flag));
-  g_trap_pending = 0;
+  memset((void *)g_sh.trap_flag, 0, sizeof(g_sh.trap_flag));
+  g_sh.trap_pending = 0;
 }
+
+#ifdef VAPORSHELL_POSIX
+
+static int cmp_sig(const void *a, const void *b)
+{
+  int x = *(const int *)a;
+  int y = *(const int *)b;
+
+  return x - y;
+}
+
+/* kill -l [number]: the names we know, by signal number. dash prints them
+ * one per line after a leading 0; bash in rows of five as `NN) SIGNAME`.
+ */
+
+static int kill_list(int argc, char **argv)
+{
+  int order[NSIGS];
+  int n = 0;
+  int k;
+
+  if (argc > 2)
+    {
+      int num = atoi(argv[2]);
+
+      for (k = 1; k < NSIGS; k++)
+        {
+          if (g_sigs[k].num == num)
+            {
+              puts(g_sigs[k].name);
+              return 0;
+            }
+        }
+
+      vs_err("kill: %s: invalid signal specification", argv[2]);
+      return 1;
+    }
+
+  for (k = 1; k < NSIGS; k++)
+    {
+      order[n++] = g_sigs[k].num;
+    }
+
+  qsort(order, (size_t)n, sizeof(int), cmp_sig);
+  if (!vs_feat(VF_BASH_INFO_FORMATS))
+    {
+      puts("0");
+    }
+
+  for (k = 0; k < n; k++)
+    {
+      int j;
+
+      for (j = 1; j < NSIGS; j++)
+        {
+          if (g_sigs[j].num == order[k])
+            {
+              break;
+            }
+        }
+
+      if (vs_feat(VF_BASH_INFO_FORMATS))
+        {
+          printf("%2d) SIG%s%s", order[k], g_sigs[j].name,
+                 (k % 5 == 4 || k == n - 1) ? "\n" : "\t");
+        }
+      else
+        {
+          puts(g_sigs[j].name);
+        }
+    }
+
+  return 0;
+}
+
+#endif /* VAPORSHELL_POSIX */
 
 int bi_kill(int argc, char **argv)
 {
@@ -331,6 +430,11 @@ int bi_kill(int argc, char **argv)
   int sig = SIGTERM;
   int i = 1;
   int status = 0;
+
+  if (argc > 1 && strcmp(argv[1], "-l") == 0)
+    {
+      return kill_list(argc, argv);
+    }
 
   if (i < argc && argv[i][0] == '-' && argv[i][1] != '\0' &&
       strcmp(argv[i], "--") != 0)

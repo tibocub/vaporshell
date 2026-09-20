@@ -23,6 +23,7 @@
 
 #include "vaporshell.h"
 #include "parse.h"
+#include "mode.h"
 #include "expand.h"
 
 struct xfield_s
@@ -376,6 +377,17 @@ static char *operand_str(const char *word, size_t n, bool heredoc)
   return r;
 }
 
+/* dash treats a malformed ${...} as a fatal syntax error (status 2). */
+
+static void bad_subst_fatal(void)
+{
+  if (!g_sh.interactive && vs_feat(VF_EXIT2_ON_ERROR))
+    {
+      g_sh.unwind = UW_EXIT;
+      g_sh.last_status = 2;
+    }
+}
+
 static void param_error(struct xctx_s *x, const char *name, size_t nlen,
                         const char *msg)
 {
@@ -384,7 +396,7 @@ static void param_error(struct xctx_s *x, const char *name, size_t nlen,
   if (!g_sh.interactive)
     {
       g_sh.unwind = UW_EXIT;
-      g_sh.last_status = 1;
+      g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
     }
 }
 
@@ -494,6 +506,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
     {
       vs_err("${%.*s}: bad substitution", (int)n, in);
       x->error = true;
+      bad_subst_fatal();
       return;
     }
 
@@ -510,6 +523,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
         {
           vs_err("${%.*s}: bad substitution", (int)n, in);
           x->error = true;
+          bad_subst_fatal();
           return;
         }
 
@@ -780,7 +794,7 @@ static void x_arith(struct xctx_s *x, const char *expr, size_t n, bool dq)
       if (!g_sh.interactive)
         {
           g_sh.unwind = UW_EXIT;
-          g_sh.last_status = 1;
+          g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
         }
     }
   else
@@ -928,6 +942,7 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
 
   vs_err("bad substitution");
   x->error = true;
+  bad_subst_fatal();
   *i = len;
 }
 

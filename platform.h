@@ -12,11 +12,44 @@
 #define VAPORSHELL_PLATFORM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <sys/types.h>
+
+/* The shell's state (vaporshell.h). Host: the one global; NuttX: an
+ * instance per task, found by task id, because tasks share globals.
+ */
+
+struct shell_s *vs_plat_state_create(void);   /* zeroed, bound to this task */
+void vs_plat_state_destroy(void);
+
+/* NuttX's VFS resolves neither "." nor ".." in a path. Returns a path the
+ * OS can open: 'path' itself when it is fine (always, on a host), else an
+ * absolute, normalized copy in buf (n bytes). Use it for every filesystem
+ * call the shell makes on a user-supplied path.
+ */
+
+#define VS_PATH_MAX 512
+
+const char *vs_plat_fspath(const char *path, char *buf, size_t n);
+
+/* Shorthand for a call site: stat(VS_FS(p), &st). The scratch buffer is a
+ * compound literal, alive until the end of the enclosing block, which is
+ * exactly as long as the call needs it.
+ */
+
+#define VS_FS(p) vs_plat_fspath((p), (char[VS_PATH_MAX]){ 0 }, VS_PATH_MAX)
 
 /* Is stdin a terminal? (NuttX: assumed, as before.) */
 
 bool vs_plat_interactive(void);
+
+/* Identity, for bash's UID/EUID/HOSTNAME/OSTYPE. */
+
+bool vs_plat_isatty(int fd);
+long vs_plat_uid(void);
+long vs_plat_euid(void);
+int vs_plat_hostname(char *buf, size_t n);      /* 0 on success */
+const char *vs_plat_ostype(void);
 
 /* fork() where the OS has it, else -1 with errno ENOSYS. */
 

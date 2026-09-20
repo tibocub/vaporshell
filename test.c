@@ -18,6 +18,7 @@
 #include "vaporshell.h"
 #include "exec.h"
 #include "mode.h"
+#include "platform.h"
 
 struct tst_s
 {
@@ -26,6 +27,32 @@ struct tst_s
   int i;
   bool err;
 };
+
+/* Modification times to the nanosecond where the OS has them: -nt/-ot on
+ * files touched within one second of each other must still order.
+ */
+
+static int mtime_cmp(const struct stat *a, const struct stat *b)
+{
+  if (a->st_mtime != b->st_mtime)
+    {
+      return a->st_mtime > b->st_mtime ? 1 : -1;
+    }
+
+#if defined(__APPLE__)
+  if (a->st_mtimespec.tv_nsec != b->st_mtimespec.tv_nsec)
+    {
+      return a->st_mtimespec.tv_nsec > b->st_mtimespec.tv_nsec ? 1 : -1;
+    }
+#elif defined(st_mtime) || defined(_POSIX_VERSION)
+  if (a->st_mtim.tv_nsec != b->st_mtim.tv_nsec)
+    {
+      return a->st_mtim.tv_nsec > b->st_mtim.tv_nsec ? 1 : -1;
+    }
+#endif
+
+  return 0;
+}
 
 static bool t_or(struct tst_s *t);
 
@@ -63,7 +90,8 @@ static bool is_binary(const char *s)
 static bool is_unary(const char *s)
 {
   return s[0] == '-' && s[1] != '\0' && s[2] == '\0' &&
-         strchr("bcdefghLnprsSuwxzOGkt", s[1]) != NULL;
+         (strchr("bcdefghLnprsSuwxzOGkt", s[1]) != NULL ||
+          (s[1] == 'v' && vs_feat(VF_TEST_EXT)));    /* -v var: bash */
 }
 
 static bool to_long(struct tst_s *t, const char *s, long *out)
@@ -88,25 +116,25 @@ static bool file_test(struct tst_s *t, char op, const char *path)
   (void)t;
   if (op == 'L' || op == 'h')
     {
-      return lstat(path, &st) == 0 && S_ISLNK(st.st_mode);
+      return lstat(VS_FS(path), &st) == 0 && S_ISLNK(st.st_mode);
     }
 
   if (op == 'r')
     {
-      return access(path, R_OK) == 0;
+      return access(VS_FS(path), R_OK) == 0;
     }
 
   if (op == 'w')
     {
-      return access(path, W_OK) == 0;
+      return access(VS_FS(path), W_OK) == 0;
     }
 
   if (op == 'x')
     {
-      return access(path, X_OK) == 0;
+      return access(VS_FS(path), X_OK) == 0;
     }
 
-  if (stat(path, &st) != 0)
+  if (stat(VS_FS(path), &st) != 0)
     {
       return false;
     }
@@ -162,8 +190,8 @@ static bool binary(struct tst_s *t, const char *a, const char *op, const char *b
     {
       struct stat sa;
       struct stat sb;
-      bool ha = stat(a, &sa) == 0;
-      bool hb = stat(b, &sb) == 0;
+      bool ha = stat(VS_FS(a), &sa) == 0;
+      bool hb = stat(VS_FS(b), &sb) == 0;
 
       if (op[1] == 'e')
         {
@@ -172,10 +200,10 @@ static bool binary(struct tst_s *t, const char *a, const char *op, const char *b
 
       if (op[1] == 'n')
         {
-          return ha && (!hb || sa.st_mtime > sb.st_mtime);
+          return ha && (!hb || mtime_cmp(&sa, &sb) > 0);
         }
 
-      return hb && (!ha || sa.st_mtime < sb.st_mtime);
+      return hb && (!ha || mtime_cmp(&sa, &sb) < 0);
     }
 
   if (!to_long(t, a, &x) || !to_long(t, b, &y))
@@ -244,6 +272,7 @@ static bool t_primary(struct tst_s *t)
         {
           case 'n': return b[0] != '\0';
           case 'z': return b[0] == '\0';
+          case 'v': return var_get(b) != NULL;
           case 't':
             {
               long fd;

@@ -1,3 +1,4 @@
+# requires: cmd:sed env:HOME
 unset u; e=; s=hello
 echo "${u-default} ${e-default} ${e:-default} ${s:-default}"
 echo "${u+alt} ${e+alt} ${e:+alt} ${s:+alt}"

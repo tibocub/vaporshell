@@ -132,11 +132,15 @@ static void child_run(struct node_s *n)
 
 void vs_special_error(void)
 {
+  /* dash does not let a failing special builtin end the shell from inside a
+   * trap action; only that action is affected.
+   */
+
   if (vs_feat(VF_SPECIAL_ERR_FATAL) && !g_sh.interactive &&
-      g_sh.unwind == UW_NONE)
+      g_sh.unwind == UW_NONE && g_sh.trap_depth == 0)
     {
       g_sh.unwind = UW_EXIT;
-      g_sh.last_status = 1;
+      g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
     }
 }
 
@@ -273,7 +277,7 @@ static int run_as_script(const char *path, char **argv)
 static int run_external(char **argv, bool can_exec)
 {
   int err = 0;
-  char *path = vs_plat_find_command(argv[0], var_get("PATH"), &err);
+  char *path = hash_find_command(argv[0], var_get("PATH"), &err);
   char **envp;
   pid_t pid;
   int ret;
@@ -377,6 +381,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
     }
 
   arena_release(f->arena);
+  var_locals_pop(g_sh.func_depth);
   g_sh.func_depth--;
   for (i = 0; i < g_sh.npos; i++)
     {
@@ -422,6 +427,13 @@ struct tmpvar_s
 
 /* Assignment words always contain '=' (the parser checked). */
 
+/* A redirection that cannot be set up: 1 in bash, 2 in dash. */
+
+static int redir_fail_status(void)
+{
+  return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+}
+
 static void split_assign(const char *text, char **name, const char **value)
 {
   const char *eq = strchr(text, '=');
@@ -445,7 +457,7 @@ static int exec_assign_only(struct node_s *n)
 
   if (n->redirs != NULL && redir_apply(n->redirs, &sv, false) != 0)
     {
-      return 1;
+      return redir_fail_status();
     }
 
   for (w = n->assigns; w != NULL && g_sh.unwind == UW_NONE; w = w->next)
@@ -531,12 +543,22 @@ static int exec_simple(struct node_s *n)
 
   g_sh.can_exec = false;
   g_sh.cmdsub_status = -1;
+  if (n->line > 0)
+    {
+      g_sh.lineno = n->line;
+    }
+
   fv_init(&argv);
 
   if (expand_words(n->words, &argv) != 0)
     {
       fv_free(&argv);
       return g_sh.unwind == UW_EXIT ? g_sh.last_status : 1;
+    }
+
+  if (argv.n > 0 && vs_feat(VF_BASH_VARS))
+    {
+      var_set("_", argv.v[argv.n - 1]);
     }
 
   if (argv.n == 0)
@@ -555,7 +577,7 @@ static int exec_simple(struct node_s *n)
 
       if (redir_apply(n->redirs, &sv, persist) != 0)
         {
-          status = 1;
+          status = redir_fail_status();
           if (b != NULL && b->special)
             {
               vs_special_error();
@@ -811,7 +833,7 @@ static int with_redirs(struct node_s *n, int (*fn)(struct node_s *))
 
   if (redir_apply(n->redirs, &sv, false) != 0)
     {
-      return 1;
+      return redir_fail_status();
     }
 
   status = fn(n);
@@ -846,6 +868,7 @@ static int run_stages(struct node_s *first, int nst)
   pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
   struct node_s *stage = first;
   int status = 1;
+  int failed = 0;
   int i;
   int k;
 
@@ -901,10 +924,20 @@ static int run_stages(struct node_s *first, int nst)
     {
       int s = pids[i] > 0 ? wait_for(pids[i]) : 1;
 
+      if (s != 0)
+        {
+          failed = s;
+        }
+
       if (i == nst - 1)
         {
           status = s;
         }
+    }
+
+  if (g_sh.opt_pipefail && failed != 0)
+    {
+      status = failed;               /* rightmost failing stage */
     }
 
   free(pipes);
@@ -925,6 +958,7 @@ static int run_stages(struct node_s *first, int nst)
   pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
   struct node_s *stage = first;
   int status = 1;
+  int failed = 0;
   int i;
   int nclose = 0;
 
@@ -965,7 +999,7 @@ static int run_stages(struct node_s *first, int nst)
           continue;
         }
 
-      path = vs_plat_find_command(argv.v[0], var_get("PATH"), &err);
+      path = hash_find_command(argv.v[0], var_get("PATH"), &err);
       envp = var_build_env();
       if (path == NULL ||
           vs_plat_spawn(path, argv.v, envp, i > 0 ? pipes[i - 1][0] : -1,
@@ -990,10 +1024,20 @@ static int run_stages(struct node_s *first, int nst)
     {
       int s = pids[i] > 0 ? wait_for(pids[i]) : 127;
 
+      if (s != 0)
+        {
+          failed = s;
+        }
+
       if (i == nst - 1)
         {
           status = s;
         }
+    }
+
+  if (g_sh.opt_pipefail && failed != 0)
+    {
+      status = failed;               /* rightmost failing stage */
     }
 
   free(pipes);
@@ -1073,7 +1117,7 @@ static int exec_list(struct node_s *list)
       if (g_sh.unwind == UW_NONE)
         {
           g_sh.last_status = status;
-          if (g_trap_pending)
+          if (g_sh.trap_pending)
             {
               trap_run_pending();
             }
@@ -1090,6 +1134,11 @@ static int exec_list(struct node_s *list)
 int exec_node(struct node_s *n)
 {
   int status = 0;
+
+  if (g_sh.opt_n && !g_sh.interactive)
+    {
+      return 0;                    /* set -n: read, do not run */
+    }
 
   switch (n->type)
     {
@@ -1331,7 +1380,7 @@ static int run_loop(struct parser_s *p, bool recover, int status)
           continue;
         }
 
-      if (node != NULL)
+      if (node != NULL && !(g_sh.opt_n && !g_sh.interactive))
         {
           status = exec_node(node);
         }
@@ -1358,6 +1407,11 @@ int run_string(const char *text, size_t len)
   int status;
 
   parser_init_mem(&p, text, len);
+  if (g_sh.lineno > 1)
+    {
+      p.lx.line_base = g_sh.lineno - 1;   /* eval'd text counts from its caller's line */
+    }
+
   status = run_source(&p, false);
   parser_free(&p);
   return status;
@@ -1380,6 +1434,11 @@ char *read_stream_line(FILE *fp)
         }
     }
 
+  if (g_sh.opt_v && line.len > 0)
+    {
+      fwrite(line.s, 1, line.len, stderr);      /* set -v */
+    }
+
   return line.len > 0 ? sb_take(&line) : (sb_free(&line), NULL);
 }
 
@@ -1391,7 +1450,8 @@ static char *file_next_line(void *ctx, bool continuation)
 
 int run_file(const char *path)
 {
-  FILE *fp = fopen(path, "r");
+  char pbuf[VS_PATH_MAX];
+  FILE *fp = fopen(vs_plat_fspath(path, pbuf, sizeof(pbuf)), "r");
   struct parser_s p;
   int status;
 
@@ -1400,6 +1460,26 @@ int run_file(const char *path)
       vs_err("%s: %s", path, strerror(errno));
       return 127;
     }
+
+  /* Move the script to a high descriptor: it would otherwise be fd 3, and
+   * `exec 3>file` in the script would silently replace the script itself
+   * (bash and dash both do this).
+   */
+
+  {
+    int hi = vs_plat_dup_high(fileno(fp));
+    FILE *hfp = hi >= 0 ? fdopen(hi, "r") : NULL;
+
+    if (hfp != NULL)
+      {
+        fclose(fp);
+        fp = hfp;
+      }
+    else if (hi >= 0)
+      {
+        close(hi);
+      }
+  }
 
   parser_init(&p, file_next_line, fp);
   status = run_source(&p, false);

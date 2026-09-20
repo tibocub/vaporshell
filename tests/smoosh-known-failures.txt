@@ -1,5 +1,4 @@
 builtin.break.nonlexical
-builtin.command.ec
 builtin.command.exec
 builtin.command.nospecial
 builtin.continue.nonlexical
@@ -8,7 +7,6 @@ builtin.dot.path
 builtin.dot.unreadable
 builtin.exec.modernish.mkfifo.loop
 builtin.export.override
-builtin.hash.nonposix
 builtin.history.nonposix
 builtin.kill.jobs
 builtin.readonly.assign.interactive
@@ -30,7 +28,6 @@ semantics.noninteractive.expansion.exit
 semantics.pattern.hyphen
 semantics.pattern.rightbracket
 semantics.redir.fds
-semantics.simple.link
 semantics.subshell.background.traps
 semantics.subshell.break
 semantics.traps.async

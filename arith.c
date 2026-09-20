@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "vaporshell.h"
+#include "mode.h"
 #include "expand.h"
 
 #define MAX_DEPTH 16
@@ -24,6 +25,8 @@ struct ar_s
 };
 
 static long parse_assign(struct ar_s *a);
+static long parse_comma(struct ar_s *a);
+static long parse_unary(struct ar_s *a);
 
 static void ar_fail(struct ar_s *a, const char *msg)
 {
@@ -114,7 +117,7 @@ static long parse_primary(struct ar_s *a)
   if (*a->p == '(')
     {
       a->p++;
-      v = parse_assign(a);
+      v = parse_comma(a);
       ws(a);
       if (*a->p != ')')
         {
@@ -141,6 +144,45 @@ static long parse_primary(struct ar_s *a)
         }
 
       v = strtol(a->p, &end, base);
+      if (*end == '#' && base == 10 && vs_feat(VF_ARITH_EXT) && v >= 2 && v <= 64)
+        {
+          /* base#digits: 0-9 a-z A-Z @ _ (bases above 36 tell case apart) */
+
+          long acc = 0;
+          const char *q = end + 1;
+          bool any = false;
+
+          for (; ; q++)
+            {
+              int d;
+
+              if (*q >= '0' && *q <= '9') d = *q - '0';
+              else if (*q >= 'a' && *q <= 'z') d = *q - 'a' + 10;
+              else if (*q >= 'A' && *q <= 'Z') d = (v <= 36) ? *q - 'A' + 10 : *q - 'A' + 36;
+              else if (*q == '@') d = 62;
+              else if (*q == '_') d = 63;
+              else break;
+
+              if (d >= v)
+                {
+                  ar_fail(a, "value too great for base");
+                  return 0;
+                }
+
+              acc = wrap_add(wrap_mul(acc, v), d);
+              any = true;
+            }
+
+          if (!any)
+            {
+              ar_fail(a, "invalid number");
+              return 0;
+            }
+
+          a->p = q;
+          return acc;
+        }
+
       if (id_char(*end))
         {
           ar_fail(a, "invalid number");
@@ -162,6 +204,24 @@ static long parse_primary(struct ar_s *a)
         }
 
       name[n] = '\0';
+      ws(a);
+      if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
+                                    strncmp(a->p, "--", 2) == 0))
+        {
+          long old = var_value(a, name);
+          char buf[32];
+
+          snprintf(buf, sizeof(buf), "%ld", a->p[0] == '+' ? wrap_add(old, 1)
+                                                            : wrap_sub(old, 1));
+          a->p += 2;
+          if (a->skip == 0 && !a->err && var_set(name, buf) != 0)
+            {
+              a->err = true;
+            }
+
+          return old;
+        }
+
       return var_value(a, name);
     }
 
@@ -169,34 +229,97 @@ static long parse_primary(struct ar_s *a)
   return 0;
 }
 
-static long parse_unary(struct ar_s *a)
+static long ipow(struct ar_s *a, long base, long exp)
+{
+  long r = 1;
+
+  if (exp < 0)
+    {
+      ar_fail(a, "exponent less than 0");
+      return 0;
+    }
+
+  while (exp-- > 0)
+    {
+      r = wrap_mul(r, base);
+    }
+
+  return r;
+}
+
+/* Prefix operators bind to their operand first; ** (right associative)
+ * then applies to the result, as in bash: -2**2 is 4.
+ */
+
+static long parse_prefix(struct ar_s *a)
 {
   ws(a);
+  if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
+                                strncmp(a->p, "--", 2) == 0) && id_start(a->p[2]))
+    {
+      char name[128];
+      size_t n = 0;
+      char op = a->p[0];
+      long v;
+      char buf[32];
+
+      a->p += 2;
+      while (id_char(*a->p) && n < sizeof(name) - 1)
+        {
+          name[n++] = *a->p++;
+        }
+
+      name[n] = '\0';
+      v = var_value(a, name);
+      v = (op == '+') ? wrap_add(v, 1) : wrap_sub(v, 1);
+      snprintf(buf, sizeof(buf), "%ld", v);
+      if (a->skip == 0 && !a->err && var_set(name, buf) != 0)
+        {
+          a->err = true;
+        }
+
+      return v;
+    }
+
   if (*a->p == '+')
     {
       a->p++;
-      return parse_unary(a);
+      return parse_prefix(a);
     }
 
   if (*a->p == '-')
     {
       a->p++;
-      return wrap_sub(0, parse_unary(a));
+      return wrap_sub(0, parse_prefix(a));
     }
 
   if (*a->p == '!')
     {
       a->p++;
-      return !parse_unary(a);
+      return !parse_prefix(a);
     }
 
   if (*a->p == '~')
     {
       a->p++;
-      return ~parse_unary(a);
+      return ~parse_prefix(a);
     }
 
   return parse_primary(a);
+}
+
+static long parse_unary(struct ar_s *a)
+{
+  long base = parse_prefix(a);
+
+  ws(a);
+  if (vs_feat(VF_ARITH_EXT) && a->p[0] == '*' && a->p[1] == '*' && a->p[2] != '=')
+    {
+      a->p += 2;
+      return ipow(a, base, parse_unary(a));
+    }
+
+  return base;
 }
 
 static const struct
@@ -460,6 +583,21 @@ static long parse_assign(struct ar_s *a)
   }
 }
 
+static long parse_comma(struct ar_s *a)
+{
+  long v = parse_assign(a);
+
+  ws(a);
+  while (vs_feat(VF_ARITH_EXT) && *a->p == ',' && !a->err)
+    {
+      a->p++;
+      v = parse_assign(a);
+      ws(a);
+    }
+
+  return v;
+}
+
 int arith_eval(const char *expr, long *result)
 {
   struct ar_s a;
@@ -469,7 +607,7 @@ int arith_eval(const char *expr, long *result)
   a.skip = 0;
   a.depth = 0;
 
-  *result = parse_assign(&a);
+  *result = parse_comma(&a);
   ws(&a);
   if (!a.err && *a.p != '\0')
     {

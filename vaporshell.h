@@ -17,6 +17,7 @@
 #define VAPORSHELL_H
 
 #include <stdbool.h>
+#include <time.h>
 #include <stddef.h>
 #include <sys/types.h>
 
@@ -32,6 +33,10 @@ char *vs_xstrndup(const char *s, size_t n);
 /* "vaporshell: <message>\n" on stderr. */
 
 void vs_err(const char *fmt, ...);
+
+/* Lexical path normalization: see util.c. */
+
+int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n);
 
 /* Growable NUL-terminated string. */
 
@@ -62,6 +67,33 @@ struct var_s
   unsigned flags;
 };
 
+/* `local`: a variable's outer state, put back when its function returns. */
+
+struct local_s
+{
+  struct local_s *next;
+  char *name;
+  char *old;                  /* outer value; only meaningful if had */
+  bool had;                   /* the variable had a value */
+  unsigned flags;
+  int depth;                  /* function nesting level that declared it */
+};
+
+struct alias_s
+{
+  struct alias_s *next;
+  char *name;
+  char *value;
+};
+
+struct hash_s
+{
+  struct hash_s *next;
+  char *name;
+  char *path;
+  int hits;
+};
+
 struct node_s;
 struct arena_s;
 
@@ -83,6 +115,20 @@ char **var_build_env(void);                      /* free with env_free() */
 void env_free(char **env);
 void vars_import(char **environ_list);
 
+/* `local` support: declare a variable local to the running function, and
+ * restore everything declared at 'depth' when that function returns.
+ */
+
+int var_local_declare(const char *name, const char *value, bool inherit);
+void var_locals_pop(int depth);
+
+/* Aliases (alias.c) and the command hash (hash.c). */
+
+const struct alias_s *alias_find(const char *name);
+void aliases_free(void);
+char *hash_find_command(const char *name, const char *path_var, int *err);
+void hash_clear(void);
+
 struct func_s *func_find(const char *name);
 void func_define(const char *name, struct node_s *body, struct arena_s *arena);
 void func_unset(const char *name);
@@ -91,7 +137,18 @@ void pos_set(char **args, int n);                /* takes ownership of copies */
 char **pos_swap(char **args, int n, int *old_n); /* returns previous list */
 const char *pos_get(int i);                      /* 1-based; NULL if unset */
 
-/* ---- Global shell state ------------------------------------------------ */
+/* ---- Shell state ---------------------------------------------------------
+ *
+ * Everything mutable lives in one struct shell_s so that two shells can
+ * coexist. That matters on NuttX: a flat build gives every instance of an
+ * app the *same* global data, so a second vaporshell (a `vaporshell -c`
+ * child, or another terminal) would otherwise overwrite the first one's
+ * variables, functions and options. On a host OS there is one shell per
+ * process and g_sh is a plain global; on NuttX g_sh is the instance
+ * registered for the calling task (platform_nuttx.c).
+ */
+
+#define VS_NTRAPS 65
 
 enum unwind_e
 {
@@ -109,6 +166,14 @@ struct shell_s
   bool opt_x;             /* set -x */
   bool opt_f;             /* set -f */
   bool opt_C;             /* set -C */
+  bool opt_a;             /* set -a: export every assigned variable */
+  bool opt_n;             /* set -n: read commands but do not run them */
+  bool opt_v;             /* set -v: echo input lines as they are read */
+  bool opt_pipefail;      /* set -o pipefail (bash) */
+  int trap_depth;         /* inside a trap action */
+  int dot_depth;          /* nesting of `.`/source: `return` is valid inside */
+  time_t seconds_base;    /* $SECONDS counts from here */
+  unsigned rand_state;    /* $RANDOM */
   bool interactive;
   int last_status;        /* $? */
   int cmdsub_status;      /* status of the last command substitution, or -1 */
@@ -130,12 +195,36 @@ struct shell_s
 
   struct var_s *vars;
   struct func_s *funcs;
+
+  unsigned long features;     /* mode.h: the active profile's feature bits */
+  int profile;                /* enum vs_profile_e */
+
+  int lineno;                 /* line of the command being run: $LINENO */
+  struct local_s *locals;
+  struct alias_s *aliases;
+  struct hash_s *hash;
+  int getopts_pos;            /* getopts: index inside a clustered option arg */
+  char getopts_last[24];      /* OPTIND as getopts last stored it */
+
+  char *trap_action[VS_NTRAPS];        /* traps.c: NULL default, "" ignore */
+  volatile int trap_flag[VS_NTRAPS];   /* set by signal handlers */
+  volatile int trap_pending;
 };
 
-extern struct shell_s g_sh;
+#ifdef VAPORSHELL_POSIX
+extern struct shell_s g_vs_state;
+#  define g_sh g_vs_state
+#else
+struct shell_s *vs_state(void);
+#  define g_sh (*vs_state())
+#endif
 
-/* Sets up g_sh from the process environment. */
+/* Creates this task's shell state from the process environment. */
 
 void shell_init(const char *arg0);
+
+/* Frees everything shell_init() and the shell's own run allocated. */
+
+void shell_fini(void);
 
 #endif

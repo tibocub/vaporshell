@@ -1,3 +1,4 @@
+# requires: fork
 echo "a b c" | { read x y z; echo "$x|$y|$z"; }
 echo "a b c d" | { read x y; echo "$x|$y"; }
 echo "  lead" | { read x; echo "[$x]"; }

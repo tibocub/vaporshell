@@ -78,6 +78,17 @@ int vs_set_named_option(const char *name, bool on);
 
 int bi_help(int argc, char **argv);
 int bi_test(int argc, char **argv);
+int bi_echo(int argc, char **argv);
+int bi_getopts(int argc, char **argv);
+int bi_local(int argc, char **argv);
+int bi_hash(int argc, char **argv);
+int bi_alias(int argc, char **argv);
+int bi_unalias(int argc, char **argv);
+#ifdef VAPORSHELL_POSIX
+int bi_times(int argc, char **argv);
+int bi_ulimit(int argc, char **argv);
+#endif
+int bi_printf(int argc, char **argv);
 int bi_bracket(int argc, char **argv);
 int bi_trap(int argc, char **argv);
 int bi_kill(int argc, char **argv);
@@ -87,7 +98,6 @@ int bi_kill(int argc, char **argv);
 void trap_run_pending(void);
 void trap_run_exit(void);
 void trap_reset_in_child(void);
-extern volatile int g_trap_pending;
 
 /* Read one line of arbitrary length from a stream (malloc'd, with '\n'). */
 
