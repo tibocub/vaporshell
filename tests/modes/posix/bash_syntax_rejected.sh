@@ -6,7 +6,9 @@ t 'if [[ 1 == 1 ]]; then echo yes; fi'
 t '(( 1 ))'
 t 'for ((i=0;i<2;i++)); do echo $i; done'
 t 'function f { echo hi; }; f'
-t 'time true'
+# `time` is not a keyword in POSIX mode, so this is a lookup of a command named
+# time: an empty PATH keeps the result independent of a host that has GNU time.
+t 'PATH=/nonexistent-zz; time true'
 t 'case a in a) echo 1;& b) echo 2;; esac'
 t 'cat <<< hi'
 t 'echo {a,b} {1..3}'

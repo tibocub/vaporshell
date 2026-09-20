@@ -143,6 +143,13 @@ vaporshell (bash mode) has it as a builtin.
   the shell goes on, where bash aborts the rest of a `-c` command list and, for
   a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
   operators on `$@` are rejected rather than applied to each parameter.
+- **Collation**: glob results and `[[ a < b ]]` are ordered by the collation
+  locale (`LC_ALL`, then `LC_COLLATE`, then `LANG`, following assignments) using
+  `strcoll`, as bash does, so `a.txt` sorts before `B.txt` under en_US.UTF-8.
+  A locale that is not installed leaves the ordering as it was. `test`'s `<` and
+  `>` stay byte order, as in bash outside posix mode. NuttX has no locales and
+  always sorts bytes; the NuttX differential runner therefore runs its reference
+  shells with `LC_ALL=C`.
 - **`shopt`** knows bash 5.3's 59 options with their defaults and formats. Nine
   change behaviour (`nullglob`, `dotglob`, `failglob`, `nocaseglob`,
   `nocasematch`, `extglob`, `globstar`, `expand_aliases`, `patsub_replacement`),

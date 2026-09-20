@@ -5,6 +5,7 @@
 
 #include <nuttx/config.h>
 #include <errno.h>
+#include <locale.h>
 #include <fcntl.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -96,6 +97,38 @@ pid_t vs_plat_fork(void)
 {
   fflush(NULL);                 /* or buffered output would appear twice */
   return fork();
+}
+
+int vs_plat_collate(const char *a, const char *b)
+{
+  int r = strcoll(a, b);
+
+  return r != 0 ? r : strcmp(a, b);      /* a total order even if the locale ties */
+}
+
+/* Same precedence as the C library's own: LC_ALL, then LC_COLLATE, then LANG.
+ * With none of them set the collation is the C locale, as in bash.
+ */
+
+void vs_plat_locale_update(void)
+{
+  const char *v = var_get("LC_ALL");
+
+  if (v == NULL || v[0] == '\0')
+    {
+      v = var_get("LC_COLLATE");
+    }
+
+  if (v == NULL || v[0] == '\0')
+    {
+      v = var_get("LANG");
+    }
+
+  /* A locale that is not installed leaves the collation as it was (bash does
+   * the same); with nothing set it is the C locale.
+   */
+
+  setlocale(LC_COLLATE, (v != NULL && v[0] != '\0') ? v : "C");
 }
 
 bool vs_plat_export_all(void)

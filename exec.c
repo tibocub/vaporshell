@@ -532,10 +532,13 @@ static int exec_assign_only(struct node_s *n)
 static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
 {
   int i;
+  bool locale = false;
 
   for (i = ntv - 1; i >= 0; i--)
     {
       struct var_s *v = var_lookup(tv[i].name);
+
+      locale = locale || var_is_locale_var(tv[i].name);
 
       if (v != NULL)
         {
@@ -559,6 +562,11 @@ static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
 
       free(tv[i].old);
       free(tv[i].name);
+    }
+
+  if (locale)
+    {
+      vs_plat_locale_update();          /* `LC_ALL=C cmd` is over: back to the old collation */
     }
 
   free(tv);
@@ -1640,11 +1648,11 @@ static int db_test(struct node_s *n)
 
   if (strcmp(op, "<") == 0)
     {
-      r = strcmp(a, b) < 0 ? 0 : 1;
+      r = vs_plat_collate(a, b) < 0 ? 0 : 1;      /* [[ ]] sorts by the locale */
     }
   else if (strcmp(op, ">") == 0)
     {
-      r = strcmp(a, b) > 0 ? 0 : 1;
+      r = vs_plat_collate(a, b) > 0 ? 0 : 1;
     }
   else
     {

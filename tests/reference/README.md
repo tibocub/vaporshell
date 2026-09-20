@@ -48,3 +48,12 @@ shell itself prints, so console echo and prompts never leak into a comparison.
 A test that needs something NuttX lacks says so in a `# requires:` line near
 its top (the tokens are `NUTTX_LACKS` in the script) and is reported as
 skipped.
+
+## Locale
+
+The reference shells run with `LC_ALL=C` and no other locale variable (not even `LANG`, which they would fall back to after a script unsets `LC_ALL`). The shell under test in this runner is
+the NuttX one, which has no locales and orders glob results and `[[ a < b ]]` by
+bytes; a reference running in the caller's locale (en_US.UTF-8 puts `a.txt`
+before `B.txt`) could not agree with it. The host suites (`tests/posix-check.sh`)
+do the opposite on purpose: both shells inherit the caller's locale, and
+vaporshell follows it with `strcoll` as bash does.

@@ -62,6 +62,15 @@ pid_t vs_plat_fork(void);
 
 bool vs_plat_export_all(void);
 
+/* String ordering as bash does it for pathname sorting and [[ a < b ]]:
+ * strcoll() in the collation locale on a host, plain byte order on NuttX (no
+ * locales there). vs_plat_locale_update() re-reads LC_ALL / LC_COLLATE / LANG
+ * from the shell's variables; it is called when one of them changes.
+ */
+
+int vs_plat_collate(const char *a, const char *b);
+void vs_plat_locale_update(void);
+
 /* Locate 'name' for execution. Returns a malloc()'d path, or NULL with
  * *err = ENOENT (not found) or EACCES (found, not executable). NuttX
  * resolves builtin apps by bare name itself, so it returns the name.

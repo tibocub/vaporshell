@@ -603,7 +603,7 @@ static void sort_names(char **v, size_t n)
       char *key = v[i];
       size_t j = i;
 
-      while (j > 0 && strcmp(v[j - 1], key) > 0)
+      while (j > 0 && vs_plat_collate(v[j - 1], key) > 0)
         {
           v[j] = v[j - 1];
           j--;

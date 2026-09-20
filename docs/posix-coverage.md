@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-20 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **369 of 371**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **371 of 373**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -159,7 +159,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `split_quoted` | ok |  |
 | `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (19/19)
+### Pathname expansion  (21/21)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -182,6 +182,8 @@ Each table lists probes for one area; the count is probes matching dash.
 | `extglob` | ok |  |
 | `extglob_case_and_path` | ok |  |
 | `extglob_always_in_dbracket` | ok |  |
+| `glob_collation` | ok | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG) |
+| `glob_collation_assign` | ok |  |
 
 ### Redirection  (21/21)
 

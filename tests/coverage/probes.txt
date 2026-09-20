@@ -883,3 +883,9 @@ echo 'echo sourced' > s.sh; trap 'echo R' RETURN; . ./s.sh; echo end
 
 ## trap_case_insensitive | option
 trap 'echo x' err; trap -p 2>/dev/null | grep -c ERR
+
+## glob_collation | glob | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG)
+: > a.txt; : > B.txt; : > c.txt; : > Z.txt; mkdir d; echo *; [[ a < B ]] && echo lt || echo ge
+
+## glob_collation_assign | glob
+: > a.txt; : > B.txt; LC_ALL=C; echo *; unset LC_ALL; LC_ALL=C echo *

@@ -303,6 +303,7 @@ static void snap_leave(struct snap_s *s)
 
   trap_subshell_leave(&s->saved);
   g_sh = s->saved;
+  vs_plat_locale_update();          /* the parent's LC_ALL etc. are back */
 
   for (i = 0; i < SNAP_FDS; i++)
     {

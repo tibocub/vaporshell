@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **343 of 371**.
+Probes matching bash in bash mode: **345 of 373**.
 
 
 ## How this is measured
@@ -197,7 +197,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `split_quoted` | ok |  |
 | `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (19/19)
+### Pathname expansion  (21/21)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -220,6 +220,8 @@ Each table lists probes for one area; the count is probes matching bash.
 | `extglob` | ok |  |
 | `extglob_case_and_path` | ok |  |
 | `extglob_always_in_dbracket` | ok |  |
+| `glob_collation` | ok | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG) |
+| `glob_collation_assign` | ok |  |
 
 ### Redirection  (21/21)
 
@@ -637,6 +639,13 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 43 of the
   the shell goes on, where bash aborts the rest of a `-c` command list and, for
   a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
   operators on `$@` are rejected rather than applied to each parameter.
+- **Collation**: glob results and `[[ a < b ]]` are ordered by the collation
+  locale (`LC_ALL`, then `LC_COLLATE`, then `LANG`, following assignments) using
+  `strcoll`, as bash does, so `a.txt` sorts before `B.txt` under en_US.UTF-8.
+  A locale that is not installed leaves the ordering as it was. `test`'s `<` and
+  `>` stay byte order, as in bash outside posix mode. NuttX has no locales and
+  always sorts bytes; the NuttX differential runner therefore runs its reference
+  shells with `LC_ALL=C`.
 - **`shopt`** knows bash 5.3's 59 options with their defaults and formats. Nine
   change behaviour (`nullglob`, `dotglob`, `failglob`, `nocaseglob`,
   `nocasematch`, `extglob`, `globstar`, `expand_aliases`, `patsub_replacement`),

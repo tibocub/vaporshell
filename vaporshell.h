@@ -108,7 +108,8 @@ struct func_s
 bool is_valid_name(const char *s, size_t len);
 struct var_s *var_lookup(const char *name);
 const char *var_get(const char *name);           /* NULL if unset */
-int var_set(const char *name, const char *value); /* -1: readonly */
+int var_set(const char *name, const char *value);
+bool var_is_locale_var(const char *name);   /* LC_ALL, LC_COLLATE, LANG */ /* -1: readonly */
 int var_set_flags(const char *name, unsigned flags);
 int var_unset(const char *name);                 /* -1: readonly */
 char **var_build_env(void);                      /* free with env_free() */

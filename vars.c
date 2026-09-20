@@ -149,6 +149,14 @@ static struct var_s *var_create(const char *name)
   return v;
 }
 
+/* The variables that choose the collation locale (see vs_plat_locale_update). */
+
+bool var_is_locale_var(const char *n)
+{
+  return n[0] == 'L' && (strcmp(n, "LC_ALL") == 0 || strcmp(n, "LC_COLLATE") == 0 ||
+                         strcmp(n, "LANG") == 0);
+}
+
 int var_set(const char *name, const char *value)
 {
   struct var_s *v;
@@ -201,6 +209,11 @@ int var_set(const char *name, const char *value)
       hash_clear();                   /* remembered locations may be stale */
     }
 
+  if (var_is_locale_var(name))
+    {
+      vs_plat_locale_update();
+    }
+
   return 0;
 }
 
@@ -237,6 +250,11 @@ int var_unset(const char *name)
           free(v->name);
           free(v->value);
           free(v);
+          if (var_is_locale_var(name))
+            {
+              vs_plat_locale_update();
+            }
+
           return 0;
         }
     }
@@ -415,6 +433,7 @@ void shell_init(const char *arg0)
   g_sh.self = "vaporshell";
   g_sh.force_inproc = getenv("VS_INPROC") != NULL;    /* test hook, see inproc.c */
   vars_import(environ);
+  vs_plat_locale_update();              /* LC_ALL etc. from the environment */
 
   /* getopts starts scanning at the first argument. */
 

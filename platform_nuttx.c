@@ -199,6 +199,15 @@ pid_t vs_plat_fork(void)
  * nothing needs every variable exported any more.
  */
 
+int vs_plat_collate(const char *a, const char *b)
+{
+  return strcmp(a, b);                   /* no locales: byte order */
+}
+
+void vs_plat_locale_update(void)
+{
+}
+
 bool vs_plat_export_all(void)
 {
   return false;

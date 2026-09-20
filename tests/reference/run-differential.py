@@ -75,6 +75,16 @@ SUITES = [
     ("modes-posix", MODES_DIR / "posix", "dash", "--posix"),
 ]
 
+def neutral_locale_env():
+    """The caller's environment without any locale setting but LC_ALL=C, so a
+    reference falls back to the C locale even after a script unsets LC_ALL
+    (it would otherwise pick up LANG from the caller).
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("LC_") and k != "LANG"}
+    env["LC_ALL"] = "C"
+    return env
+
+
 def run_native(shell, script_path, timeout=10):
     """Runs inside a fresh, isolated temporary directory -- confirmed
     directly this is required, not optional: some real tests (smoosh's
@@ -92,10 +102,14 @@ def run_native(shell, script_path, timeout=10):
 
     try:
         with tempfile.TemporaryDirectory(prefix="vaporshell-difftest-") as tmpdir:
+            # The references run in the C locale: the shell under test here is
+            # the NuttX one, which has no locales and sorts glob results and
+            # [[ a < b ]] by bytes. A reference in the caller's locale (say
+            # en_US.UTF-8, where "a.txt" sorts before "B.txt") could not agree.
             result = subprocess.run(
                 [shell, str(script_path)],
                 capture_output=True, text=True, timeout=timeout,
-                cwd=tmpdir,
+                cwd=tmpdir, env=neutral_locale_env(),
             )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
