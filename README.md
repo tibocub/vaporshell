@@ -60,7 +60,9 @@ vaporshell/
   Kconfig, Makefile   standard NuttX app-directory shape
   docs/design.md      the design doc -- read this first for anything non-trivial
   tests/              own/ (vs bash and dash), modes/ (per-mode suites),
-                      check-all.sh, smoosh corpus + smoosh-check.sh,
+                      run-suites.sh (all suites), check-all.sh (everything,
+                      one report), nuttx-check.sh (build + test on vaporOS),
+                      smoosh corpus + smoosh-check.sh,
                       coverage/ (probe tool, doc generator),
                       reference/run-differential.py (also drives NuttX),
                       nuttx-sim-smoke.py, nuttx-symcheck.sh
@@ -80,9 +82,27 @@ used whenever `APPDIR` is set. Every root `.c` file must be listed there
 (`platform_nuttx.c` and `dispatch.c` are NuttX-only). After a build:
 
 ```
+make -f posix.mk check-vaporos     # rebuild what changed, then test in the simulator
+make -f posix.mk check-vaporos FULL=1   # the full vaporOS build first (minutes)
+```
+
+`tests/nuttx-check.sh` does the work: it rebuilds (incrementally by default),
+then runs the global-name collision check, the simulator smoke test and every
+differential suite, the same ones the Linux build runs. It expects the
+vaporOS workspace layout (`../vaporOS`, `../nuttx`; override with
+`VAPOROS_DIR` / `NUTTX_DIR`). The pieces also run on their own:
+
+```
 sh tests/nuttx-symcheck.sh ../nuttx/staging      # global-name collisions
 python3 tests/nuttx-sim-smoke.py ../nuttx/nuttx  # run it in the simulator
+python3 tests/reference/run-differential.py --all-suites --brief --nuttx-dir ../nuttx
 ```
+
+Test a change everywhere before pushing with `make -f posix.mk check-all`
+(Linux, Linux under ASan/UBSan, smoosh, vaporOS): it keeps going after a
+failure and ends with a single `TOTAL: N passed, M failed` line. Test files
+can declare what NuttX cannot do with a `# requires: ...` line (see
+`NUTTX_LACKS` in `run-differential.py`); those are reported as skipped.
 
 Everything in `libapps.a` shares one flat symbol namespace, so give any new
 global a `vs_`/`g_vs_` style name; `symcheck` finds the ones that clash
@@ -93,6 +113,8 @@ Standalone (Linux, macOS, BSD), from a plain checkout:
 ```
 make -f posix.mk            # build/vaporshell   (or just `make`)
 make check                  # every suite, each vs its reference shell
+make check ONLY=printf      # only tests whose name contains "printf"
+make help                   # every target
                             # (BASH_REF=/path/to/bash selects the bash reference)
 make coverage               # regenerate docs/*-coverage.md from the probes
 vaporshell --posix          # POSIX mode (also -o posix, or invoked as sh)

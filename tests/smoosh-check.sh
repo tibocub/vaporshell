@@ -12,6 +12,8 @@
 # in its own throwaway directory (several create files). Exit status is
 # non-zero only if something that used to pass now fails.
 
+. "$(dirname "$0")/lib.sh"
+
 VS=$1
 MODE=$2
 
@@ -74,13 +76,20 @@ sort "$KNOWN" > "$TMP/known.sorted"
 regressions=$(comm -23 "$TMP/fails.sorted" "$TMP/known.sorted")
 fixed=$(comm -13 "$TMP/fails.sorted" "$TMP/known.sorted")
 
+# For tests/check-all.sh: passes, regressions (the only real failures), and
+# the tests already on the known-failures list (counted as skipped).
+nreg=$(printf '%s' "$regressions" | grep -c .)
+nknown=$(comm -12 "$TMP/fails.sorted" "$TMP/known.sorted" | grep -c .)
+tally_group "smoosh corpus (--posix)" "$passed" "$nreg" "$nknown"
+for t in $regressions; do tally_fail "smoosh corpus (--posix)" "$t"; done
+
 if [ -n "$fixed" ]; then
     echo "newly passing (remove from the known list with --update):"
     echo "$fixed" | sed 's/^/  /'
 fi
 
 if [ -n "$regressions" ]; then
-    echo "REGRESSIONS (passed before, fail now):"
+    printf '%sREGRESSIONS (passed before, fail now):%s\n' "$C_RED" "$C_RESET"
     echo "$regressions" | sed 's/^/  /'
     exit 1
 fi

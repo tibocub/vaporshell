@@ -1,69 +1,69 @@
 #!/bin/sh
-# tests/check-all.sh -- every differential suite, each against the shell
-# that defines the behaviour:
+# tests/check-all.sh -- everything, one report.
 #
-#   own/           common ground: vaporshell vs bash, vaporshell --posix vs dash
-#   modes/bash/    bash mode:     vaporshell          vs bash
-#   modes/posix/   POSIX mode:    vaporshell --posix  vs dash
+#   sh tests/check-all.sh build/vaporshell build-asan/vaporshell   (see `make check-all`)
 #
-# POSIX mode is modelled on dash (0.5.12), not on bash --posix: the two
-# disagree (docs/modes.md), and dash is the strict one.
+# Runs, and adds up:
+#   1. every differential suite on the normal Linux build   (tests/run-suites.sh)
+#   2. the same suites on the ASan+UBSan build
+#   3. the smoosh POSIX corpus                               (tests/smoosh-check.sh)
+#   4. vaporOS/NuttX: build, symbol check, smoke test and the same suites in
+#      the simulator                                         (tests/nuttx-check.sh)
 #
-#   sh tests/check-all.sh path/to/vaporshell
+# It keeps going after a failure so one run shows everything, and ends with one
+# TOTAL line. A step whose prerequisite is missing (no dash, no vaporOS
+# workspace) is reported as skipped, not failed.
 #
-# BASH_REF=/path/to/bash selects the bash-mode reference (default: bash on
-# PATH), DASH_REF likewise. (Not $BASH: bash sets that variable itself, to the
-# path it was started as, so on systems where sh is bash it would silently
-# become `bash --posix`.) Which versions ran is printed first: differences
-# between bash releases show up as failures here and in docs/bash-coverage.md.
+# Options are passed through to nuttx-check.sh (--full, --no-build, --jobs N);
+# SKIP_NUTTX=1 leaves the vaporOS step out. See nuttx-check.sh for VAPOROS_DIR,
+# NUTTX_DIR, BASH_REF and DASH_REF.
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+. "$HERE/lib.sh"
 
 VS=$1
-HERE=$(dirname "$0")
-BASH_REF=${BASH_REF:-bash}
-DASH_REF=${DASH_REF:-dash}
+VS_ASAN=$2
+if [ $# -ge 2 ]; then shift 2; else shift $#; fi     # (a failed shift ends a POSIX shell)
+
+[ -x "$VS" ] || { echo "usage: $0 path/to/vaporshell path/to/vaporshell-asan [nuttx-check options]" >&2; exit 2; }
+
+VS_TALLY=$(mktemp "${TMPDIR:-/tmp}/vaporshell-tally.XXXXXX") || exit 2
+export VS_TALLY
+trap 'rm -f "$VS_TALLY"' EXIT INT TERM
 rc=0
+skipped=
 
-[ -x "$VS" ] || { echo "usage: $0 path/to/vaporshell" >&2; exit 2; }
+step() { printf '\n%s######## %s%s\n' "$C_BOLD" "$1" "$C_RESET"; }
 
-# The bash reference must really be bash in its default mode; a reference that
-# is something else would make every bash-mode result meaningless.
-bver=$("$BASH_REF" --version 2>/dev/null | head -n 1)
-case $bver in
-    "GNU bash"*) ;;
-    *) echo "BASH_REF ($BASH_REF) is not GNU bash; set BASH_REF=/path/to/bash" >&2; exit 2 ;;
-esac
-# ...and not bash started as `sh`, which is bash in POSIX mode.
-if ! "$BASH_REF" -c 'case $SHELLOPTS in *posix*) exit 1;; esac' 2>/dev/null; then
-    echo "BASH_REF ($BASH_REF) runs in POSIX mode (started as sh?); use the real bash binary" >&2
-    exit 2
-fi
-echo "bash-mode reference:  $bver"
-if command -v "$DASH_REF" >/dev/null 2>&1; then
-    dver=$(dpkg -s dash 2>/dev/null | sed -n 's/^Version: //p')
-    [ -n "$dver" ] || dver=$(rpm -q dash 2>/dev/null)
-    echo "posix-mode reference: $DASH_REF (${dver:-version unknown})"
+step "Linux: all suites"
+VS_PLATFORM=Linux sh "$HERE/run-suites.sh" "$VS" || rc=1
+
+if [ -x "$VS_ASAN" ]; then
+    step "Linux, ASan+UBSan: all suites"
+    VS_PLATFORM="Linux ASan" VS_SKIP_INPROC="${VS_SKIP_INPROC_ASAN:-}" ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" \
+        sh "$HERE/run-suites.sh" "$VS_ASAN" || rc=1
 else
-    echo "posix-mode reference: (dash not installed: POSIX suites skipped)"
+    skipped="$skipped\n  ASan build (pass its path as the second argument)"
 fi
 
-sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
-sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
-if command -v "$DASH_REF" >/dev/null 2>&1; then
-    sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
-    sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
+step "Linux: smoosh POSIX corpus"
+sh "$HERE/smoosh-check.sh" "$VS" || rc=1
+
+if [ -z "$SKIP_NUTTX" ]; then
+    step "vaporOS / NuttX"
+    sh "$HERE/nuttx-check.sh" "$@"
+    case $? in
+        0) ;;
+        3) skipped="$skipped\n  vaporOS/NuttX (no workspace found)" ;;
+        *) rc=1 ;;
+    esac
+else
+    skipped="$skipped\n  vaporOS/NuttX (SKIP_NUTTX=1)"
 fi
 
-# The same suites again with subshells and $(...) run in-process, the way
-# they must on NuttX (which has no fork). VS_INPROC is a test hook; see
-# inproc.c. Skipped if the caller already set it.
-if [ -z "$VS_INPROC" ]; then
-    echo "-- in-process subshells (VS_INPROC=1) --"
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
-    if command -v "$DASH_REF" >/dev/null 2>&1; then
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
-    fi
+printf '\n%s######## Summary%s\n' "$C_BOLD" "$C_RESET"
+tally_report "$VS_TALLY" 1 || rc=1
+if [ -n "$skipped" ]; then
+    printf '%sNot run:%s%b\n' "$C_YELLOW" "$C_RESET" "$skipped"
 fi
-
 exit $rc

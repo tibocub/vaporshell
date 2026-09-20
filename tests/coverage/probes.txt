@@ -440,8 +440,8 @@ touch f; mkdir d; [ -e f ] && echo e; [ -f f ] && echo f; [ -d d ] && echo d; [ 
 touch f; chmod 755 f; [ -x f ] && echo x; [ -r f ] && echo r; [ -w f ] && echo w
 ## test_link | test
 touch f; ln -s f l; [ -L l ] && echo link; [ -h l ] && echo h
-## test_compare_files | test
-touch a; sleep 0.01; touch b; [ b -nt a ] && echo nt; [ a -ot b ] && echo ot; [ a -ef a ] && echo ef
+## test_compare_files | test | explicit timestamps: a sleep-based version flakes under load
+touch -t 202001010000 a; touch -t 202001010001 b; [ b -nt a ] && echo nt; [ a -ot b ] && echo ot; [ a -ef a ] && echo ef
 ## test_not_and_or | test
 [ ! -e nothere ] && echo not; [ -e / -a -d / ] && echo and; [ -e /nothere -o -d / ] && echo or
 ## test_parens | test
@@ -499,6 +499,8 @@ return 2>/dev/null; echo rc=$?
 trap 'echo exit-trap' EXIT; echo body
 ## special_trap_list | builtin
 trap 'echo x' EXIT; trap
+## special_trap_in_subshell | builtin | bash lists the parent's traps inside $(...); dash and vaporshell print nothing
+trap 'echo hi' EXIT; x=$(trap); echo "[$x]"
 ## special_trap_reset | builtin
 trap 'echo x' EXIT; trap - EXIT; echo done
 ## special_trap_ignore | builtin

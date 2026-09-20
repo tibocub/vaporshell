@@ -26,3 +26,25 @@ than any one shell's own extensions, which is the right level for
 where vaporshell is now.
 
 See each subdirectory/file's own notes for more.
+
+## Running the differential tests on NuttX
+
+`run-differential.py` runs the same script through bash, dash and vaporshell
+(inside the NuttX simulator) and compares. Normally you use it through
+`make -f posix.mk check-vaporos` (which also rebuilds), but directly:
+
+```
+python3 tests/reference/run-differential.py --all-suites --brief --nuttx-dir ../nuttx
+python3 tests/reference/run-differential.py --all-suites --suite modes-posix --jobs 4 --nuttx-dir ../nuttx
+python3 tests/reference/run-differential.py --nuttx-dir ../nuttx tests/own/printf.sh   # one test, full output
+```
+
+`--all-suites` runs the four suites `tests/run-suites.sh` runs (each against
+its reference shell); `--brief` prints one line per test and full output only
+for failures; `--jobs N` runs N simulators at once; `--only` filters by file
+name; the exit status is 1 if anything differs. The test's stderr is dropped
+(as on the native side) and its stdout is taken from between two markers the
+shell itself prints, so console echo and prompts never leak into a comparison.
+A test that needs something NuttX lacks says so in a `# requires:` line near
+its top (the tokens are `NUTTX_LACKS` in the script) and is reported as
+skipped.

@@ -31,7 +31,7 @@ dash releases rarely; when it does, or when the POSIX standard changes:
 
 1. `python3 tests/coverage/gen-docs.py build/vaporshell --dash /path/to/dash`
    and `git diff docs/`.
-2. `sh tests/check-all.sh build/vaporshell` runs the POSIX suites against it.
+2. `sh tests/run-suites.sh build/vaporshell` runs the POSIX suites against it.
 3. If a behaviour moves between dash versions, record it in the release log.
 
 ## Release log

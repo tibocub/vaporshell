@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **269 of 320**.
+Probes matching bash in bash mode: **269 of 321**.
 
 
 ## How this is measured
@@ -43,7 +43,7 @@ When bash publishes a new release:
 1. Build it (`./configure --without-bash-malloc && make`) and note the exact
    version printed by `bash --version`.
 2. Re-run the suites against it:
-   `BASH_REF=/path/to/new/bash sh tests/check-all.sh build/vaporshell`.
+   `BASH_REF=/path/to/new/bash sh tests/run-suites.sh build/vaporshell`.
    A failure is either a bash behaviour change or a vaporshell bug; the
    suite name says which mode.
 3. Regenerate this document:
@@ -266,7 +266,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `test_file` | ok |  |
 | `test_file_perm` | ok |  |
 | `test_link` | ok |  |
-| `test_compare_files` | ok |  |
+| `test_compare_files` | ok | explicit timestamps: a sleep-based version flakes under load |
 | `test_not_and_or` | ok |  |
 | `test_parens` | ok |  |
 | `test_unary_edge` | ok |  |
@@ -274,7 +274,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (53/59)
+### POSIX builtins  (53/60)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -300,6 +300,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `special_return_outside` | ok |  |
 | `special_trap_exit` | ok |  |
 | `special_trap_list` | ok |  |
+| `special_trap_in_subshell` | **differs** | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
 | `special_trap_reset` | ok |  |
 | `special_trap_ignore` | ok |  |
 | `special_trap_signal` | ok |  |
@@ -566,6 +567,13 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 39 of the
   bash's output there depends on the locale.
 - **`declare -x`/`-r` listings** (`export`, `readonly` with no arguments) use
   bash's format and sort order.
+- **`trap` with no arguments** differs from bash in two environment-dependent
+  ways, both measured against bash 5.3.0 (dash behaves like vaporshell here):
+  bash also lists signals that were *ignored on entry* (`trap -- '' SIGINT`
+  when the shell was started under `nohup` or as a background job), and inside
+  a subshell, `$(...)` or pipeline it prints the parent's traps where
+  vaporshell prints nothing. Tests that print a trap listing must therefore
+  filter for the line they mean (`tests/own/traps.sh` does).
 - **Signals** on the NuttX build are not wired yet (`trap`/`kill` on real
   signals work on host builds only).
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists

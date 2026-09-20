@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-20 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **318 of 320**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **319 of 321**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -35,7 +35,7 @@ dash releases rarely; when it does, or when the POSIX standard changes:
 
 1. `python3 tests/coverage/gen-docs.py build/vaporshell --dash /path/to/dash`
    and `git diff docs/`.
-2. `sh tests/check-all.sh build/vaporshell` runs the POSIX suites against it.
+2. `sh tests/run-suites.sh build/vaporshell` runs the POSIX suites against it.
 3. If a behaviour moves between dash versions, record it in the release log.
 
 ## Release log
@@ -228,7 +228,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `test_file` | ok |  |
 | `test_file_perm` | ok |  |
 | `test_link` | ok |  |
-| `test_compare_files` | ok |  |
+| `test_compare_files` | ok | explicit timestamps: a sleep-based version flakes under load |
 | `test_not_and_or` | ok |  |
 | `test_parens` | ok |  |
 | `test_unary_edge` | ok |  |
@@ -236,7 +236,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (57/59)
+### POSIX builtins  (58/60)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -262,6 +262,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `special_return_outside` | ok |  |
 | `special_trap_exit` | ok |  |
 | `special_trap_list` | ok |  |
+| `special_trap_in_subshell` | ok | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
 | `special_trap_reset` | ok |  |
 | `special_trap_ignore` | ok |  |
 | `special_trap_signal` | ok |  |

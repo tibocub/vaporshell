@@ -1,3 +1,4 @@
+# requires: env:HOSTNAME
 # bash's computed variables and $_ .
 [ -n "$BASH_VERSION" ] && echo version
 [ "$RANDOM" -ge 0 ] && [ "$RANDOM" -le 32767 ] && echo random

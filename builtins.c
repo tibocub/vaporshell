@@ -12,9 +12,7 @@
 #include <nuttx/config.h>
 #include <errno.h>
 #include <limits.h>
-#ifdef VAPORSHELL_POSIX
-#  include <poll.h>
-#endif
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1029,7 +1027,6 @@ static int bi_pwd(int argc, char **argv)
   return 0;
 }
 
-#ifdef VAPORSHELL_POSIX
 /* Waits up to ms for fd to be readable: 1 ready, 0 timed out. */
 
 static int wait_readable(int fd, long ms)
@@ -1041,7 +1038,6 @@ static int wait_readable(int fd, long ms)
   pfd.revents = 0;
   return poll(&pfd, 1, (int)ms) > 0 ? 1 : 0;
 }
-#endif
 
 static int bi_read(int argc, char **argv)
 {
@@ -1128,7 +1124,6 @@ static int bi_read(int argc, char **argv)
   (void)silent;                 /* no terminal echo control yet */
   if (timeout_ms >= 0)
     {
-#ifdef VAPORSHELL_POSIX
       if (!wait_readable(rfd, timeout_ms))
         {
           return timeout_ms == 0 ? 1 : 142;
@@ -1138,10 +1133,6 @@ static int bi_read(int argc, char **argv)
         {
           return 0;               /* input is available */
         }
-#else
-      vs_err("read: -t: not supported on this platform yet");
-      return 2;
-#endif
     }
 
   /* One byte at a time: a shell must not consume input past the newline. */

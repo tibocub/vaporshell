@@ -32,7 +32,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all check check-smoosh coverage asan check-asan strict install uninstall clean
+.PHONY: all help check check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -44,11 +44,43 @@ $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Everything below runs the suites in tests/ (see tests/run-suites.sh).
+# ONLY=printf runs only the tests whose file name contains "printf".
 check: $(BIN)
-	sh tests/check-all.sh $(BIN)
+	sh tests/run-suites.sh $(BIN)
 
 check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
+
+# vaporOS (NuttX): rebuild what changed and test in the simulator, or do the
+# full vaporOS build with FULL=1 / NUTTX_ARGS=--full. See tests/nuttx-check.sh
+# for VAPOROS_DIR, NUTTX_DIR and the other options.
+NUTTX_ARGS ?=
+check-vaporos:
+	sh tests/nuttx-check.sh $(if $(FULL),--full) $(NUTTX_ARGS)
+
+build-vaporos:
+	sh tests/nuttx-check.sh --build-only $(if $(FULL),--full) $(NUTTX_ARGS)
+
+# Everything, one report: Linux, Linux under ASan/UBSan, smoosh, and vaporOS.
+check-all: $(BIN) asan
+	sh tests/check-all.sh $(BIN) build-asan/vaporshell $(NUTTX_ARGS)
+
+help:
+	@echo "make -f posix.mk <target>"
+	@echo
+	@echo "  all              build build/vaporshell (default)"
+	@echo "  check            all suites on the Linux build     (ONLY=name filters)"
+	@echo "  check-asan       the same under ASan + UBSan"
+	@echo "  check-smoosh     the smoosh POSIX corpus"
+	@echo "  check-vaporos    rebuild for vaporOS/NuttX, test in the simulator"
+	@echo "                   (FULL=1: full vaporOS build; NUTTX_ARGS=--jobs 4 ...)"
+	@echo "  build-vaporos    only rebuild for vaporOS"
+	@echo "  check-all        every check above, ONE report"
+	@echo "  strict           build with fortify off and -Werror"
+	@echo "  coverage         regenerate docs/*-coverage.md"
+	@echo
+	@echo "  reference shells: BASH_REF=/path/to/bash DASH_REF=/path/to/dash"
 
 # Regenerates docs/bash-coverage.md and docs/posix-coverage.md from probes.
 # BASH_REF=/path/to/bash and DASH_REF=/path/to/dash pick the reference shells.
@@ -61,7 +93,7 @@ asan:
 	$(MAKE) BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
 
 check-asan: asan
-	ASAN_OPTIONS=detect_leaks=0 sh tests/check-all.sh build-asan/vaporshell
+	VS_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
 
 # Ubuntu-style toolchains enable _FORTIFY_SOURCE by default, and its
 # glibc wrappers quietly declare functions (realpath, ...) that strict

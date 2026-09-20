@@ -15,7 +15,10 @@ umask 022; ( umask 077; umask ); umask
 ( set -f; case $- in *f*) echo in-noglob;; esac ); case $- in *f*) echo leaked;; *) echo not-leaked;; esac
 ( trap 'echo sub-exit-trap' EXIT; echo in-sub ); echo after
 trap 'echo parent-exit-trap' EXIT
-( trap - EXIT; echo trap-cleared-in-sub ); trap
+( trap - EXIT; echo trap-cleared-in-sub )
+# Only the EXIT line is checked: a bare `trap` also lists signals that were
+# ignored on entry in bash (not in dash), which depends on how the suite was started.
+trap > trap.out; while IFS= read -r l; do case $l in *EXIT) echo "$l";; esac; done < trap.out
 trap - EXIT
 exec 3>fd3.out; echo to3 >&3
 ( exec 3>other.out; echo lost >&3 ); echo "still3" >&3; exec 3>&-

@@ -39,7 +39,7 @@ When bash publishes a new release:
 1. Build it (`./configure --without-bash-malloc && make`) and note the exact
    version printed by `bash --version`.
 2. Re-run the suites against it:
-   `BASH_REF=/path/to/new/bash sh tests/check-all.sh build/vaporshell`.
+   `BASH_REF=/path/to/new/bash sh tests/run-suites.sh build/vaporshell`.
    A failure is either a bash behaviour change or a vaporshell bug; the
    suite name says which mode.
 3. Regenerate this document:
@@ -123,6 +123,13 @@ vaporshell (bash mode) has it as a builtin.
   bash's output there depends on the locale.
 - **`declare -x`/`-r` listings** (`export`, `readonly` with no arguments) use
   bash's format and sort order.
+- **`trap` with no arguments** differs from bash in two environment-dependent
+  ways, both measured against bash 5.3.0 (dash behaves like vaporshell here):
+  bash also lists signals that were *ignored on entry* (`trap -- '' SIGINT`
+  when the shell was started under `nohup` or as a background job), and inside
+  a subshell, `$(...)` or pipeline it prints the parent's traps where
+  vaporshell prints nothing. Tests that print a trap listing must therefore
+  filter for the line they mean (`tests/own/traps.sh` does).
 - **Signals** on the NuttX build are not wired yet (`trap`/`kill` on real
   signals work on host builds only).
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists
