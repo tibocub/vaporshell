@@ -60,11 +60,18 @@ def version(cmd):
             return out[0]
     except Exception:
         pass
-    try:  # dash has no --version
+    # dash has no --version: ask the package manager (dpkg, then rpm)
+    try:
         out = subprocess.run(["dpkg", "-s", "dash"], capture_output=True, text=True).stdout
         m = re.search(r"^Version: (.*)$", out, re.M)
         if m:
             return "dash " + m.group(1)
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["rpm", "-q", "dash"], capture_output=True, text=True).stdout.strip()
+        if out and "not installed" not in out:
+            return out
     except Exception:
         pass
     return os.path.basename(cmd[0])

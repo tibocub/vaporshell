@@ -39,7 +39,7 @@ When bash publishes a new release:
 1. Build it (`./configure --without-bash-malloc && make`) and note the exact
    version printed by `bash --version`.
 2. Re-run the suites against it:
-   `BASH=/path/to/new/bash sh tests/check-all.sh build/vaporshell`.
+   `BASH_REF=/path/to/new/bash sh tests/check-all.sh build/vaporshell`.
    A failure is either a bash behaviour change or a vaporshell bug; the
    suite name says which mode.
 3. Regenerate this document:
@@ -56,7 +56,7 @@ When bash publishes a new release:
 | bash | how measured | observed change vs previous |
 |---|---|---|
 | 5.2.21 | Ubuntu package; used for the first `docs/modes.md` table | baseline |
-| 5.3.0(1)-release | built from `bash-5.3.tar.gz`; probes + all suites | `bash --posix` accepts function names that are not identifiers (`foo-bar()`); 5.2.21 rejected them. Matches NEWS item *tt*. No other change in the 12 mode-behaviour probes re-measured. |
+| 5.3.0(1)-release | built from `bash-5.3.tar.gz`; probes + all suites | (1) `bash --posix` accepts function names that are not identifiers (`foo-bar()`); 5.2.21 rejected them. Matches NEWS item *tt*. (2) `$LINENO` inside a multi-line `eval "..."`: 5.2.21 counts from the line the eval command *ends* on (16, 17 in `tests/modes/bash/lineno.sh`), 5.3.0 from the line it *starts* on (15, 16); vaporshell follows 5.3.0. Found because the suite failed against 5.2.21; CHANGES for 5.3-alpha has a nearby entry about `LINENO` and subshells, but that it is this fix is not verified. No other change in the 12 mode-behaviour probes re-measured, and none in the other suites (all pass on both). |
 
 ### bash 5.3 NEWS, item by item
 

@@ -93,7 +93,7 @@ Standalone (Linux, macOS, BSD), from a plain checkout:
 ```
 make -f posix.mk            # build/vaporshell   (or just `make`)
 make check                  # every suite, each vs its reference shell
-                            # (BASH=/path/to/bash selects the bash reference)
+                            # (BASH_REF=/path/to/bash selects the bash reference)
 make coverage               # regenerate docs/*-coverage.md from the probes
 vaporshell --posix          # POSIX mode (also -o posix, or invoked as sh)
 make check-smoosh           # the smoosh corpus in --posix mode, regressions named

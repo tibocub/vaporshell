@@ -18,6 +18,7 @@ regenerated docs, and the diff is exactly what changed.
 import argparse, datetime, os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.dont_write_bytecode = True      # do not leave __pycache__ in the repo
 sys.path.insert(0, HERE)
 import probe  # noqa: E402
 

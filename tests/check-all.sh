@@ -11,30 +11,46 @@
 #
 #   sh tests/check-all.sh path/to/vaporshell
 #
-# BASH=/path/to/bash selects the bash-mode reference (default: bash on PATH),
-# DASH likewise. Which versions ran is printed first: differences between
-# bash releases show up as failures here, and in docs/bash-coverage.md.
+# BASH_REF=/path/to/bash selects the bash-mode reference (default: bash on
+# PATH), DASH_REF likewise. (Not $BASH: bash sets that variable itself, to the
+# path it was started as, so on systems where sh is bash it would silently
+# become `bash --posix`.) Which versions ran is printed first: differences
+# between bash releases show up as failures here and in docs/bash-coverage.md.
 
 VS=$1
 HERE=$(dirname "$0")
-BASH=${BASH:-bash}
-DASH=${DASH:-dash}
+BASH_REF=${BASH_REF:-bash}
+DASH_REF=${DASH_REF:-dash}
 rc=0
 
 [ -x "$VS" ] || { echo "usage: $0 path/to/vaporshell" >&2; exit 2; }
 
-echo "bash-mode reference:  $($BASH --version 2>/dev/null | head -n 1)"
-if command -v "$DASH" >/dev/null 2>&1; then
-    echo "posix-mode reference: $DASH ($(dpkg -s dash 2>/dev/null | sed -n 's/^Version: //p'))"
+# The bash reference must really be bash in its default mode; a reference that
+# is something else would make every bash-mode result meaningless.
+bver=$("$BASH_REF" --version 2>/dev/null | head -n 1)
+case $bver in
+    "GNU bash"*) ;;
+    *) echo "BASH_REF ($BASH_REF) is not GNU bash; set BASH_REF=/path/to/bash" >&2; exit 2 ;;
+esac
+# ...and not bash started as `sh`, which is bash in POSIX mode.
+if ! "$BASH_REF" -c 'case $SHELLOPTS in *posix*) exit 1;; esac' 2>/dev/null; then
+    echo "BASH_REF ($BASH_REF) runs in POSIX mode (started as sh?); use the real bash binary" >&2
+    exit 2
+fi
+echo "bash-mode reference:  $bver"
+if command -v "$DASH_REF" >/dev/null 2>&1; then
+    dver=$(dpkg -s dash 2>/dev/null | sed -n 's/^Version: //p')
+    [ -n "$dver" ] || dver=$(rpm -q dash 2>/dev/null)
+    echo "posix-mode reference: $DASH_REF (${dver:-version unknown})"
 else
     echo "posix-mode reference: (dash not installed: POSIX suites skipped)"
 fi
 
-sh "$HERE/posix-check.sh" "$VS" "$BASH" own || rc=1
-sh "$HERE/posix-check.sh" "$VS" "$BASH" modes/bash || rc=1
-if command -v "$DASH" >/dev/null 2>&1; then
-    sh "$HERE/posix-check.sh" "$VS" "$DASH" own --posix || rc=1
-    sh "$HERE/posix-check.sh" "$VS" "$DASH" modes/posix --posix || rc=1
+sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
+sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+if command -v "$DASH_REF" >/dev/null 2>&1; then
+    sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
+    sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
 fi
 
 # The same suites again with subshells and $(...) run in-process, the way
@@ -42,11 +58,11 @@ fi
 # inproc.c. Skipped if the caller already set it.
 if [ -z "$VS_INPROC" ]; then
     echo "-- in-process subshells (VS_INPROC=1) --"
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH" own || rc=1
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH" modes/bash || rc=1
-    if command -v "$DASH" >/dev/null 2>&1; then
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH" own --posix || rc=1
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH" modes/posix --posix || rc=1
+    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
+    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+    if command -v "$DASH_REF" >/dev/null 2>&1; then
+        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
+        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
     fi
 fi
 

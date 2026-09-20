@@ -51,9 +51,9 @@ check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
 
 # Regenerates docs/bash-coverage.md and docs/posix-coverage.md from probes.
-# BASH=/path/to/bash and DASH=/path/to/dash pick the reference shells.
+# BASH_REF=/path/to/bash and DASH_REF=/path/to/dash pick the reference shells.
 coverage: $(BIN)
-	python3 tests/coverage/gen-docs.py $(BIN) $(if $(BASH),--bash $(BASH)) $(if $(DASH),--dash $(DASH))
+	python3 tests/coverage/gen-docs.py $(BIN) $(if $(BASH_REF),--bash $(BASH_REF)) $(if $(DASH_REF),--dash $(DASH_REF))
 
 SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 
