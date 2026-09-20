@@ -19,7 +19,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+#ifdef VAPORSHELL_POSIX
+#  include <regex.h>
+#  include <sys/times.h>
+#endif
 
 #include "vaporshell.h"
 #include "expand.h"
@@ -34,13 +39,34 @@ static int run_loop(struct parser_s *p, bool recover, int status);
 
 /* ---- Helpers ------------------------------------------------------------------ */
 
+/* bash's DEBUG trap: before each simple command, `for` iteration, `case`,
+ * [[ and (( -- but not inside functions (that needs set -T).
+ */
+
+static void debug_hook(void)
+{
+  if (g_sh.trap_action[VS_TRAP_DEBUG] != NULL && g_sh.func_depth == 0)
+    {
+      trap_run_debug();
+    }
+}
+
 static void errexit_check(int status)
 {
-  if (status != 0 && g_sh.opt_e && g_sh.noerrexit == 0 &&
-      g_sh.unwind == UW_NONE)
+  if (status != 0 && g_sh.noerrexit == 0 && g_sh.unwind == UW_NONE)
     {
-      g_sh.unwind = UW_EXIT;
-      g_sh.last_status = status;
+      /* the ERR trap fires in exactly the situations -e would exit in */
+
+      if (g_sh.trap_action[VS_TRAP_ERR] != NULL && g_sh.func_depth == 0)
+        {
+          trap_run_err(status);            /* not inherited by functions (no set -E) */
+        }
+
+      if (g_sh.opt_e && g_sh.unwind == UW_NONE)
+        {
+          g_sh.unwind = UW_EXIT;
+          g_sh.last_status = status;
+        }
     }
 }
 
@@ -383,6 +409,17 @@ static int call_function(struct func_s *f, int argc, char **argv)
   arena_release(f->arena);
   var_locals_pop(g_sh.func_depth);
   g_sh.func_depth--;
+  /* RETURN is not inherited by functions: only one set inside this very
+   * function runs when it returns.
+   */
+
+  if (g_sh.trap_action[VS_TRAP_RETURN] != NULL && g_sh.return_fdepth > 0 &&
+      g_sh.func_depth == g_sh.return_fdepth - 1)
+    {
+      g_sh.last_status = status;
+      trap_run_return();
+    }
+
   for (i = 0; i < g_sh.npos; i++)
     {
       free(g_sh.pos[i]);
@@ -547,6 +584,8 @@ static int exec_simple(struct node_s *n)
     {
       g_sh.lineno = n->line;
     }
+
+  debug_hook();
 
   fv_init(&argv);
 
@@ -742,6 +781,7 @@ static int exec_for(struct node_s *n)
   g_sh.loop_depth++;
   for (i = 0; i < items.n; i++)
     {
+      debug_hook();                    /* bash: once per iteration */
       if (var_set(n->name, items.v[i]) != 0)
         {
           status = 1;
@@ -762,8 +802,10 @@ static int exec_for(struct node_s *n)
 
 static int exec_case(struct node_s *n)
 {
+  debug_hook();
   char *subject = expand_word_str(n->words->text);
   struct case_item_s *item;
+  bool fall = false;
   int status = 0;
 
   if (subject == NULL)
@@ -774,19 +816,36 @@ static int exec_case(struct node_s *n)
   for (item = n->items; item != NULL; item = item->next)
     {
       struct word_s *w;
-      bool matched = false;
+      bool matched = fall;
 
+      fall = false;
       for (w = item->patterns; w != NULL && !matched; w = w->next)
         {
           struct pat_s pat = expand_pattern(w->text);
 
-          matched = pat_match(pat.s, pat.q, pat.len, subject);
+          matched = pat_match_ci(pat.s, pat.q, pat.len, subject, g_sh.so_nocasematch);
           pat_free(&pat);
         }
 
       if (matched)
         {
           status = exec_node(item->body);
+          if (g_sh.unwind != UW_NONE)
+            {
+              break;
+            }
+
+          if (item->term == 1)
+            {
+              fall = true;             /* ;& : run the next clause unconditionally */
+              continue;
+            }
+
+          if (item->term == 2)
+            {
+              continue;                /* ;;& : keep testing the following patterns */
+            }
+
           break;
         }
     }
@@ -1271,13 +1330,80 @@ static int exec_pipeline(struct node_s *n)
 
 /* ---- Lists ------------------------------------------------------------------------------------- */
 
+/* `cmd args &` without fork(): a plain external program is spawned and not
+ * waited for; $! is its pid and `wait` collects it. Anything that would have
+ * to run inside the shell (a builtin, function, compound command) cannot run
+ * concurrently with the shell itself, so it is refused rather than run in the
+ * foreground behind the user's back.
+ */
+
+static int exec_async_spawn(struct node_s *st)
+{
+  struct fieldv_s argv;
+  char *path;
+  char **envp;
+  int err = 0;
+  int in_fd = -1;
+  pid_t pid = -1;
+  int ret;
+
+  fv_init(&argv);
+  if (expand_words(st->words, &argv) != 0 || argv.n == 0)
+    {
+      fv_free(&argv);
+      return 1;
+    }
+
+  path = hash_find_command(argv.v[0], var_get("PATH"), &err);
+  if (path == NULL)
+    {
+      vs_err("%s: command not found", argv.v[0]);
+      fv_free(&argv);
+      return 127;
+    }
+
+  if (!g_sh.interactive)
+    {
+      in_fd = open("/dev/null", O_RDONLY);    /* a background job has no stdin */
+    }
+
+  envp = var_build_env();
+  fflush(NULL);
+  ret = vs_plat_spawn(path, argv.v, envp, in_fd, -1, NULL, 0, &pid);
+  if (in_fd >= 0)
+    {
+      close(in_fd);
+    }
+
+  env_free(envp);
+  free(path);
+  fv_free(&argv);
+  if (ret != 0)
+    {
+      vs_err("&: %s", strerror(ret));
+      return 126;
+    }
+
+  g_sh.last_bg = pid;
+  return 0;
+}
+
 static int exec_async(struct node_s *n)
 {
   pid_t pid = vs_plat_fork();
 
   if (pid < 0)
     {
-      vs_err("&: background jobs are not supported on this platform yet");
+      struct node_s *st = (n->type == N_PIPE && !n->flag && n->a != NULL &&
+                           n->a->next == NULL) ? n->a : n;
+
+      if (stage_is_plain_external(st))
+        {
+          return exec_async_spawn(st);
+        }
+
+      vs_err("&: only an external program can run in the background on this "
+             "platform (no fork)");
       return 1;
     }
 
@@ -1327,6 +1453,452 @@ static int exec_list(struct node_s *list)
         }
     }
 
+  return status;
+}
+
+/* ---- Bash compound commands: [[ ]], (( )), for (( )), time ------------------- */
+
+#ifdef VAPORSHELL_POSIX
+/* subject =~ regex, POSIX ERE. Characters that were quoted in the pattern
+ * match literally, as in bash. 0 match, 1 no match, 2 bad expression.
+ */
+
+static int db_regex(const char *subject, const char *raw)
+{
+  struct pat_s pat = expand_pattern(raw);
+  struct sbuf_s re;
+  regex_t rx;
+  size_t i;
+  int rc;
+
+  sb_init(&re);
+  for (i = 0; i < pat.len; i++)
+    {
+      if (pat.q != NULL && pat.q[i] && strchr(".[]{}()*+?|^$\\", pat.s[i]) != NULL)
+        {
+          sb_addc(&re, '\\');
+        }
+
+      sb_addc(&re, pat.s[i]);
+    }
+
+  pat_free(&pat);
+  rc = regcomp(&rx, re.s != NULL ? re.s : "", REG_EXTENDED);
+  sb_free(&re);
+  if (rc != 0)
+    {
+      return 2;
+    }
+
+  rc = regexec(&rx, subject, 0, NULL, 0);
+  regfree(&rx);
+  return rc == 0 ? 0 : 1;
+}
+#endif
+
+static int db_arith(const char *raw, long *v)
+{
+  char *e = expand_word_str(raw);
+  int r = 0;
+
+  if (e == NULL)
+    {
+      return -1;
+    }
+
+  *v = 0;
+  if (e[0] != '\0')
+    {
+      r = arith_eval(e, v);
+    }
+
+  free(e);
+  return r;
+}
+
+static bool is_arith_cmp(const char *op)
+{
+  return op[0] == '-' && strlen(op) == 3 && strchr("enlg", op[1]) != NULL &&
+         (strcmp(op, "-eq") == 0 || strcmp(op, "-ne") == 0 ||
+          strcmp(op, "-lt") == 0 || strcmp(op, "-le") == 0 ||
+          strcmp(op, "-gt") == 0 || strcmp(op, "-ge") == 0);
+}
+
+/* One test inside [[ ]]: 0 true, 1 false, 2 error. */
+
+static int db_test(struct node_s *n)
+{
+  const char *op = n->name;
+  struct word_s *w = n->words;
+  char *a = NULL;
+  char *b = NULL;
+  int r = 2;
+
+  if (op[0] == '\0')
+    {
+      a = expand_word_str(w->text);
+      r = (a != NULL) ? (a[0] != '\0' ? 0 : 1) : 2;
+      free(a);
+      return r;
+    }
+
+  if (w->next == NULL)
+    {
+      char *argv[3];
+
+      a = expand_word_str(w->text);
+      if (a == NULL)
+        {
+          return 2;
+        }
+
+      if (strcmp(op, "-v") == 0)
+        {
+          r = var_get(a) != NULL ? 0 : 1;
+        }
+      else if (strcmp(op, "-o") == 0)
+        {
+          r = vs_option_state(a) == 1 ? 0 : 1;
+        }
+      else if (strcmp(op, "-R") == 0)
+        {
+          r = 1;                      /* namerefs: not implemented */
+        }
+      else
+        {
+          argv[0] = "test";
+          argv[1] = strcmp(op, "-a") == 0 ? "-e" : (char *)op;
+          argv[2] = a;
+          r = bi_test(3, argv);
+        }
+
+      free(a);
+      return r;
+    }
+
+  if (is_arith_cmp(op))
+    {
+      long x;
+      long y;
+
+      if (db_arith(w->text, &x) != 0 || db_arith(w->next->text, &y) != 0)
+        {
+          return 2;
+        }
+
+      switch (op[1])
+        {
+          case 'e': return x == y ? 0 : 1;
+          case 'n': return x != y ? 0 : 1;
+          case 'l': return (op[2] == 't' ? x < y : x <= y) ? 0 : 1;
+          default:  return (op[2] == 't' ? x > y : x >= y) ? 0 : 1;
+        }
+    }
+
+  a = expand_word_str(w->text);
+  if (a == NULL)
+    {
+      return 2;
+    }
+
+  if (strcmp(op, "==") == 0 || strcmp(op, "=") == 0 || strcmp(op, "!=") == 0)
+    {
+      struct pat_s pat = expand_pattern(w->next->text);
+      bool ext = g_sh.so_extglob;
+      bool m;
+
+      g_sh.so_extglob = true;                  /* always on inside [[ ]] */
+      m = pat_match_ci(pat.s, pat.q, pat.len, a, g_sh.so_nocasematch);
+      g_sh.so_extglob = ext;
+      pat_free(&pat);
+      free(a);
+      return (m == (op[0] != '!')) ? 0 : 1;
+    }
+
+  if (strcmp(op, "=~") == 0)
+    {
+#ifdef VAPORSHELL_POSIX
+      r = db_regex(a, w->next->text);
+      if (r == 2)
+        {
+          vs_err("[[: invalid regular expression");
+        }
+#else
+      vs_err("[[ =~ ]]: not supported on this platform yet");
+      r = 2;
+#endif
+      free(a);
+      return r;
+    }
+
+  b = expand_word_str(w->next->text);
+  if (b == NULL)
+    {
+      free(a);
+      return 2;
+    }
+
+  if (strcmp(op, "<") == 0)
+    {
+      r = strcmp(a, b) < 0 ? 0 : 1;
+    }
+  else if (strcmp(op, ">") == 0)
+    {
+      r = strcmp(a, b) > 0 ? 0 : 1;
+    }
+  else
+    {
+      char *argv[4];
+
+      argv[0] = "test";
+      argv[1] = a;
+      argv[2] = (char *)op;         /* -nt -ot -ef */
+      argv[3] = b;
+      r = bi_test(4, argv);
+    }
+
+  free(a);
+  free(b);
+  return r;
+}
+
+static int db_eval(struct node_s *n)
+{
+  int r;
+
+  switch (n->type)
+    {
+      case N_DB_AND:
+        r = db_eval(n->a);
+        return r == 0 ? db_eval(n->b) : r;
+
+      case N_DB_OR:
+        r = db_eval(n->a);
+        return r == 1 ? db_eval(n->b) : r;
+
+      case N_DB_NOT:
+        r = db_eval(n->a);
+        return r == 2 ? 2 : (r == 0 ? 1 : 0);
+
+      default:
+        return db_test(n);
+    }
+}
+
+static int exec_dbracket(struct node_s *n)
+{
+  debug_hook();
+  return db_eval(n->a);
+}
+
+/* (( expr )): status 0 if the value is non-zero. */
+
+static int arith_status(const char *raw, bool *err)
+{
+  char *e = expand_heredoc(raw);
+  long v = 0;
+  int r;
+
+  *err = false;
+  if (e == NULL)
+    {
+      *err = true;
+      return 1;
+    }
+
+  r = arith_eval(e, &v);
+  free(e);
+  if (r != 0)
+    {
+      *err = true;
+      return 1;
+    }
+
+  return v != 0 ? 0 : 1;
+}
+
+static int exec_arith(struct node_s *n)
+{
+  bool err;
+
+  debug_hook();
+  return arith_status(n->words->text, &err);
+}
+
+static bool blank_text(const char *s)
+{
+  for (; *s != '\0'; s++)
+    {
+      if (*s != ' ' && *s != '\t' && *s != '\n')
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
+static int exec_arithfor(struct node_s *n)
+{
+  struct word_s *init = n->words;
+  struct word_s *cond = init->next;
+  struct word_s *step = cond->next;
+  int status = 0;
+  bool err;
+
+  if (!blank_text(init->text))
+    {
+      arith_status(init->text, &err);
+      if (err)
+        {
+          return 1;
+        }
+    }
+
+  g_sh.loop_depth++;
+  for (; ; )
+    {
+      if (!blank_text(cond->text))
+        {
+          int c = arith_status(cond->text, &err);
+
+          if (err || c != 0)
+            {
+              if (err)
+                {
+                  status = 1;
+                }
+
+              break;
+            }
+        }
+
+      status = exec_node(n->a);
+      if (loop_unwind())
+        {
+          break;
+        }
+
+      if (!blank_text(step->text))
+        {
+          arith_status(step->text, &err);
+          if (err)
+            {
+              status = 1;
+              break;
+            }
+        }
+    }
+
+  g_sh.loop_depth--;
+  return status;
+}
+
+/* time [-p] pipeline: real/user/sys to stderr, in TIMEFORMAT (or bash's or
+ * POSIX's default format).
+ */
+
+static void time_print(bool posix, double real, double user, double sys)
+{
+  const char *fmt = var_get("TIMEFORMAT");
+  const char *p;
+
+  if (fmt == NULL)
+    {
+      fmt = posix ? "real %2R\nuser %2U\nsys %2S"
+                  : "\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS";
+    }
+  else if (fmt[0] == '\0')
+    {
+      return;
+    }
+
+  for (p = fmt; *p != '\0'; p++)
+    {
+      int prec = 3;
+      bool longf = false;
+      double v;
+
+      if (*p != '%')
+        {
+          putc(*p, stderr);
+          continue;
+        }
+
+      p++;
+      if (*p == '%')
+        {
+          putc('%', stderr);
+          continue;
+        }
+
+      if (*p >= '0' && *p <= '9')
+        {
+          prec = *p++ - '0';
+        }
+
+      if (*p == 'l')
+        {
+          longf = true;
+          p++;
+        }
+
+      switch (*p)
+        {
+          case 'R': v = real; break;
+          case 'U': v = user; break;
+          case 'S': v = sys; break;
+          case 'P': fprintf(stderr, "%.*f", prec > 3 ? 3 : prec,
+                            real > 0 ? (user + sys) * 100.0 / real : 0.0);
+                    continue;
+          default:  putc('%', stderr); p--; continue;
+        }
+
+      if (longf)
+        {
+          int m = (int)(v / 60.0);
+
+          fprintf(stderr, "%dm%.*fs", m, prec, v - m * 60.0);
+        }
+      else
+        {
+          fprintf(stderr, "%.*f", prec, v);
+        }
+    }
+
+  putc('\n', stderr);
+}
+
+static int exec_time(struct node_s *n)
+{
+  struct timespec t0;
+  struct timespec t1;
+  double user = 0.0;
+  double sys = 0.0;
+  int status;
+
+#ifdef VAPORSHELL_POSIX
+  struct tms c0;
+  struct tms c1;
+  long hz = sysconf(_SC_CLK_TCK);
+
+  times(&c0);
+#endif
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  status = exec_node(n->a);
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+#ifdef VAPORSHELL_POSIX
+  times(&c1);
+  if (hz > 0)
+    {
+      user = (double)(c1.tms_utime - c0.tms_utime + c1.tms_cutime - c0.tms_cutime) / (double)hz;
+      sys = (double)(c1.tms_stime - c0.tms_stime + c1.tms_cstime - c0.tms_cstime) / (double)hz;
+    }
+#endif
+
+  time_print(n->flag,
+             (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9,
+             user, sys);
   return status;
 }
 
@@ -1397,6 +1969,29 @@ int exec_node(struct node_s *n)
       case N_FUNCDEF:
         func_define(n->name, n->a, n->arena);
         break;
+
+      case N_DBRACKET:
+        status = with_redirs(n, exec_dbracket);
+        break;
+
+      case N_ARITH:
+        status = with_redirs(n, exec_arith);
+        errexit_check(status);
+        break;
+
+      case N_ARITHFOR:
+        status = with_redirs(n, exec_arithfor);
+        break;
+
+      case N_TIME:
+        status = exec_time(n);
+        break;
+
+      case N_DB_AND:
+      case N_DB_OR:
+      case N_DB_NOT:
+      case N_DB_TEST:
+        break;                       /* only ever evaluated by db_eval() */
     }
 
   if (g_sh.unwind == UW_NONE)

@@ -85,7 +85,10 @@ them as builtins, next to dash.
   Not tested: aliases whose text contains newlines.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell
   has, not the full set dash or bash print.
-- **Signals on NuttX**: real signal traps and `kill` need host builds.
+- **Signals on NuttX** work (`trap` and `kill` on real signals). NuttX applies
+  no default action to an unhandled signal unless it is built with
+  `CONFIG_SIG_DEFAULT`, so `kill` cannot end another task; see
+  `docs/bash-coverage.md`.
 - **NuttX**: no `fork`, so subshells, `$(...)` and pipelines run in-process
   (see `docs/design.md`): correct isolation, but not concurrent, and `&` only
   works for external programs. Paths given to *external programs* are

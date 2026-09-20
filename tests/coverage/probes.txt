@@ -733,3 +733,153 @@ echo "$((1+1))"
 echo a & wait
 ## misc_time_p | syntax | bash time -p
 time -p true 2>&1 | grep -c real | grep -q 1 && echo ok
+
+## dbracket_string | control
+[[ abc == abc ]] && echo y; [[ abc == abd ]] || echo n
+
+## dbracket_pattern | control
+[[ abcdef == a*f ]] && echo y; p='a*'; [[ abc == "$p" ]] || echo quoted-literal
+
+## dbracket_unary | control
+: > f; mkdir d; [[ -f f ]] && echo f; [[ -d d ]] && echo d; [[ -z "" ]] && echo z
+
+## dbracket_logic | control
+[[ 1 == 1 && ( 2 == 2 || 3 == 4 ) && ! 5 == 6 ]] && echo y
+
+## dbracket_arith_operands | control
+[[ 1+1 -eq 2 ]] && echo y; x=5; [[ x -lt 10 ]] && echo y2
+
+## dbracket_regex | control | needs regcomp on NuttX
+[[ abc123 =~ [0-9]+ ]] && echo y; [[ abc =~ ^b ]] || echo n
+
+## dbracket_lone_unary_error | control
+[[ -f ]]; echo rc=$?
+
+## arith_command | control
+(( 3 > 2 )) && echo y; (( 0 )) || echo zero; x=5; (( x++ )); echo $x
+
+## arith_for | control
+for ((i=0;i<3;i++)); do echo $i; done
+
+## arith_for_empty_parts | control
+i=0; for (( ; i<2; )); do echo $i; i=$((i+1)); done
+
+## function_keyword | control
+function f { echo hi; }; f; function g() { echo g; }; g
+
+## case_fallthrough | control
+case a in a) echo 1;& b) echo 2;; c) echo 3;; esac
+
+## case_continue_testing | control
+case abc in a*) echo 1;;& *b*) echo 2;;& *z) echo no;; esac
+
+## time_keyword | control
+TIMEFORMAT=X; time true
+
+## herestring | redirect
+cat <<< "hello"; read a b <<< "x y"; echo "$a|$b"
+
+## herestring_expansion | redirect
+x=1; cat <<< "v=$x $((1+1)) $(echo c)"
+
+## brace_list | expansion
+echo a{b,c,d}e {a,b{c,d},e}
+
+## brace_sequence | expansion
+echo {1..5} {5..1} {a..e} {1..10..3}
+
+## brace_padding | expansion
+echo {01..05} {008..011}
+
+## brace_literal | expansion
+echo {} {a} a{b}c {a..3}
+
+## brace_quoted | expansion
+echo "{a,b}" '{a,b}' {a,b}"{c,d}"
+
+## ansi_c_quote | quoting
+echo $'a\tb\nc' $'it\'s' $'\101\x42'
+
+## ansi_c_control | quoting
+[[ $'\cA' == $'\x01' ]] && echo y
+
+## locale_dq | quoting
+x=v; echo $"a $x b"
+
+## param_substring | param
+x=abcdefghij; echo ${x:3} ${x:3:4} ${x: -3} ${x: -3:2} ${x:2:-3}
+
+## param_substring_positional | param
+set -- a b c d e; echo "${@:2}" "${@:2:2}" "${@: -2}"
+
+## param_replace | param
+x=hello_hello; echo ${x/ll/LL} ${x//l/L} ${x/#hello/X} ${x/%hello/X}
+
+## param_replace_amp | param
+x=abc; echo ${x/b/[&]} ${x/b/\&}
+
+## param_case | param
+x=hello; echo ${x^} ${x^^} ${x^^[el]}; y=HELLO; echo ${y,} ${y,,}
+
+## param_transform | param
+x='a b'; echo ${x@Q} ${x@U} ${x@u} ${x@L}
+
+## param_indirect | param
+a=value; n=a; echo ${!n}
+
+## param_prefix_names | param
+ab1=1; ab2=2; other=3; echo ${!ab*}
+
+## shopt_query | bashbuiltin
+shopt nullglob; shopt -s nullglob; shopt -q nullglob; echo $?; shopt -p nullglob
+
+## shopt_list | bashbuiltin
+shopt | head -5
+
+## shopt_invalid | bashbuiltin
+shopt -s nosuchoption 2>/dev/null; echo $?
+
+## pushd_popd_dirs | bashbuiltin
+mkdir a b; base=$PWD; pushd a >/dev/null; pushd ../b >/dev/null; set -- $(dirs); echo $#; popd >/dev/null; echo ${PWD##*/}
+
+## nullglob | glob
+mkdir t; cd t; echo *.zzz; shopt -s nullglob; echo *.zzz [x]
+
+## dotglob | glob
+mkdir t; cd t; : > .dot; : > v; echo *; shopt -s dotglob; echo *
+
+## nocaseglob | glob
+mkdir t; cd t; : > B.txt; shopt -s nocaseglob; echo b.*
+
+## nocasematch | glob
+shopt -s nocasematch; case ABC in abc) echo m;; esac; [[ X == x ]] && echo y
+
+## globstar | glob
+mkdir -p t/d/e; cd t; : > a.txt; : > d/e/b.txt; shopt -s globstar; echo **/*.txt
+
+## extglob | glob
+shopt -s extglob; [[ foo.c == *.@(c|h) ]] && echo 1; [[ x == !(y) ]] && echo 2; [[ aaa == +(a) ]] && echo 3
+
+## extglob_case_and_path | glob
+shopt -s extglob; mkdir t; cd t; : > a.c; : > b.h; : > c.o; echo !(*.o); case a.h in *.@(c|h)) echo src;; esac
+
+## extglob_always_in_dbracket | glob
+[[ a == @(a|b) ]] && echo y
+
+## trap_err | option
+trap 'echo ERR:$?' ERR; false; echo a; true
+
+## trap_err_contexts | option
+trap 'echo ERR' ERR; if false; then :; fi; false || true; true && false; echo end
+
+## trap_debug | option
+trap 'echo D' DEBUG; echo a; echo b
+
+## trap_return_function | option
+f() { trap 'echo R' RETURN; echo in; }; f; echo after
+
+## trap_return_source | option
+echo 'echo sourced' > s.sh; trap 'echo R' RETURN; . ./s.sh; echo end
+
+## trap_case_insensitive | option
+trap 'echo x' err; trap -p 2>/dev/null | grep -c ERR

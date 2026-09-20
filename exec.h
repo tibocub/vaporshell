@@ -86,12 +86,34 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status);
 int vs_inproc_stage(struct node_s *stage, int in_fd, char **out);
 int vs_inproc_feed(int fd, char *buf, size_t len);
 void trap_subshell_enter(void);
+void trap_run_err(int status);
+void trap_run_debug(void);
+void trap_run_return(void);
 void trap_subshell_leave(const struct shell_s *saved);
 
+int vs_option_state(const char *name);
+
+/* Backslash escapes (builtins_io.c): 's' points just after the backslash.
+ * Appends what it denotes to 'out' and returns how many characters it used.
+ */
+
+#define ESC_STOP      0x1     /* \c ends the output */
+#define ESC_OCT_PLAIN 0x2     /* \ddd as well as \0ddd */
+#define ESC_HEXU      0x4     /* \xHH \uHHHH \UHHHHHHHH and \" \' \? */
+#define ESC_E         0x8     /* \e and \E */
+#define ESC_CTRL      0x10    /* \cX is a control character ($'...') */
+
+size_t vs_esc_one(const char *s, unsigned flags, struct sbuf_s *out, bool *stop);
 int bi_echo(int argc, char **argv);
 int bi_getopts(int argc, char **argv);
 int bi_local(int argc, char **argv);
 int bi_hash(int argc, char **argv);
+int bi_shopt(int argc, char **argv);
+int bi_pushd(int argc, char **argv);
+int bi_popd(int argc, char **argv);
+int bi_dirs(int argc, char **argv);
+void dirstack_free(void);
+void vs_shopt_defaults(void);
 int bi_alias(int argc, char **argv);
 int bi_unalias(int argc, char **argv);
 #ifdef VAPORSHELL_POSIX

@@ -249,6 +249,21 @@ static void snap_enter(struct snap_s *s)
         }
     }
 
+  if (s->saved.ndirs > 0)
+    {
+      int k;
+
+      g_sh.dirstack = vs_xmalloc((size_t)s->saved.ndirs * sizeof(char *));
+      for (k = 0; k < s->saved.ndirs; k++)
+        {
+          g_sh.dirstack[k] = vs_xstrdup(s->saved.dirstack[k]);
+        }
+    }
+  else
+    {
+      g_sh.dirstack = NULL;
+    }
+
   trap_subshell_enter();
   g_sh.in_subshell++;
   g_sh.interactive = false;
@@ -278,6 +293,7 @@ static void snap_leave(struct snap_s *s)
   free_funcs(g_sh.funcs);
   free_aliases(g_sh.aliases);
   free_hash(g_sh.hash);
+  dirstack_free();
   for (i = 0; i < g_sh.npos; i++)
     {
       free(g_sh.pos[i]);

@@ -123,15 +123,44 @@ vaporshell (bash mode) has it as a builtin.
   bash's output there depends on the locale.
 - **`declare -x`/`-r` listings** (`export`, `readonly` with no arguments) use
   bash's format and sort order.
-- **`trap` with no arguments** differs from bash in two environment-dependent
-  ways, both measured against bash 5.3.0 (dash behaves like vaporshell here):
-  bash also lists signals that were *ignored on entry* (`trap -- '' SIGINT`
-  when the shell was started under `nohup` or as a background job), and inside
-  a subshell, `$(...)` or pipeline it prints the parent's traps where
-  vaporshell prints nothing. Tests that print a trap listing must therefore
-  filter for the line they mean (`tests/own/traps.sh` does).
-- **Signals** on the NuttX build are not wired yet (`trap`/`kill` on real
-  signals work on host builds only).
+- **`trap` with no arguments** still differs from bash in one
+  environment-dependent way, measured against bash 5.3.0: bash also lists
+  signals that were *ignored on entry* (`trap -- '' SIGINT` when the shell was
+  started under `nohup` or as a background job). Tests that print a trap
+  listing must therefore filter for the line they mean (`tests/own/traps.sh`
+  and `tests/modes/bash/trap_pseudo.sh` do). Inside a subshell, `$(...)` or
+  pipeline bash mode prints the parent's traps until the subshell sets one of
+  its own, as bash does; POSIX mode prints nothing, as dash does.
+- **Signals on NuttX** work (`trap`, `kill`, self-signals, ignoring, resetting,
+  traps inside in-process subshells). Two NuttX facts limit what they can do,
+  both measured in the simulator: without `CONFIG_SIG_DEFAULT` a signal nobody
+  handles has no default action, so `kill` cannot terminate a task (not even
+  with `SIGKILL`; with the option on, only the shell's own `kill -KILL $$`
+  ended a task), and the console does not raise `SIGINT` unless
+  `CONFIG_TTY_SIGINT` is set.
+- **Expansion errors** are milder than bash's: a failing `${...}` (a bad
+  substitution, `${x:1:-9}`, `${!unset}`, `failglob`) fails that command and
+  the shell goes on, where bash aborts the rest of a `-c` command list and, for
+  a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
+  operators on `$@` are rejected rather than applied to each parameter.
+- **`shopt`** knows bash 5.3's 59 options with their defaults and formats. Nine
+  change behaviour (`nullglob`, `dotglob`, `failglob`, `nocaseglob`,
+  `nocasematch`, `extglob`, `globstar`, `expand_aliases`, `patsub_replacement`),
+  `inherit_errexit` and `xpg_echo` switch existing mode features, interactive
+  ones (`histappend`, `checkwinsize`, ...) are accepted and remembered but do
+  nothing, and the rest (`lastpipe`, `compat31`..`compat44`, `cdable_vars`,
+  `extdebug`, `localvar_inherit`, `localvar_unset`, ...) are an error to *set*
+  so a script that depends on them fails loudly instead of quietly running
+  wrong.
+- **`[[ ]]`**: `=~` uses POSIX ERE from `regcomp` (host only for now) and does
+  not set `BASH_REMATCH`, which needs arrays. The operands of `-eq` etc. are
+  arithmetic expressions and extglob patterns are always recognised on the
+  right of `==`, both as in bash.
+- **`DEBUG` trap**: runs before simple commands, `for` iterations, `case`,
+  `[[` and `((` at the top level; not inside functions (as bash without
+  `set -T`), and not once per pipeline stage in the parent as bash does.
+- **`time`** reports user and system time as zero on NuttX (only wall time is
+  available there).
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists
   entries newest-first where bash's order is its hash order.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell
@@ -142,5 +171,5 @@ vaporshell (bash mode) has it as a builtin.
 No probes exist for: interactive behaviour (line editing, history,
 completion, prompts, job control), `PS1`-`PS4` expansion beyond `PS4` under
 `set -x`, locale-dependent behaviour, `set -x` trace formatting, `mapfile`,
-`coproc`, `shopt` options, and error-message text. "ok" above says nothing
+`coproc`, the `shopt` options that only matter interactively, and error-message text. "ok" above says nothing
 about these.

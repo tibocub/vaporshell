@@ -3,8 +3,12 @@
  *
  * A signal handler only sets a flag; the executor calls
  * trap_run_pending() between commands, where running shell code is safe.
- * The EXIT trap (number 0) exists on every platform; real signals are
- * only wired up on the standalone build for now.
+ * The EXIT trap (number 0) exists on every platform; real signals need
+ * sigaction() and kill(): a host OS, or NuttX unless it was built with
+ * CONFIG_DISABLE_SIGNALS. NuttX numbers them like Linux does, but two
+ * things differ from a host: without CONFIG_SIG_DEFAULT a signal nobody
+ * handles is simply dropped (only SIGKILL ends a task), and the console
+ * does not raise SIGINT unless CONFIG_TTY_SIGINT is set.
  */
 
 #include <nuttx/config.h>
@@ -13,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
@@ -21,7 +26,13 @@
 
 #define NTRAPS VS_NTRAPS
 
-#ifdef VAPORSHELL_POSIX
+#if defined(VAPORSHELL_POSIX) || !defined(CONFIG_DISABLE_SIGNALS)
+#  define VS_HAVE_SIGNALS 1
+#else
+#  define VS_HAVE_SIGNALS 0
+#endif
+
+#if VS_HAVE_SIGNALS
 
 static const struct
 {
@@ -89,7 +100,14 @@ static int sig_number(const char *s)
       char *end;
       long v = strtol(s, &end, 10);
 
-      return (*end == '\0' && v >= 0 && v < NTRAPS) ? (int)v : -1;
+      return (*end == '\0' && v >= 0 && v < VS_TRAP_DEBUG) ? (int)v : -1;
+    }
+
+  if (vs_feat(VF_TRAP_BASH))
+    {
+      if (strcasecmp(s, "ERR") == 0) return VS_TRAP_ERR;
+      if (strcasecmp(s, "DEBUG") == 0) return VS_TRAP_DEBUG;
+      if (strcasecmp(s, "RETURN") == 0) return VS_TRAP_RETURN;
     }
 
   if (strncmp(s, "SIG", 3) == 0)
@@ -99,7 +117,8 @@ static int sig_number(const char *s)
 
   for (i = 0; i < NSIGS; i++)
     {
-      if (strcmp(s, g_sigs[i].name) == 0)
+      if (strcmp(s, g_sigs[i].name) == 0 ||
+          (vs_feat(VF_TRAP_BASH) && strcasecmp(s, g_sigs[i].name) == 0))
         {
           return g_sigs[i].num;
         }
@@ -112,6 +131,10 @@ static const char *sig_name(int num)
 {
   int i;
 
+  if (num == VS_TRAP_ERR) return "ERR";
+  if (num == VS_TRAP_DEBUG) return "DEBUG";
+  if (num == VS_TRAP_RETURN) return "RETURN";
+
   for (i = 0; i < NSIGS; i++)
     {
       if (g_sigs[i].num == num)
@@ -123,7 +146,7 @@ static const char *sig_name(int num)
   return "?";
 }
 
-#ifdef VAPORSHELL_POSIX
+#if VS_HAVE_SIGNALS
 
 static void on_signal(int sig)
 {
@@ -138,9 +161,9 @@ static void install(int sig, const char *action)
 {
   struct sigaction sa;
 
-  if (sig == 0)
+  if (sig == 0 || sig >= VS_TRAP_DEBUG)
     {
-      return;
+      return;                        /* EXIT and the pseudo-signals are not OS signals */
     }
 
   memset(&sa, 0, sizeof(sa));
@@ -173,6 +196,12 @@ static void install(int sig, const char *action)
 
 static void set_trap(int sig, const char *action)
 {
+  g_sh.trap_dirty = true;             /* a subshell's own traps now show */
+  if (sig == VS_TRAP_RETURN)
+    {
+      g_sh.return_fdepth = g_sh.func_depth;
+    }
+
   free(g_sh.trap_action[sig]);
   g_sh.trap_action[sig] = action != NULL ? vs_xstrdup(action) : NULL;
   install(sig, g_sh.trap_action[sig]);
@@ -181,15 +210,18 @@ static void set_trap(int sig, const char *action)
 static void print_traps(void)
 {
   int i;
+  bool parent = vs_feat(VF_TRAP_BASH) && !g_sh.trap_dirty;
 
   for (i = 0; i < NTRAPS; i++)
     {
-      if (g_sh.trap_action[i] != NULL)
+      const char *act = parent ? g_sh.trap_parent[i] : g_sh.trap_action[i];
+
+      if (act != NULL)
         {
           const char *p;
 
           fputs("trap -- '", stdout);
-          for (p = g_sh.trap_action[i]; *p != '\0'; p++)
+          for (p = act; *p != '\0'; p++)
             {
               if (*p == '\'')
                 {
@@ -201,7 +233,9 @@ static void print_traps(void)
                 }
             }
 
-          printf("' %s\n", sig_name(i));
+          /* bash names real signals SIGINT; dash just INT */
+
+          printf("' %s%s\n", (i > 0 && i < VS_TRAP_DEBUG && vs_feat(VF_BASH_INFO_FORMATS)) ? "SIG" : "", sig_name(i));
         }
     }
 }
@@ -259,7 +293,7 @@ int bi_trap(int argc, char **argv)
           vs_err("trap: %s: invalid signal specification", argv[i]);
           status = 1;
         }
-#ifdef VAPORSHELL_POSIX
+#if VS_HAVE_SIGNALS
       else if (sig == SIGKILL || sig == SIGSTOP)
         {
           vs_err("trap: %s: cannot be trapped", argv[i]);
@@ -316,6 +350,47 @@ void trap_run_pending(void)
     }
 }
 
+/* bash's ERR, DEBUG and RETURN: run an action now, unless we are already
+ * inside one of the same kind, keeping $? as the caller had it.
+ */
+
+static void run_pseudo(int slot, bool *guard, int status)
+{
+  char *action = g_sh.trap_action[slot];
+
+  if (action == NULL || action[0] == '\0' || *guard || g_sh.unwind != UW_NONE)
+    {
+      return;
+    }
+
+  {
+    char *copy = vs_xstrdup(action);
+    int saved = g_sh.last_status;
+
+    *guard = true;
+    g_sh.last_status = status;
+    run_action(copy);
+    g_sh.last_status = saved;
+    *guard = false;
+    free(copy);
+  }
+}
+
+void trap_run_err(int status)
+{
+  run_pseudo(VS_TRAP_ERR, &g_sh.in_err_trap, status);
+}
+
+void trap_run_debug(void)
+{
+  run_pseudo(VS_TRAP_DEBUG, &g_sh.in_debug_trap, g_sh.last_status);
+}
+
+void trap_run_return(void)
+{
+  run_pseudo(VS_TRAP_RETURN, &g_sh.in_return_trap, g_sh.last_status);
+}
+
 void trap_run_exit(void)
 {
   char *action = g_sh.trap_action[0];
@@ -335,10 +410,24 @@ void trap_run_exit(void)
  * caller's saved copy of the state, so nothing of theirs is freed here.
  */
 
+static void remember_parent_traps(void)
+{
+  int i;
+
+  for (i = 0; i < NTRAPS; i++)
+    {
+      free(g_sh.trap_parent[i]);
+      g_sh.trap_parent[i] = g_sh.trap_action[i] != NULL ? vs_xstrdup(g_sh.trap_action[i]) : NULL;
+    }
+
+  g_sh.trap_dirty = false;
+}
+
 void trap_subshell_enter(void)
 {
   int i;
 
+  remember_parent_traps();
   for (i = 0; i < NTRAPS; i++)
     {
       char *a = g_sh.trap_action[i];
@@ -375,6 +464,9 @@ void trap_subshell_leave(const struct shell_s *saved)
     {
       bool touched = g_sh.trap_action[i] != NULL;
 
+      free(g_sh.trap_parent[i]);
+      g_sh.trap_parent[i] = NULL;
+
       free(g_sh.trap_action[i]);
       g_sh.trap_action[i] = saved->trap_action[i];
       if (touched || saved->trap_action[i] != NULL)
@@ -387,6 +479,8 @@ void trap_subshell_leave(const struct shell_s *saved)
 void trap_reset_in_child(void)
 {
   int i;
+
+  remember_parent_traps();
 
   for (i = 0; i < NTRAPS; i++)
     {
@@ -402,7 +496,7 @@ void trap_reset_in_child(void)
   g_sh.trap_pending = 0;
 }
 
-#ifdef VAPORSHELL_POSIX
+#if VS_HAVE_SIGNALS
 
 static int cmp_sig(const void *a, const void *b)
 {
@@ -476,11 +570,11 @@ static int kill_list(int argc, char **argv)
   return 0;
 }
 
-#endif /* VAPORSHELL_POSIX */
+#endif /* VS_HAVE_SIGNALS */
 
 int bi_kill(int argc, char **argv)
 {
-#ifdef VAPORSHELL_POSIX
+#if VS_HAVE_SIGNALS
   int sig = SIGTERM;
   int i = 1;
   int status = 0;

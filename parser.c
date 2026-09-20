@@ -22,6 +22,7 @@
 
 static struct node_s *parse_list(struct parser_s *p, bool multiline);
 static struct node_s *parse_command(struct parser_s *p);
+static struct node_s *parse_pipeline(struct parser_s *p);
 
 /* ---- Token access and errors -------------------------------------------- */
 
@@ -70,6 +71,9 @@ static const char *op_text(enum tok_e t)
       case T_RPAREN:    return ")";
       case T_ANDGREAT:  return "&>";
       case T_ANDDGREAT: return "&>>";
+      case T_TLESS:     return "<<<";
+      case T_SEMIAMP:   return ";&";
+      case T_DSEMIAMP:  return ";;&";
       case T_NEWLINE:   return "newline";
       default:          return "?";
     }
@@ -231,7 +235,7 @@ static bool is_redir_tok(enum tok_e t)
   return t == T_IO_NUMBER || t == T_LESS || t == T_GREAT || t == T_DLESS ||
          t == T_DGREAT || t == T_LESSAND || t == T_GREATAND ||
          t == T_LESSGREAT || t == T_DLESSDASH || t == T_CLOBBER ||
-         t == T_ANDGREAT || t == T_ANDDGREAT;
+         t == T_ANDGREAT || t == T_ANDDGREAT || t == T_TLESS;
 }
 
 /* Heredoc delimiter: quote removal, and whether any quoting was present. */
@@ -311,6 +315,7 @@ static bool parse_redir(struct parser_s *p, struct redir_s ***tail)
       case T_LESSGREAT: r->op = R_RDWR;    break;
       case T_ANDGREAT:  r->op = R_OUT_ERR;    break;
       case T_ANDDGREAT: r->op = R_APPEND_ERR; break;
+      case T_TLESS:     r->op = R_HERESTR; break;
       case T_DLESS:
       case T_DLESSDASH:
         r->op = R_HEREDOC;
@@ -424,7 +429,7 @@ static bool is_reserved_word(const char *w)
   static const char *const words[] =
   {
     "if", "then", "else", "elif", "fi", "do", "done", "case", "esac",
-    "while", "until", "for", "in", "{", "}", "!"
+    "while", "until", "for", "in", "{", "}", "!", "[[", "]]", "function", "time"
   };
   size_t i;
 
@@ -451,7 +456,7 @@ static bool try_alias(struct parser_s *p, struct token_s *t)
   int k;
 
   if (p->no_alias || t->type != T_WORD || t->quoted || g_sh.aliases == NULL ||
-      !(g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS)) ||
+      !(g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS) || g_sh.so_expand_aliases) ||
       is_reserved_word(t->text))
     {
       return false;
@@ -690,6 +695,494 @@ static struct node_s *parse_while(struct parser_s *p, bool until)
   return n;
 }
 
+/* ---- Bash syntax: (( )), for (( )), [[ ]], function, time ------------------- */
+
+/* The text of an arithmetic command that starts at buffer offset 'start'
+ * (just after "(("), up to the matching "))". It is scanned as raw text: `<`,
+ * `;` and `&` inside would otherwise be lexed as shell operators. Returns
+ * NULL if the parentheses do not close as "))" -- then it was `( (` nested
+ * subshells after all.
+ */
+
+static char *scan_arith(struct parser_s *p, size_t start, size_t *after)
+{
+  struct lexer_s *lx = &p->lx;
+  size_t i = start;
+  int depth = 0;
+
+  for (; ; )
+    {
+      while (i < lx->len)
+        {
+          char c = lx->buf[i];
+
+          if (c == '\'' || c == '"')
+            {
+              size_t j = i + 1;
+
+              while (j < lx->len && lx->buf[j] != c)
+                {
+                  j++;
+                }
+
+              i = j < lx->len ? j + 1 : lx->len;
+              continue;
+            }
+
+          if (c == '(')
+            {
+              depth++;
+            }
+          else if (c == ')')
+            {
+              if (depth == 0)
+                {
+                  if (i + 1 >= lx->len && !lex_fetch(lx))
+                    {
+                      return NULL;
+                    }
+
+                  if (i + 1 < lx->len && lx->buf[i + 1] == ')')
+                    {
+                      *after = i + 2;
+                      return arena_strndup(lx->arena, lx->buf + start, i - start);
+                    }
+
+                  return NULL;
+                }
+
+              depth--;
+            }
+
+          i++;
+        }
+
+      if (!lex_fetch(lx))
+        {
+          return NULL;
+        }
+    }
+}
+
+/* Moves the lexer past an arithmetic construct that scan_arith() found. */
+
+static void skip_to(struct parser_s *p, size_t after)
+{
+  p->lx.pos = after;
+  p->have = false;
+}
+
+/* for (( init; cond; step )) do ... done. 'start' is the offset after "((". */
+
+static struct node_s *parse_arith_for(struct parser_s *p, size_t start)
+{
+  struct node_s *n = new_node(p, N_ARITHFOR);
+  struct word_s **tail = &n->words;
+  size_t after;
+  char *text = scan_arith(p, start, &after);
+  char *part;
+  char *semi;
+  int nparts = 0;
+  int depth = 0;
+  char *c;
+
+  if (text == NULL)
+    {
+      snprintf(p->err, sizeof(p->err), "syntax error: bad for (( )) expression");
+      return NULL;
+    }
+
+  skip_to(p, after);
+
+  /* Split at the two top-level semicolons. */
+
+  part = text;
+  for (c = text; ; c++)
+    {
+      if (*c == '(')
+        {
+          depth++;
+        }
+      else if (*c == ')')
+        {
+          depth--;
+        }
+
+      if ((*c == ';' && depth == 0) || *c == '\0')
+        {
+          semi = c;
+          *tail = new_word(p, arena_strndup(p->lx.arena, part, (size_t)(semi - part)));
+          tail = &(*tail)->next;
+          nparts++;
+          if (*c == '\0')
+            {
+              break;
+            }
+
+          part = c + 1;
+        }
+    }
+
+  if (nparts != 3)
+    {
+      snprintf(p->err, sizeof(p->err),
+               "syntax error: for (( )) needs three expressions");
+      return NULL;
+    }
+
+  if (peek(p)->type == T_SEMI)
+    {
+      advance(p);
+    }
+
+  skip_newlines(p);
+  if (!expect_kw(p, "do"))
+    {
+      return NULL;
+    }
+
+  n->a = nonempty(p, parse_list(p, true));
+  if (n->a == NULL || !expect_kw(p, "done"))
+    {
+      return NULL;
+    }
+
+  return n;
+}
+
+/* function name [()] compound-command */
+
+static struct node_s *parse_function_kw(struct parser_s *p)
+{
+  struct node_s *fn = new_node(p, N_FUNCDEF);
+  struct node_s *body;
+  struct token_s *t;
+
+  advance(p);                     /* function */
+  t = peek(p);
+  if (t->type != T_WORD || t->quoted)
+    {
+      unexpected(p);
+      return NULL;
+    }
+
+  fn->name = t->text;
+  advance(p);
+  if (peek(p)->type == T_LPAREN)
+    {
+      advance(p);
+      if (peek(p)->type != T_RPAREN)
+        {
+          unexpected(p);
+          return NULL;
+        }
+
+      advance(p);
+    }
+
+  skip_newlines(p);
+  body = parse_command(p);
+  if (body == NULL)
+    {
+      return NULL;
+    }
+
+  if (body->type == N_SIMPLE || body->type == N_FUNCDEF)
+    {
+      snprintf(p->err, sizeof(p->err),
+               "syntax error: function body must be a compound command");
+      return NULL;
+    }
+
+  fn->a = body;
+  fn->arena = p->lx.arena;
+  return fn;
+}
+
+/* [[ expression ]]: the tokens up to the closing ]] are collected first so
+ * the grammar can look ahead freely (`-f x` is a test but `-f == x` is a
+ * string comparison).
+ */
+
+struct dbtok_s
+{
+  enum tok_e type;
+  char *text;
+  bool quoted;
+};
+
+struct dbctx_s
+{
+  struct parser_s *p;
+  struct dbtok_s *t;
+  int n;
+  int i;
+};
+
+static const char *const g_db_unary[] =
+{
+  "-a", "-b", "-c", "-d", "-e", "-f", "-g", "-h", "-k", "-p", "-r", "-s", "-t",
+  "-u", "-w", "-x", "-G", "-L", "-N", "-O", "-S", "-z", "-n", "-v", "-R", "-o",
+  NULL
+};
+
+static const char *const g_db_binary[] =
+{
+  "==", "=", "!=", "=~", "-eq", "-ne", "-lt", "-le", "-gt", "-ge", "-nt", "-ot",
+  "-ef", NULL
+};
+
+static bool db_in(const char *const *set, const char *s)
+{
+  for (; *set != NULL; set++)
+    {
+      if (strcmp(*set, s) == 0)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static bool db_is_word(const struct dbctx_s *c, int i)
+{
+  return i < c->n && c->t[i].type == T_WORD;
+}
+
+static const char *db_binop(const struct dbctx_s *c, int i)
+{
+  if (i >= c->n)
+    {
+      return NULL;
+    }
+
+  if (c->t[i].type == T_LESS)
+    {
+      return "<";
+    }
+
+  if (c->t[i].type == T_GREAT)
+    {
+      return ">";
+    }
+
+  if (c->t[i].type == T_WORD && !c->t[i].quoted && db_in(g_db_binary, c->t[i].text))
+    {
+      return c->t[i].text;
+    }
+
+  return NULL;
+}
+
+static struct node_s *db_or(struct dbctx_s *c);
+
+static struct node_s *db_error(struct dbctx_s *c)
+{
+  if (c->p->err[0] == '\0')
+    {
+      snprintf(c->p->err, sizeof(c->p->err),
+               "syntax error in conditional expression");
+    }
+
+  return NULL;
+}
+
+static struct node_s *db_primary(struct dbctx_s *c)
+{
+  struct parser_s *p = c->p;
+
+  if (c->i >= c->n)
+    {
+      return db_error(c);
+    }
+
+  if (c->t[c->i].type == T_LPAREN)
+    {
+      struct node_s *e;
+
+      c->i++;
+      e = db_or(c);
+      if (e == NULL || c->i >= c->n || c->t[c->i].type != T_RPAREN)
+        {
+          return db_error(c);
+        }
+
+      c->i++;
+      return e;
+    }
+
+  if (db_is_word(c, c->i) && !c->t[c->i].quoted && strcmp(c->t[c->i].text, "!") == 0)
+    {
+      struct node_s *n = new_node(p, N_DB_NOT);
+
+      c->i++;
+      n->a = db_primary(c);
+      return n->a != NULL ? n : NULL;
+    }
+
+  if (!db_is_word(c, c->i))
+    {
+      return db_error(c);
+    }
+
+  /* unary operator: an operator word followed by a word that is not itself
+   * the start of a binary comparison
+   */
+
+  if (!c->t[c->i].quoted && db_in(g_db_unary, c->t[c->i].text) &&
+      db_is_word(c, c->i + 1) && db_binop(c, c->i + 1) == NULL)
+    {
+      struct node_s *n = new_node(p, N_DB_TEST);
+
+      n->name = c->t[c->i].text;
+      n->words = new_word(p, c->t[c->i + 1].text);
+      c->i += 2;
+      return n;
+    }
+
+  if (db_binop(c, c->i + 1) != NULL)
+    {
+      struct node_s *n = new_node(p, N_DB_TEST);
+      struct word_s *l = new_word(p, c->t[c->i].text);
+
+      n->name = (char *)db_binop(c, c->i + 1);
+      if (!db_is_word(c, c->i + 2))
+        {
+          return db_error(c);
+        }
+
+      n->words = l;
+      l->next = new_word(p, c->t[c->i + 2].text);
+      c->i += 3;
+      return n;
+    }
+
+  /* a unary operator with nothing to operate on is an error in bash */
+
+  if (!c->t[c->i].quoted && db_in(g_db_unary, c->t[c->i].text))
+    {
+      snprintf(p->err, sizeof(p->err),
+               "syntax error: unexpected argument to conditional unary operator");
+      return NULL;
+    }
+
+  {
+    struct node_s *n = new_node(p, N_DB_TEST);
+
+    n->name = arena_strdup(p->lx.arena, "");
+    n->words = new_word(p, c->t[c->i].text);
+    c->i++;
+    return n;
+  }
+}
+
+static struct node_s *db_and(struct dbctx_s *c)
+{
+  struct node_s *l = db_primary(c);
+
+  while (l != NULL && c->i < c->n && c->t[c->i].type == T_ANDIF)
+    {
+      struct node_s *n = new_node(c->p, N_DB_AND);
+
+      c->i++;
+      n->a = l;
+      n->b = db_primary(c);
+      if (n->b == NULL)
+        {
+          return NULL;
+        }
+
+      l = n;
+    }
+
+  return l;
+}
+
+static struct node_s *db_or(struct dbctx_s *c)
+{
+  struct node_s *l = db_and(c);
+
+  while (l != NULL && c->i < c->n && c->t[c->i].type == T_ORIF)
+    {
+      struct node_s *n = new_node(c->p, N_DB_OR);
+
+      c->i++;
+      n->a = l;
+      n->b = db_and(c);
+      if (n->b == NULL)
+        {
+          return NULL;
+        }
+
+      l = n;
+    }
+
+  return l;
+}
+
+static struct node_s *parse_dbracket(struct parser_s *p)
+{
+  struct node_s *n = new_node(p, N_DBRACKET);
+  struct dbctx_s c;
+  int cap = 16;
+
+  c.p = p;
+  c.n = 0;
+  c.i = 0;
+  c.t = vs_xmalloc((size_t)cap * sizeof(*c.t));
+  p->lx.force_extglob = true;     /* patterns like +(a|b) are words in here */
+  advance(p);                     /* [[ */
+
+  for (; ; )
+    {
+      struct token_s *t = peek(p);
+
+      if (t->type == T_EOF || t->type == T_ERROR)
+        {
+          p->lx.force_extglob = false;
+          unexpected(p);
+          free(c.t);
+          return NULL;
+        }
+
+      if (t->type == T_NEWLINE)
+        {
+          advance(p);
+          continue;
+        }
+
+      if (t->type == T_WORD && !t->quoted && strcmp(t->text, "]]") == 0)
+        {
+          p->lx.force_extglob = false;
+          advance(p);
+          break;
+        }
+
+      if (c.n == cap)
+        {
+          cap *= 2;
+          c.t = vs_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
+        }
+
+      c.t[c.n].type = t->type;
+      c.t[c.n].quoted = t->quoted;
+      c.t[c.n].text = (t->type == T_WORD) ? t->text : NULL;
+      c.n++;
+      advance(p);
+    }
+
+  n->a = db_or(&c);
+  if (n->a != NULL && c.i != c.n)
+    {
+      db_error(&c);
+      n->a = NULL;
+    }
+
+  free(c.t);
+  return n->a != NULL ? n : NULL;
+}
+
 static struct node_s *parse_for(struct parser_s *p)
 {
   struct node_s *n = new_node(p, N_FOR);
@@ -697,6 +1190,13 @@ static struct node_s *parse_for(struct parser_s *p)
 
   advance(p);
   t = peek(p);
+
+  if (t->type == T_LPAREN && vs_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
+      p->lx.buf[t->end] == '(')
+    {
+      return parse_arith_for(p, t->end + 1);
+    }
+
   if (t->type != T_WORD || t->quoted || !is_valid_name(t->text, strlen(t->text)))
     {
       unexpected(p);
@@ -829,6 +1329,12 @@ static struct node_s *parse_case(struct parser_s *p)
           advance(p);
           skip_newlines(p);
         }
+      else if (peek(p)->type == T_SEMIAMP || peek(p)->type == T_DSEMIAMP)
+        {
+          item->term = peek(p)->type == T_SEMIAMP ? 1 : 2;   /* bash: ;& and ;;& */
+          advance(p);
+          skip_newlines(p);
+        }
       else if (!is_kw(p, "esac"))
         {
           unexpected(p);
@@ -856,7 +1362,26 @@ static struct node_s *parse_command(struct parser_s *p)
       return NULL;
     }
 
-  if (t->type == T_LPAREN)
+  if (t->type == T_LPAREN && vs_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
+      p->lx.buf[t->end] == '(')
+    {
+      size_t after;
+      char *text = scan_arith(p, t->end + 1, &after);
+
+      if (text != NULL)
+        {
+          n = new_node(p, N_ARITH);
+          n->words = new_word(p, text);
+          skip_to(p, after);
+          t = peek(p);
+        }
+    }
+
+  if (n != NULL)
+    {
+      /* an arithmetic command: nothing more to parse */
+    }
+  else if (t->type == T_LPAREN)
     {
       n = new_node(p, N_SUBSHELL);
       advance(p);
@@ -908,6 +1433,19 @@ static struct node_s *parse_command(struct parser_s *p)
         {
           n = parse_case(p);
         }
+      else if (strcmp(t->text, "[[") == 0 && vs_feat(VF_BASH_SYNTAX))
+        {
+          n = parse_dbracket(p);
+        }
+      else if (strcmp(t->text, "function") == 0 && vs_feat(VF_BASH_SYNTAX))
+        {
+          n = parse_function_kw(p);
+          if (n != NULL)
+            {
+              p->depth--;
+              return n;
+            }
+        }
       else if (at_list_end(p))
         {
           unexpected(p);            /* stray then/fi/done/... */
@@ -940,6 +1478,21 @@ static struct node_s *parse_pipeline(struct parser_s *p)
   struct node_s *first;
   struct node_s *pipe;
   struct node_s **tail;
+
+  if (is_kw(p, "time") && vs_feat(VF_BASH_SYNTAX))
+    {
+      struct node_s *tn = new_node(p, N_TIME);
+
+      advance(p);
+      if (is_kw(p, "-p"))
+        {
+          tn->flag = true;
+          advance(p);
+        }
+
+      tn->a = parse_pipeline(p);
+      return tn->a != NULL ? tn : NULL;
+    }
 
   if (is_kw(p, "!"))
     {

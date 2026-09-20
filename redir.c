@@ -159,7 +159,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
   if (fd < 0)
     {
       fd = (r->op == R_IN || r->op == R_DUPIN || r->op == R_RDWR ||
-            r->op == R_HEREDOC) ? 0 : 1;
+            r->op == R_HEREDOC || r->op == R_HERESTR) ? 0 : 1;
     }
 
   if (r->op == R_HEREDOC)
@@ -177,6 +177,32 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
       if (src < 0)
         {
           vs_err("here-document: %s", strerror(errno));
+          return -1;
+        }
+    }
+  else if (r->op == R_HERESTR)
+    {
+      /* bash: the word is expanded (no splitting, no globbing) and a
+       * newline added, then read as standard input.
+       */
+
+      char *w = expand_word_str(r->target);
+      struct sbuf_s text;
+
+      if (w == NULL)
+        {
+          return -1;
+        }
+
+      sb_init(&text);
+      sb_adds(&text, w);
+      sb_addc(&text, '\n');
+      free(w);
+      src = heredoc_fd(text.s);
+      sb_free(&text);
+      if (src < 0)
+        {
+          vs_err("here-string: %s", strerror(errno));
           return -1;
         }
     }

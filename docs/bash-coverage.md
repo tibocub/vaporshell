@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **269 of 321**.
+Probes matching bash in bash mode: **343 of 371**.
 
 
 ## How this is measured
@@ -108,7 +108,7 @@ test compares it with bash 5.3.
 
 Each table lists probes for one area; the count is probes matching bash.
 
-### Quoting  (4/6)
+### Quoting  (9/9)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -116,10 +116,13 @@ Each table lists probes for one area; the count is probes matching bash.
 | `quote_double` | ok |  |
 | `quote_backslash_newline` | ok |  |
 | `quote_dquote_nested_cmdsub` | ok |  |
-| `quote_ansi_c` | **differs** | bash $'...' strings |
-| `quote_locale` | **differs** | bash $"..." translation |
+| `quote_ansi_c` | ok | bash $'...' strings |
+| `quote_locale` | ok | bash $"..." translation |
+| `ansi_c_quote` | ok |  |
+| `ansi_c_control` | ok |  |
+| `locale_dq` | ok |  |
 
-### Parameter expansion  (15/21)
+### Parameter expansion  (29/29)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -138,14 +141,22 @@ Each table lists probes for one area; the count is probes matching bash.
 | `param_special_bang` | ok |  |
 | `param_special_dash` | ok |  |
 | `param_special_zero` | ok |  |
-| `param_substring` | **differs** | bash ${x:off:len} |
-| `param_replace` | **differs** | bash ${x/pat/rep} |
-| `param_case` | **differs** | bash ${x^^} ${x,,} |
-| `param_indirect` | **differs** | bash ${!x} |
-| `param_prefix_names` | **differs** | bash ${!prefix*} |
-| `param_transform` | **differs** | bash ${x@Q} |
+| `param_substring` | ok | bash ${x:off:len} |
+| `param_replace` | ok | bash ${x/pat/rep} |
+| `param_case` | ok | bash ${x^^} ${x,,} |
+| `param_indirect` | ok | bash ${!x} |
+| `param_prefix_names` | ok | bash ${!prefix*} |
+| `param_transform` | ok | bash ${x@Q} |
+| `param_substring` | ok |  |
+| `param_substring_positional` | ok |  |
+| `param_replace` | ok |  |
+| `param_replace_amp` | ok |  |
+| `param_case` | ok |  |
+| `param_transform` | ok |  |
+| `param_indirect` | ok |  |
+| `param_prefix_names` | ok |  |
 
-### Other expansions  (18/21)
+### Other expansions  (25/26)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -167,9 +178,14 @@ Each table lists probes for one area; the count is probes matching bash.
 | `arith_power` | ok | bash ** operator |
 | `arith_comma` | ok |  |
 | `arith_base` | ok | bash base#number |
-| `brace_expansion` | **differs** | bash {a,b} and {1..3} |
-| `brace_seq_step` | **differs** | bash {1..10..3} |
+| `brace_expansion` | ok | bash {a,b} and {1..3} |
+| `brace_seq_step` | ok | bash {1..10..3} |
 | `procsub` | **differs** | bash <(cmd) |
+| `brace_list` | ok |  |
+| `brace_sequence` | ok |  |
+| `brace_padding` | ok |  |
+| `brace_literal` | ok |  |
+| `brace_quoted` | ok |  |
 
 ### Field splitting  (5/5)
 
@@ -181,7 +197,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `split_quoted` | ok |  |
 | `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (9/11)
+### Pathname expansion  (19/19)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -194,10 +210,18 @@ Each table lists probes for one area; the count is probes matching bash.
 | `glob_quoted` | ok |  |
 | `glob_class_names` | ok |  |
 | `glob_extglob` | ok | bash shopt -s extglob patterns |
-| `glob_globstar` | **differs** | bash ** recursive |
-| `glob_nullglob` | **differs** | bash shopt -s nullglob |
+| `glob_globstar` | ok | bash ** recursive |
+| `glob_nullglob` | ok | bash shopt -s nullglob |
+| `nullglob` | ok |  |
+| `dotglob` | ok |  |
+| `nocaseglob` | ok |  |
+| `nocasematch` | ok |  |
+| `globstar` | ok |  |
+| `extglob` | ok |  |
+| `extglob_case_and_path` | ok |  |
+| `extglob_always_in_dbracket` | ok |  |
 
-### Redirection  (18/19)
+### Redirection  (21/21)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -212,7 +236,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `redir_heredoc_quoted` | ok |  |
 | `redir_heredoc_dash` | ok |  |
 | `redir_heredoc_multi` | ok |  |
-| `redir_here_string` | **differs** | bash <<< |
+| `redir_here_string` | ok | bash <<< |
 | `redir_amp_out` | ok | bash &>file |
 | `redir_amp_append` | ok | bash &>>file |
 | `redir_order` | ok |  |
@@ -220,8 +244,10 @@ Each table lists probes for one area; the count is probes matching bash.
 | `redir_on_compound` | ok |  |
 | `redir_on_loop` | ok |  |
 | `redir_persistent_exec` | ok |  |
+| `herestring` | ok |  |
+| `herestring_expansion` | ok |  |
 
-### Compound commands, functions, pipelines  (22/31)
+### Compound commands, functions, pipelines  (42/45)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -233,9 +259,9 @@ Each table lists probes for one area; the count is probes matching bash.
 | `for_no_in` | ok |  |
 | `for_break_n` | ok |  |
 | `for_continue_n` | ok |  |
-| `for_arith` | **differs** | bash (( ; ; )) |
+| `for_arith` | ok | bash (( ; ; )) |
 | `case_patterns` | ok |  |
-| `case_fallthrough` | **differs** | bash ;& and ;;& |
+| `case_fallthrough` | ok | bash ;& and ;;& |
 | `case_quoted_pattern` | ok |  |
 | `and_or` | ok |  |
 | `negation` | ok |  |
@@ -247,15 +273,29 @@ Each table lists probes for one area; the count is probes matching bash.
 | `function_basic` | ok |  |
 | `function_return` | ok |  |
 | `function_recursion` | ok |  |
-| `function_keyword` | **differs** | bash function f { } |
+| `function_keyword` | ok | bash function f { } |
 | `function_positional_scope` | ok |  |
 | `function_unset` | ok |  |
-| `conditional_dbracket` | **differs** | bash [[ ]] |
+| `conditional_dbracket` | ok | bash [[ ]] |
 | `conditional_dbracket_re` | **differs** | bash [[ =~ ]] |
-| `conditional_arith` | **differs** | bash (( )) |
+| `conditional_arith` | ok | bash (( )) |
 | `select_loop` | **differs** | bash select |
-| `time_keyword` | **differs** | bash time |
+| `time_keyword` | ok | bash time |
 | `coproc` | ok | bash coproc |
+| `dbracket_string` | ok |  |
+| `dbracket_pattern` | ok |  |
+| `dbracket_unary` | ok |  |
+| `dbracket_logic` | ok |  |
+| `dbracket_arith_operands` | ok |  |
+| `dbracket_regex` | ok | needs regcomp on NuttX |
+| `dbracket_lone_unary_error` | ok |  |
+| `arith_command` | ok |  |
+| `arith_for` | ok |  |
+| `arith_for_empty_parts` | ok |  |
+| `function_keyword` | ok |  |
+| `case_fallthrough` | ok |  |
+| `case_continue_testing` | ok |  |
+| `time_keyword` | ok |  |
 
 ### `test` / `[`  (12/12)
 
@@ -274,7 +314,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (53/60)
+### POSIX builtins  (56/60)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -300,12 +340,12 @@ Each table lists probes for one area; the count is probes matching bash.
 | `special_return_outside` | ok |  |
 | `special_trap_exit` | ok |  |
 | `special_trap_list` | ok |  |
-| `special_trap_in_subshell` | **differs** | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
+| `special_trap_in_subshell` | ok | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
 | `special_trap_reset` | ok |  |
 | `special_trap_ignore` | ok |  |
 | `special_trap_signal` | ok |  |
-| `special_trap_err` | **differs** | bash trap ERR |
-| `special_trap_debug` | **differs** | bash trap DEBUG |
+| `special_trap_err` | ok | bash trap ERR |
+| `special_trap_debug` | ok | bash trap DEBUG |
 | `special_trap_return` | ok | bash trap RETURN |
 | `special_dot` | ok |  |
 | `special_dot_args` | ok | . with arguments |
@@ -444,7 +484,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `LINENO` | ok | dash 0.5.12 has no LINENO |
 | `LINENO_func` | ok | dash 0.5.12 has no LINENO |
 
-### Shell options  (11/11)
+### Shell options  (17/17)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -459,6 +499,12 @@ Each table lists probes for one area; the count is probes matching bash.
 | `opt_errexit_function` | ok |  |
 | `opt_dash_c_args` | ok |  |
 | `opt_interactive_flag` | ok |  |
+| `trap_err` | ok |  |
+| `trap_err_contexts` | ok |  |
+| `trap_debug` | ok |  |
+| `trap_return_function` | ok |  |
+| `trap_return_source` | ok |  |
+| `trap_case_insensitive` | ok |  |
 
 ### Variables  (13/16)
 
@@ -492,7 +538,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `array_slice` | **differs** | bash ${a[@]:1:2} |
 | `array_unset_elem` | **differs** | bash unset a[i] |
 
-### Bash builtins  (7/20)
+### Bash builtins  (13/24)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -501,8 +547,8 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_typeset` | **differs** | bash typeset |
 | `bi_let` | ok | bash let |
 | `bi_mapfile` | **differs** | bash mapfile |
-| `bi_shopt` | **differs** | bash shopt |
-| `bi_pushd` | **differs** | bash pushd popd dirs |
+| `bi_shopt` | ok | bash shopt |
+| `bi_pushd` | ok | bash pushd popd dirs |
 | `bi_builtin` | ok | bash builtin |
 | `bi_enable` | **differs** | bash enable |
 | `bi_caller` | ok | bash caller |
@@ -516,6 +562,10 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_test_e_stat` | ok |  |
 | `bi_bind` | **differs** | bash bind |
 | `bi_exec_c` | ok | bash exec -c |
+| `shopt_query` | ok |  |
+| `shopt_list` | ok |  |
+| `shopt_invalid` | ok |  |
+| `pushd_popd_dirs` | ok |  |
 
 ### Syntax and misc  (22/22)
 
@@ -550,11 +600,11 @@ Each table lists probes for one area; the count is probes matching bash.
 Every builtin `compgen -b` reports in the reference bash, and whether
 vaporshell (bash mode) has it as a builtin.
 
-bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 39 of them.
+bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 43 of them.
 
-**Missing (22):** `bg` `bind` `caller` `compgen` `complete` `compopt` `declare` `dirs` `disown` `enable` `fc` `fg` `history` `jobs` `logout` `mapfile` `popd` `pushd` `readarray` `shopt` `suspend` `typeset`
+**Missing (18):** `bg` `bind` `caller` `compgen` `complete` `compopt` `declare` `disown` `enable` `fc` `fg` `history` `jobs` `logout` `mapfile` `readarray` `suspend` `typeset`
 
-**Provided (39):** `.` `:` `[` `alias` `break` `builtin` `cd` `command` `continue` `echo` `eval` `exec` `exit` `export` `false` `getopts` `hash` `help` `kill` `let` `local` `printf` `pwd` `read` `readonly` `return` `set` `shift` `source` `test` `times` `trap` `true` `type` `ulimit` `umask` `unalias` `unset` `wait`
+**Provided (43):** `.` `:` `[` `alias` `break` `builtin` `cd` `command` `continue` `dirs` `echo` `eval` `exec` `exit` `export` `false` `getopts` `hash` `help` `kill` `let` `local` `popd` `printf` `pushd` `pwd` `read` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `ulimit` `umask` `unalias` `unset` `wait`
 
 
 ## Known deliberate differences
@@ -567,15 +617,44 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 39 of the
   bash's output there depends on the locale.
 - **`declare -x`/`-r` listings** (`export`, `readonly` with no arguments) use
   bash's format and sort order.
-- **`trap` with no arguments** differs from bash in two environment-dependent
-  ways, both measured against bash 5.3.0 (dash behaves like vaporshell here):
-  bash also lists signals that were *ignored on entry* (`trap -- '' SIGINT`
-  when the shell was started under `nohup` or as a background job), and inside
-  a subshell, `$(...)` or pipeline it prints the parent's traps where
-  vaporshell prints nothing. Tests that print a trap listing must therefore
-  filter for the line they mean (`tests/own/traps.sh` does).
-- **Signals** on the NuttX build are not wired yet (`trap`/`kill` on real
-  signals work on host builds only).
+- **`trap` with no arguments** still differs from bash in one
+  environment-dependent way, measured against bash 5.3.0: bash also lists
+  signals that were *ignored on entry* (`trap -- '' SIGINT` when the shell was
+  started under `nohup` or as a background job). Tests that print a trap
+  listing must therefore filter for the line they mean (`tests/own/traps.sh`
+  and `tests/modes/bash/trap_pseudo.sh` do). Inside a subshell, `$(...)` or
+  pipeline bash mode prints the parent's traps until the subshell sets one of
+  its own, as bash does; POSIX mode prints nothing, as dash does.
+- **Signals on NuttX** work (`trap`, `kill`, self-signals, ignoring, resetting,
+  traps inside in-process subshells). Two NuttX facts limit what they can do,
+  both measured in the simulator: without `CONFIG_SIG_DEFAULT` a signal nobody
+  handles has no default action, so `kill` cannot terminate a task (not even
+  with `SIGKILL`; with the option on, only the shell's own `kill -KILL $$`
+  ended a task), and the console does not raise `SIGINT` unless
+  `CONFIG_TTY_SIGINT` is set.
+- **Expansion errors** are milder than bash's: a failing `${...}` (a bad
+  substitution, `${x:1:-9}`, `${!unset}`, `failglob`) fails that command and
+  the shell goes on, where bash aborts the rest of a `-c` command list and, for
+  a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
+  operators on `$@` are rejected rather than applied to each parameter.
+- **`shopt`** knows bash 5.3's 59 options with their defaults and formats. Nine
+  change behaviour (`nullglob`, `dotglob`, `failglob`, `nocaseglob`,
+  `nocasematch`, `extglob`, `globstar`, `expand_aliases`, `patsub_replacement`),
+  `inherit_errexit` and `xpg_echo` switch existing mode features, interactive
+  ones (`histappend`, `checkwinsize`, ...) are accepted and remembered but do
+  nothing, and the rest (`lastpipe`, `compat31`..`compat44`, `cdable_vars`,
+  `extdebug`, `localvar_inherit`, `localvar_unset`, ...) are an error to *set*
+  so a script that depends on them fails loudly instead of quietly running
+  wrong.
+- **`[[ ]]`**: `=~` uses POSIX ERE from `regcomp` (host only for now) and does
+  not set `BASH_REMATCH`, which needs arrays. The operands of `-eq` etc. are
+  arithmetic expressions and extglob patterns are always recognised on the
+  right of `==`, both as in bash.
+- **`DEBUG` trap**: runs before simple commands, `for` iterations, `case`,
+  `[[` and `((` at the top level; not inside functions (as bash without
+  `set -T`), and not once per pipeline stage in the parent as bash does.
+- **`time`** reports user and system time as zero on NuttX (only wall time is
+  available there).
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists
   entries newest-first where bash's order is its hash order.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell
@@ -586,5 +665,5 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 39 of the
 No probes exist for: interactive behaviour (line editing, history,
 completion, prompts, job control), `PS1`-`PS4` expansion beyond `PS4` under
 `set -x`, locale-dependent behaviour, `set -x` trace formatting, `mapfile`,
-`coproc`, `shopt` options, and error-message text. "ok" above says nothing
+`coproc`, the `shopt` options that only matter interactively, and error-message text. "ok" above says nothing
 about these.

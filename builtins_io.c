@@ -18,10 +18,6 @@
 
 /* Escape flavours, combined per caller. */
 
-#define ESC_STOP      0x1     /* \c ends the output */
-#define ESC_OCT_PLAIN 0x2     /* \ddd as well as \0ddd */
-#define ESC_HEXU      0x4     /* \xHH \uHHHH \UHHHHHHHH and \" \' \? */
-#define ESC_E         0x8     /* \e and \E */
 
 static int hexval(int c)
 {
@@ -63,8 +59,8 @@ static void put_utf8(struct sbuf_s *out, unsigned long cp)
  * character, as both shells do.
  */
 
-static size_t esc_one(const char *s, unsigned flags, struct sbuf_s *out,
-                      bool *stop)
+size_t vs_esc_one(const char *s, unsigned flags, struct sbuf_s *out,
+                  bool *stop)
 {
   size_t n;
   int i;
@@ -84,6 +80,14 @@ static size_t esc_one(const char *s, unsigned flags, struct sbuf_s *out,
           {
             *stop = true;
             return 1;
+          }
+
+        if ((flags & ESC_CTRL) != 0 && s[1] != '\0')
+          {
+            /* $'\cA' is Ctrl-A: the character with its 0x40 bit flipped */
+
+            sb_addc(out, (char)(((s[1] >= 'a' && s[1] <= 'z') ? s[1] - 32 : s[1]) ^ 0x40));
+            return 2;
           }
 
         break;
@@ -249,7 +253,7 @@ int bi_echo(int argc, char **argv)
           if (escapes && *s == '\\')
             {
               s++;
-              s += esc_one(s, flags, &out, &stop);
+              s += vs_esc_one(s, flags, &out, &stop);
             }
           else
             {
@@ -347,7 +351,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
       if (*p == '\\')
         {
           p++;
-          p += esc_one(p, eflags, &pf->out, &pf->stop);
+          p += vs_esc_one(p, eflags, &pf->out, &pf->stop);
           continue;
         }
 
@@ -527,7 +531,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                         if (*str == '\\')
                           {
                             str++;
-                            str += esc_one(str, bflags, &tmp, &bstop);
+                            str += vs_esc_one(str, bflags, &tmp, &bstop);
                           }
                         else
                           {

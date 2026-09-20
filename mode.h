@@ -45,6 +45,11 @@ enum vs_feature_e
   VF_ALIAS_SCRIPTS,         /* aliases expand in non-interactive shells */
   VF_BASH_INFO_FORMATS,     /* alias/hash/times/ulimit use bash's formats and units */
   VF_ARITH_EXT,             /* ** , ++ -- and base#number in $(( )) */
+  VF_BASH_SYNTAX,           /* [[ ]], (( )), for (( )), function, time, ;& ;;&, <<< */
+  VF_BRACE_EXP,             /* {a,b} and {1..3} */
+  VF_ANSI_C_QUOTE,          /* $'...' and $"..." */
+  VF_PARAM_EXT,             /* ${x:o:l} ${x/p/r} ${x^^} ${!x} ${x@Q} */
+  VF_TRAP_BASH,             /* trap on ERR, DEBUG and RETURN */
   VF_DOT_ARGS,              /* `. file args` sets the positional parameters */
   VF_SET_O_BASH,            /* set -o pipefail / posix exist */
   VF_NOTFOUND_127,          /* type / command -v report "not found" as 127 (dash) */

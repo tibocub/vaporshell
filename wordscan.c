@@ -11,6 +11,7 @@
 #include <nuttx/config.h>
 
 #include "parse.h"
+#include "mode.h"
 
 int ws_skip_squote(const char *s, size_t len, size_t i, size_t *end)
 {
@@ -205,6 +206,34 @@ int ws_skip_arith(const char *s, size_t len, size_t i, size_t *end)
  * skipping.
  */
 
+/* $'...': a single-quoted string in which a backslash escapes the next
+ * character, so \' does not end it. i is at the '$'.
+ */
+
+static int ws_skip_ansic(const char *s, size_t len, size_t i, size_t *end)
+{
+  size_t j = i + 2;
+
+  while (j < len)
+    {
+      if (s[j] == '\\' && j + 1 < len)
+        {
+          j += 2;
+        }
+      else if (s[j] == '\'')
+        {
+          *end = j + 1;
+          return WS_OK;
+        }
+      else
+        {
+          j++;
+        }
+    }
+
+  return WS_ERROR;
+}
+
 int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end)
 {
   size_t e;
@@ -214,6 +243,17 @@ int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end)
     {
       *end = i + 1;
       return WS_OK;
+    }
+
+  if (s[i + 1] == '\'' && vs_feat(VF_ANSI_C_QUOTE))
+    {
+      r = ws_skip_ansic(s, len, i, &e);
+      if (r == WS_OK)
+        {
+          *end = e;
+        }
+
+      return r;
     }
 
   if (s[i + 1] == '{')

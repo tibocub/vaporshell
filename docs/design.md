@@ -337,6 +337,11 @@ was replaced. Layers, each calling only downward:
   and read a 1 KiB NuttX pipe); a pipeline runs plain external programs as
   real processes and every other stage as an in-process subshell, handing
   output to the next stage through a feeder thread.
+  `cmd &` starts a plain external program with `posix_spawn` and does not wait
+  for it (`$!` is its pid, `wait` collects it); a builtin, function or
+  compound command cannot run concurrently with the shell that runs it, so
+  `&` refuses those rather than run them in the foreground. Signals use
+  `sigaction`/`kill` as on a host (`traps.c`).
   Limits: not concurrent (an in-process stage finishes before the next one
   reads, so an endless in-process producer into `head` never ends), `&` only
   works for external programs, `exec cmd` inside a subshell runs `cmd` and

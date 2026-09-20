@@ -40,6 +40,7 @@ struct pat_s
 /* expand.c */
 
 int expand_words(const struct word_s *w, struct fieldv_s *out);
+void vs_brace_expand(const char *word, struct fieldv_s *out);      /* brace.c */
 char *expand_word_str(const char *raw);       /* no split, no glob */
 char *expand_assign_str(const char *raw);     /* also ~ after ':' and '=' */
 char *expand_heredoc(const char *body);
@@ -59,6 +60,7 @@ int arith_eval(const char *expr, long *result);
 /* glob.c */
 
 bool pat_match(const char *p, const char *pq, size_t plen, const char *str);
+bool pat_match_ci(const char *p, const char *pq, size_t plen, const char *str, bool ci);
 bool pat_has_glob(const char *p, const char *pq, size_t plen);
 int glob_expand(const char *p, const char *pq, size_t plen,
                 struct fieldv_s *out);

@@ -193,9 +193,15 @@ pid_t vs_plat_fork(void)
   return -1;
 }
 
+/* Variables are exported only when asked to be, as everywhere else. This used
+ * to return true because $(...) ran in a child `vaporshell -c` that inherited
+ * only the environment; command substitution is in-process now (inproc.c), so
+ * nothing needs every variable exported any more.
+ */
+
 bool vs_plat_export_all(void)
 {
-  return true;
+  return false;
 }
 
 bool vs_plat_external_fallback(const char *name)

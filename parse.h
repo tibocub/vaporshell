@@ -46,6 +46,9 @@ enum tok_e
   T_PIPE,
   T_LPAREN,
   T_RPAREN,
+  T_SEMIAMP,                  /* ;&  (VF_BASH_SYNTAX) */
+  T_DSEMIAMP,                 /* ;;& */
+  T_TLESS,                    /* <<< */
   T_ANDGREAT,                 /* &>  (only when VF_AMP_REDIR) */
   T_ANDDGREAT                 /* &>> */
 };
@@ -79,6 +82,7 @@ struct lexer_s
   struct hd_pending_s *hd_head;   /* heredocs waiting for their bodies */
   char err[160];
   bool err_eof;               /* the error is "input ended too early" */
+  bool force_extglob;         /* inside [[ ]]: extglob patterns are always words */
   int line_base;              /* newlines in text already dropped from buf */
   size_t lc_off;              /* cache: newlines counted up to this offset */
   int lc_line;
@@ -134,6 +138,7 @@ void parser_discard(struct parser_s *p);
 void lexer_init(struct lexer_s *lx, vs_line_fn fn, void *ctx);
 void lexer_free(struct lexer_s *lx);
 int lex_token(struct lexer_s *lx, struct token_s *tok);
+bool lex_fetch(struct lexer_s *lx);
 void lex_add_heredoc(struct lexer_s *lx, struct redir_s *r);
 
 /* wordscan.c: each returns WS_OK with *end just past the construct,

@@ -27,6 +27,8 @@ static const struct
 } g_ops[] =
 {
   { "&>>", T_ANDDGREAT, VF_AMP_REDIR }, { "&>", T_ANDGREAT, VF_AMP_REDIR },
+  { ";;&", T_DSEMIAMP, VF_BASH_SYNTAX }, { "<<<", T_TLESS, VF_BASH_SYNTAX },
+  { ";&", T_SEMIAMP, VF_BASH_SYNTAX },
   { "<<-", T_DLESSDASH, -1 }, { "&&", T_ANDIF, -1 },   { "||", T_ORIF, -1 },
   { ";;", T_DSEMI, -1 },      { "<<", T_DLESS, -1 },   { ">>", T_DGREAT, -1 },
   { "<&", T_LESSAND, -1 },    { ">&", T_GREATAND, -1 }, { "<>", T_LESSGREAT, -1 },
@@ -34,6 +36,10 @@ static const struct
   { ";", T_SEMI, -1 },        { "&", T_AMP, -1 },      { "|", T_PIPE, -1 },
   { "(", T_LPAREN, -1 },      { ")", T_RPAREN, -1 }
 };
+
+/* For the parser: an arithmetic command may need more of the input. */
+
+bool lex_fetch(struct lexer_s *lx);
 
 void lexer_init(struct lexer_s *lx, vs_line_fn fn, void *ctx)
 {
@@ -248,6 +254,35 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
 
       if (is_meta(c))
         {
+          /* extglob: ?( *( +( @( !( belong to the word, as far as the ) */
+
+          if (c == '(' && (g_sh.so_extglob || lx->force_extglob) && w.len > 0 &&
+              strchr("?*+@!", w.s[w.len - 1]) != NULL)
+            {
+              size_t j = lx->pos + 1;
+              int depth = 1;
+
+              while (j < lx->len && depth > 0)
+                {
+                  if (lx->buf[j] == '\\')
+                    {
+                      j += 2;
+                    }
+                  else
+                    {
+                      depth += (lx->buf[j] == '(') - (lx->buf[j] == ')');
+                      j++;
+                    }
+                }
+
+              if (depth == 0)
+                {
+                  sb_addn(&w, lx->buf + lx->pos, j - lx->pos);
+                  lx->pos = j;
+                  continue;
+                }
+            }
+
           break;
         }
 
@@ -440,6 +475,11 @@ static int lex_token_raw(struct lexer_s *lx, struct token_s *tok)
     }
 
   return lex_word(lx, tok);
+}
+
+bool lex_fetch(struct lexer_s *lx)
+{
+  return lex_more(lx);
 }
 
 int lex_token(struct lexer_s *lx, struct token_s *tok)

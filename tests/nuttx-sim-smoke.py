@@ -40,7 +40,10 @@ CASES = [
     ("f() { echo in-f; }; y=$(f); echo $y", "in-f"),
     ("echo abc | { read v; echo got:$v; }", "got:abc"),
     ("fn() { i=0; while [ $i -lt 200 ]; do echo row$i-padding-padding; i=$((i+1)); done; }; fn | wc -l | { read n rest; echo lines=$n; }", "lines=200"),
-    ("echo bg &", "vaporshell: &: background jobs are not supported on this platform yet"),
+    ("f() { :; }; f &", "vaporshell: &: only an external program can run in the background on this platform (no fork)"),
+    ("echo bg & wait", "bg"),
+    ("sleep 1 & echo started; wait; echo waited", "waited"),
+    ("trap 'echo sig' USR1; kill -USR1 $$; echo after", "after"),
     ("trap 'echo bye' EXIT; echo trap-set", "trap-set"),
 ]
 

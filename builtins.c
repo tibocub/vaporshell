@@ -297,6 +297,11 @@ static int bi_dot(int argc, char **argv)
   g_sh.dot_depth++;
   status = run_file(file);
   g_sh.dot_depth--;
+  if (g_sh.trap_action[VS_TRAP_RETURN] != NULL && g_sh.unwind == UW_NONE)
+    {
+      g_sh.last_status = status;
+      trap_run_return();              /* a sourced script finished */
+    }
   if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
       !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
@@ -633,6 +638,24 @@ int vs_set_named_option(const char *name, bool on)
         }
 
       return set_option(g_named_opts[i].flag, on);
+    }
+
+  return -1;
+}
+
+/* 1 if the named option is on, 0 if off, -1 if there is no such option. */
+
+int vs_option_state(const char *name)
+{
+  int i;
+
+  for (i = 0; i < NNAMED; i++)
+    {
+      if (strcmp(name, g_named_opts[i].name) == 0 &&
+          (!g_named_opts[i].bash_only || vs_feat(VF_SET_O_BASH)))
+        {
+          return named_opt_state(i) ? 1 : 0;
+        }
     }
 
   return -1;
@@ -1650,6 +1673,10 @@ const struct builtin_s g_vs_builtins[] =
   { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VS_M_ALL },
   { "true",     bi_true,     false, "do nothing, successfully", VS_M_ALL },
   { "type",     bi_type,     false, "type name...: say how a name resolves", VS_M_ALL },
+  { "pushd",    bi_pushd,    false, "pushd [-n] [dir | +N | -N]: push a directory", VS_M_BASH },
+  { "popd",     bi_popd,     false, "popd [-n] [+N | -N]: pop a directory", VS_M_BASH },
+  { "dirs",     bi_dirs,     false, "dirs [-clpv]: show the directory stack", VS_M_BASH },
+  { "shopt",    bi_shopt,    false, "shopt [-pqsu] [-o] [name...]: shell options", VS_M_BASH },
   { "let",      bi_let,      false, "let expr...: evaluate arithmetic expressions", VS_M_BASH },
   { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VS_M_BASH },
   { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VS_M_ALL },

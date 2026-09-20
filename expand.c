@@ -13,6 +13,7 @@
  */
 
 #include <nuttx/config.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,7 @@
 #include "vaporshell.h"
 #include "parse.h"
 #include "mode.h"
+#include "exec.h"
 #include "expand.h"
 
 struct xfield_s
@@ -459,6 +461,813 @@ static void trim_and_add(struct xctx_s *x, const char *value, char op,
 
 /* ${...}: 'in' is the text between the braces. */
 
+/* ---- ${...} extensions (bash): substring, replace, case, transform, indirect ---- */
+
+static void x_positional(struct xctx_s *x, bool at, bool dq, int from, int to);
+
+static bool ext_op_at(const char *in, size_t i, size_t n)
+{
+  switch (in[i])
+    {
+      case ':':
+        return i + 1 < n && strchr("-=?+", in[i + 1]) == NULL;
+      case '/':
+      case '^':
+      case ',':
+        return true;
+      case '@':
+        return i + 2 == n;
+      default:
+        return false;
+    }
+}
+
+static void ext_fail(struct xctx_s *x, const char *what)
+{
+  vs_err("%s", what);
+  x->error = true;
+  bad_subst_fatal();
+}
+
+/* "off" or "off:len" as arithmetic. 0 on success. */
+
+static int ext_offsets(const char *spec, size_t sn, long *off, long *len,
+                       bool *has_len)
+{
+  size_t k;
+  size_t colon = sn;
+  int depth = 0;
+  char *a;
+  char *b = NULL;
+
+  for (k = 0; k < sn; k++)
+    {
+      if (spec[k] == '(')
+        {
+          depth++;
+        }
+      else if (spec[k] == ')')
+        {
+          depth--;
+        }
+      else if (spec[k] == ':' && depth == 0)
+        {
+          colon = k;
+          break;
+        }
+    }
+
+  *has_len = colon < sn;
+  *off = 0;
+  *len = 0;
+  a = operand_str(spec, colon, false);
+  if (a == NULL)
+    {
+      return -1;
+    }
+
+  if (a[0] != '\0' && arith_eval(a, off) != 0)
+    {
+      free(a);
+      return -1;
+    }
+
+  free(a);
+  if (*has_len)
+    {
+      b = operand_str(spec + colon + 1, sn - colon - 1, false);
+      if (b == NULL || (b[0] != '\0' && arith_eval(b, len) != 0))
+        {
+          free(b);
+          return -1;
+        }
+
+      free(b);
+    }
+
+  return 0;
+}
+
+static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
+                          const char *spec, size_t sn, bool dq)
+{
+  long off;
+  long len;
+  bool has_len;
+
+  if (ext_offsets(spec, sn, &off, &len, &has_len) != 0)
+    {
+      x->error = true;
+      return;
+    }
+
+  if (nlen == 1 && (name[0] == '@' || name[0] == '*'))
+    {
+      int npos = g_sh.npos;
+      int from;
+      int to;
+
+      from = off >= 0 ? (int)off : npos + 1 + (int)off;
+      if (off < 0 && from < 1)
+        {
+          if (has_len && len < 0)
+            {
+              ext_fail(x, "substring expression < 0");
+            }
+
+          return;
+        }
+
+      if (from > npos)
+        {
+          return;
+        }
+
+      if (has_len)
+        {
+          if (len < 0)
+            {
+              ext_fail(x, "substring expression < 0");
+              return;
+            }
+
+          to = (int)((long)from + len - 1);
+          if (to > npos)
+            {
+              to = npos;
+            }
+        }
+      else
+        {
+          to = npos;
+        }
+
+      x_positional(x, name[0] == '@', dq, from, to);
+      return;
+    }
+
+  {
+    char buf[32];
+    const char *val;
+    const char *str = get_param(name, nlen, &val, buf, sizeof(buf)) ? val : "";
+    long slen = (long)strlen(str);
+    long end;
+
+    if (off < 0)
+      {
+        off += slen;
+        if (off < 0)
+          {
+            return;                    /* before the start: empty */
+          }
+      }
+
+    if (off > slen)
+      {
+        return;
+      }
+
+    if (has_len)
+      {
+        end = len < 0 ? slen + len : off + len;
+        if (len < 0 && end < off)
+          {
+            ext_fail(x, "substring expression < 0");
+            return;
+          }
+      }
+    else
+      {
+        end = slen;
+      }
+
+    if (end > slen)
+      {
+        end = slen;
+      }
+
+    {
+      char *piece = vs_xstrndup(str + off, (size_t)(end - off));
+
+      x->present = true;
+      x_add_value(x, piece, dq);
+      free(piece);
+    }
+  }
+}
+
+/* ${var/pat/rep}, ${var//pat/rep}, ${var/#pat/rep}, ${var/%pat/rep}. In the
+ * replacement an unquoted & stands for the matched text (bash 5.2+ default).
+ */
+
+static char *ext_replace(const char *val, const struct pat_s *pat,
+                         const struct pat_s *rep, bool all, bool at_start,
+                         bool at_end)
+{
+  size_t vl = strlen(val);
+  char *piece = vs_xmalloc(vl + 1);
+  struct sbuf_s out;
+  size_t i = 0;
+  bool allow_empty = at_start || at_end;
+
+  sb_init(&out);
+  while (i <= vl)
+    {
+      size_t hit = (size_t)-1;
+      size_t j;
+
+      if (!(at_start && i != 0))
+        {
+          for (j = vl; ; j--)
+            {
+              if ((j > i || allow_empty) && (!at_end || j == vl))
+                {
+                  memcpy(piece, val + i, j - i);
+                  piece[j - i] = '\0';
+                  if (pat_match(pat->s, pat->q, pat->len, piece))
+                    {
+                      hit = j;
+                      break;
+                    }
+                }
+
+              if (j == i)
+                {
+                  break;
+                }
+            }
+        }
+
+      if (hit == (size_t)-1)
+        {
+          if (i < vl)
+            {
+              sb_addc(&out, val[i]);
+            }
+
+          i++;
+          continue;
+        }
+
+      {
+        size_t r;
+
+        for (r = 0; r < rep->len; r++)
+          {
+            if (g_sh.so_patsub && rep->s[r] == '&' && !(rep->q != NULL && rep->q[r]))
+              {
+                sb_addn(&out, val + i, hit - i);
+              }
+            else
+              {
+                sb_addc(&out, rep->s[r]);
+              }
+          }
+      }
+
+      if (!all)
+        {
+          sb_adds(&out, val + hit);
+          i = vl + 1;
+          break;
+        }
+
+      if (hit == i)
+        {
+          if (i < vl)
+            {
+              sb_addc(&out, val[i]);
+            }
+
+          i++;
+        }
+      else
+        {
+          i = hit;
+        }
+    }
+
+  free(piece);
+  return out.s != NULL ? sb_take(&out) : vs_xstrdup("");
+}
+
+static void ext_replace_op(struct xctx_s *x, const char *name, size_t nlen,
+                           const char *spec, size_t sn, bool dq)
+{
+  char buf[32];
+  const char *val;
+  const char *str = get_param(name, nlen, &val, buf, sizeof(buf)) ? val : "";
+  bool all = false;
+  bool at_start = false;
+  bool at_end = false;
+  size_t k = 0;
+  size_t slash;
+  int depth = 0;
+  char *praw;
+  char *rraw = NULL;
+  struct pat_s pat;
+  struct pat_s rep;
+  char *result;
+
+  if (k < sn && spec[k] == '/')
+    {
+      all = true;
+      k++;
+    }
+  else if (k < sn && spec[k] == '#')
+    {
+      at_start = true;
+      k++;
+    }
+  else if (k < sn && spec[k] == '%')
+    {
+      at_end = true;
+      k++;
+    }
+
+  /* the pattern ends at the first unescaped / outside any ${ } or quotes */
+
+  for (slash = k; slash < sn; slash++)
+    {
+      size_t e = slash;
+
+      if (spec[slash] == '\\')
+        {
+          slash++;
+          continue;
+        }
+
+      if (spec[slash] == '\'' || spec[slash] == '"')
+        {
+          if (spec[slash] == '\'' ? ws_skip_squote(spec, sn, slash, &e) == WS_OK
+                                  : ws_skip_dquote(spec, sn, slash, &e) == WS_OK)
+            {
+              slash = e - 1;
+            }
+
+          continue;
+        }
+
+      if (spec[slash] == '$' && slash + 1 < sn && spec[slash + 1] == '{')
+        {
+          if (ws_skip_braced(spec, sn, slash + 2, &e) == WS_OK)
+            {
+              slash = e - 1;
+            }
+
+          continue;
+        }
+
+      if (spec[slash] == '{')
+        {
+          depth++;
+        }
+      else if (spec[slash] == '}')
+        {
+          depth--;
+        }
+      else if (spec[slash] == '/' && depth <= 0)
+        {
+          break;
+        }
+    }
+
+  praw = vs_xstrndup(spec + k, slash - k);
+  if (slash < sn)
+    {
+      rraw = vs_xstrndup(spec + slash + 1, sn - slash - 1);
+    }
+
+  pat = expand_pattern(praw);
+  rep = expand_pattern(rraw != NULL ? rraw : "");
+  free(praw);
+  free(rraw);
+
+  if (pat.len == 0 && !at_start && !at_end)
+    {
+      result = vs_xstrdup(str);           /* an empty pattern replaces nothing */
+    }
+  else
+    {
+      result = ext_replace(str, &pat, &rep, all, at_start, at_end);
+    }
+
+  pat_free(&pat);
+  pat_free(&rep);
+  x->present = true;
+  x_add_value(x, result, dq);
+  free(result);
+}
+
+/* ${var^} ${var^^} ${var,} ${var,,}, optionally with a pattern that selects
+ * which characters change.
+ */
+
+static void ext_case(struct xctx_s *x, const char *name, size_t nlen,
+                     const char *spec, size_t sn, bool dq)
+{
+  char buf[32];
+  const char *val;
+  const char *str = get_param(name, nlen, &val, buf, sizeof(buf)) ? val : "";
+  bool upper = spec[0] == '^';
+  bool all = sn > 1 && spec[1] == spec[0];
+  size_t k = all ? 2 : 1;
+  char *praw = vs_xstrndup(spec + k, sn - k);
+  struct pat_s pat = expand_pattern(praw);
+  struct sbuf_s out;
+  size_t i;
+
+  free(praw);
+  sb_init(&out);
+  for (i = 0; str[i] != '\0'; i++)
+    {
+      char c = str[i];
+
+      if (all || i == 0)
+        {
+          char one[2];
+
+          one[0] = c;
+          one[1] = '\0';
+          if (pat.len == 0 || pat_match(pat.s, pat.q, pat.len, one))
+            {
+              c = upper ? (char)toupper((unsigned char)c) : (char)tolower((unsigned char)c);
+            }
+        }
+
+      sb_addc(&out, c);
+    }
+
+  pat_free(&pat);
+  x->present = true;
+  x_add_value(x, out.s != NULL ? out.s : "", dq);
+  sb_free(&out);
+}
+
+/* ${var@Q} quoting and the other one-letter transforms. */
+
+static char *quote_for_reuse(const char *v)
+{
+  struct sbuf_s out;
+  const char *p;
+  bool ctrl = false;
+
+  for (p = v; *p != '\0'; p++)
+    {
+      if ((unsigned char)*p < 0x20 || *p == 0x7f)
+        {
+          ctrl = true;
+        }
+    }
+
+  sb_init(&out);
+  if (ctrl)
+    {
+      sb_adds(&out, "$'");
+      for (p = v; *p != '\0'; p++)
+        {
+          switch (*p)
+            {
+              case '\\': sb_adds(&out, "\\\\"); break;
+              case '\'': sb_adds(&out, "\\'"); break;
+              case '\n': sb_adds(&out, "\\n"); break;
+              case '\t': sb_adds(&out, "\\t"); break;
+              case '\r': sb_adds(&out, "\\r"); break;
+              case '\a': sb_adds(&out, "\\a"); break;
+              case '\b': sb_adds(&out, "\\b"); break;
+              case '\f': sb_adds(&out, "\\f"); break;
+              case '\v': sb_adds(&out, "\\v"); break;
+              case 033:  sb_adds(&out, "\\E"); break;
+              default:
+                if ((unsigned char)*p < 0x20 || *p == 0x7f)
+                  {
+                    char o[8];
+
+                    snprintf(o, sizeof(o), "\\%03o", (unsigned char)*p);
+                    sb_adds(&out, o);
+                  }
+                else
+                  {
+                    sb_addc(&out, *p);
+                  }
+            }
+        }
+
+      sb_addc(&out, '\'');
+    }
+  else
+    {
+      sb_addc(&out, '\'');
+      for (p = v; *p != '\0'; p++)
+        {
+          if (*p == '\'')
+            {
+              sb_adds(&out, "'\\''");
+            }
+          else
+            {
+              sb_addc(&out, *p);
+            }
+        }
+
+      sb_addc(&out, '\'');
+    }
+
+  return sb_take(&out);
+}
+
+static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
+                          char op, bool dq)
+{
+  char buf[32];
+  const char *val;
+  bool isset = get_param(name, nlen, &val, buf, sizeof(buf));
+  const char *str = isset ? val : "";
+  char *r = NULL;
+  size_t i;
+
+  switch (op)
+    {
+      case 'Q':
+        if (!isset)
+          {
+            return;
+          }
+
+        r = quote_for_reuse(str);
+        break;
+
+      case 'U':
+      case 'L':
+      case 'u':
+        r = vs_xstrdup(str);
+        for (i = 0; r[i] != '\0'; i++)
+          {
+            if (op == 'u' && i > 0)
+              {
+                break;
+              }
+
+            r[i] = (char)(op == 'L' ? tolower((unsigned char)r[i])
+                                    : toupper((unsigned char)r[i]));
+          }
+
+        break;
+
+      case 'E':
+        {
+          struct sbuf_s dec;
+          bool stop = false;
+
+          sb_init(&dec);
+          for (i = 0; str[i] != '\0'; )
+            {
+              if (str[i] == '\\' && str[i + 1] != '\0')
+                {
+                  i += 1 + vs_esc_one(str + i + 1,
+                                      ESC_OCT_PLAIN | ESC_HEXU | ESC_E | ESC_CTRL,
+                                      &dec, &stop);
+                }
+              else
+                {
+                  sb_addc(&dec, str[i++]);
+                }
+            }
+
+          r = dec.s != NULL ? sb_take(&dec) : vs_xstrdup("");
+        }
+
+        break;
+
+      case 'A':
+        {
+          char *q;
+          char nm[128];
+          struct var_s *v;
+          struct sbuf_s a;
+
+          if (!isset || nlen >= sizeof(nm))
+            {
+              return;
+            }
+
+          memcpy(nm, name, nlen);
+          nm[nlen] = '\0';
+          v = var_lookup(nm);
+          q = quote_for_reuse(str);
+          sb_init(&a);
+          if (v != NULL && (v->flags & (VF_EXPORT | VF_READONLY)) != 0)
+            {
+              sb_adds(&a, "declare -");
+              if ((v->flags & VF_READONLY) != 0) sb_addc(&a, 'r');
+              if ((v->flags & VF_EXPORT) != 0) sb_addc(&a, 'x');
+              sb_addc(&a, ' ');
+            }
+
+          sb_adds(&a, nm);
+          sb_addc(&a, '=');
+          sb_adds(&a, q);
+          free(q);
+          r = sb_take(&a);
+        }
+
+        break;
+
+      case 'a':
+        {
+          char nm[128];
+          struct var_s *v;
+          char fl[4];
+          int f = 0;
+
+          if (nlen >= sizeof(nm))
+            {
+              return;
+            }
+
+          memcpy(nm, name, nlen);
+          nm[nlen] = '\0';
+          v = var_lookup(nm);
+          if (v != NULL && (v->flags & VF_READONLY) != 0) fl[f++] = 'r';
+          if (v != NULL && (v->flags & VF_EXPORT) != 0) fl[f++] = 'x';
+          fl[f] = '\0';
+          r = vs_xstrdup(fl);
+        }
+
+        break;
+
+      default:
+        ext_fail(x, "bad substitution");
+        return;
+    }
+
+  x->present = true;
+  x_add_value(x, r, dq);
+  free(r);
+}
+
+/* Handles the extension operators; the caller has already found the name and
+ * seen that 'rest' starts with one (ext_op_at).
+ */
+
+static void x_param_ext(struct xctx_s *x, const char *name, size_t nlen,
+                        const char *rest, size_t rn, bool dq)
+{
+  bool positional = nlen == 1 && (name[0] == '@' || name[0] == '*');
+
+  if (positional && rest[0] != ':')
+    {
+      ext_fail(x, "bad substitution");
+      return;
+    }
+
+  switch (rest[0])
+    {
+      case ':':
+        ext_substring(x, name, nlen, rest + 1, rn - 1, dq);
+        break;
+      case '/':
+        ext_replace_op(x, name, nlen, rest + 1, rn - 1, dq);
+        break;
+      case '^':
+      case ',':
+        ext_case(x, name, nlen, rest, rn, dq);
+        break;
+      default:
+        ext_transform(x, name, nlen, rest[1], dq);
+        break;
+    }
+}
+
+/* ${!name} (indirect) and ${!prefix*} / ${!prefix@} (names). 'in' is the
+ * text after the '!'.
+ */
+
+static int cmp_names(const void *a, const void *b)
+{
+  return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
+{
+  size_t nl = 0;
+
+  while (nl < n && (nl == 0 ? nm_start(in[nl]) : nm_char(in[nl])))
+    {
+      nl++;
+    }
+
+  if (nl == n)
+    {
+      char buf[32];
+      const char *val;
+      const char *tv;
+      char tbuf[32];
+      char nm[128];
+
+      if (nl >= sizeof(nm))
+        {
+          ext_fail(x, "bad substitution");
+          return;
+        }
+
+      memcpy(nm, in, nl);
+      nm[nl] = '\0';
+      if (!get_param(nm, nl, &val, buf, sizeof(buf)))
+        {
+          vs_err("%s: invalid indirect expansion", nm);
+          x->error = true;
+          return;
+        }
+
+      if (val[0] == '\0')
+        {
+          vs_err("%s: invalid variable name", nm);
+          x->error = true;
+          return;
+        }
+
+      if (!valid_param(val, strlen(val)))
+        {
+          vs_err("%s: invalid variable name", val);
+          x->error = true;
+          return;
+        }
+
+      if (get_param(val, strlen(val), &tv, tbuf, sizeof(tbuf)))
+        {
+          x->present = true;
+          x_add_value(x, tv, dq);
+        }
+
+      return;
+    }
+
+  if (nl == n - 1 && (in[nl] == '*' || in[nl] == '@'))
+    {
+      const char **names = NULL;
+      int cnt = 0;
+      int cap = 0;
+      struct var_s *v;
+      int k;
+
+      for (v = g_sh.vars; v != NULL; v = v->next)
+        {
+          if (v->value != NULL && strncmp(v->name, in, nl) == 0)
+            {
+              if (cnt == cap)
+                {
+                  cap = cap ? cap * 2 : 16;
+                  names = vs_xrealloc(names, (size_t)cap * sizeof(*names));
+                }
+
+              names[cnt++] = v->name;
+            }
+        }
+
+      if (cnt > 1)
+        {
+          qsort(names, (size_t)cnt, sizeof(*names), cmp_names);
+        }
+
+      if (dq && in[nl] == '@')
+        {
+          x->saw_at = true;
+          for (k = 0; k < cnt; k++)
+            {
+              if (k > 0)
+                {
+                  x_push(x);
+                }
+
+              x->present = true;
+              x_adds(x, names[k], true);
+            }
+        }
+      else
+        {
+          const char *ifs = var_get("IFS");
+          char sep = (in[nl] == '@' || ifs == NULL) ? ' ' : ifs[0];
+
+          x->present = x->present || cnt > 0;
+          for (k = 0; k < cnt; k++)
+            {
+              if (k > 0 && sep != '\0')
+                {
+                  x_addc(x, sep, dq);
+                }
+
+              x_adds(x, names[k], dq);
+            }
+        }
+
+      free(names);
+      return;
+    }
+
+  ext_fail(x, "bad substitution");
+}
+
 static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
 {
   const char *name;
@@ -473,6 +1282,12 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
   bool isset;
   const char *word = NULL;
   size_t wn = 0;
+
+  if (vs_feat(VF_PARAM_EXT) && n > 1 && in[0] == '!' && nm_start(in[1]))
+    {
+      x_indirect(x, in + 1, n - 1, dq);
+      return;
+    }
 
   if (n > 1 && in[0] == '#')
     {
@@ -507,6 +1322,12 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
       vs_err("${%.*s}: bad substitution", (int)n, in);
       x->error = true;
       bad_subst_fatal();
+      return;
+    }
+
+  if (vs_feat(VF_PARAM_EXT) && !length && i < n && ext_op_at(in, i, n))
+    {
+      x_param_ext(x, name, nlen, in + i, n - i, dq);
       return;
     }
 
@@ -674,6 +1495,68 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
   }
 }
 
+/* $@ and $* over positional parameters from..to (0 is $0, which only a
+ * slice such as ${@:0} reaches). "$@" gives one field per parameter; the
+ * other forms join with the first character of IFS or split as usual.
+ */
+
+static const char *pos_or_arg0(int k)
+{
+  return k == 0 ? g_sh.arg0 : pos_get(k);
+}
+
+static void x_positional(struct xctx_s *x, bool at, bool dq, int from, int to)
+{
+  int k;
+
+  if (dq && at)
+    {
+      x->saw_at = true;
+      for (k = from; k <= to; k++)
+        {
+          if (k > from)
+            {
+              x_push(x);
+            }
+
+          x->present = true;
+          x_adds(x, pos_or_arg0(k), true);
+        }
+    }
+  else if (dq || !x->split)
+    {
+      /* Joined into one string: "$*" (and, when nothing splits, $* and $@)
+       * use the first character of IFS, or a space.
+       */
+
+      const char *ifs = var_get("IFS");
+      char sep = (at || ifs == NULL) ? ' ' : ifs[0];
+
+      x->present = x->present || to >= from;
+      for (k = from; k <= to; k++)
+        {
+          if (k > from && sep != '\0')
+            {
+              x_addc(x, sep, dq);
+            }
+
+          x_adds(x, pos_or_arg0(k), dq);
+        }
+    }
+  else
+    {
+      for (k = from; k <= to; k++)
+        {
+          if (k > from)
+            {
+              x_push(x);
+            }
+
+          x_add_value(x, pos_or_arg0(k), false);
+        }
+    }
+}
+
 /* $name, $1, $@, $* and the other one-character parameters. *i is at the
  * character after '$'.
  */
@@ -685,7 +1568,6 @@ static void x_simple_param(struct xctx_s *x, const char *s, size_t len,
   size_t n;
   const char *val;
   char buf[32];
-  int k;
 
   if (nm_start(name[0]))
     {
@@ -704,55 +1586,7 @@ static void x_simple_param(struct xctx_s *x, const char *s, size_t len,
 
   if (n == 1 && (name[0] == '@' || name[0] == '*'))
     {
-      bool at = (name[0] == '@');
-
-      if (dq && at)
-        {
-          x->saw_at = true;
-          for (k = 1; k <= g_sh.npos; k++)
-            {
-              if (k > 1)
-                {
-                  x_push(x);
-                }
-
-              x->present = true;
-              x_adds(x, pos_get(k), true);
-            }
-        }
-      else if (dq || !x->split)
-        {
-          /* Joined into one string: "$*" (and, when nothing splits, $*
-           * and $@) use the first character of IFS, or a space.
-           */
-
-          const char *ifs = var_get("IFS");
-          char sep = (at || ifs == NULL) ? ' ' : ifs[0];
-
-          x->present = x->present || g_sh.npos > 0;
-          for (k = 1; k <= g_sh.npos; k++)
-            {
-              if (k > 1 && sep != '\0')
-                {
-                  x_addc(x, sep, dq);
-                }
-
-              x_adds(x, pos_get(k), dq);
-            }
-        }
-      else
-        {
-          for (k = 1; k <= g_sh.npos; k++)
-            {
-              if (k > 1)
-                {
-                  x_push(x);
-                }
-
-              x_add_value(x, pos_get(k), false);
-            }
-        }
-
+      x_positional(x, name[0] == '@', dq, 1, g_sh.npos);
       return;
     }
 
@@ -895,6 +1729,46 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
     {
       x_addc(x, '$', dq);
       (*i)++;
+      return;
+    }
+
+  if (!dq && s[*i + 1] == '\'' && vs_feat(VF_ANSI_C_QUOTE))
+    {
+      /* $'...': the escapes are decoded, and the result counts as quoted */
+
+      size_t j = *i + 2;
+      struct sbuf_s dec;
+      bool stop = false;
+
+      sb_init(&dec);
+      while (j < len && s[j] != '\'')
+        {
+          if (s[j] == '\\' && j + 1 < len)
+            {
+              j++;
+              j += vs_esc_one(s + j, ESC_OCT_PLAIN | ESC_HEXU | ESC_E | ESC_CTRL,
+                              &dec, &stop);
+            }
+          else
+            {
+              sb_addc(&dec, s[j++]);
+            }
+        }
+
+      x->present = true;
+      if (dec.len > 0)
+        {
+          x_adds(x, dec.s, true);
+        }
+
+      sb_free(&dec);
+      *i = j < len ? j + 1 : len;
+      return;
+    }
+
+  if (!dq && s[*i + 1] == '"' && vs_feat(VF_ANSI_C_QUOTE))
+    {
+      (*i)++;                       /* $"...": the same as "..." without translation */
       return;
     }
 
@@ -1100,10 +1974,26 @@ static void x_finish(struct xctx_s *x, struct fieldv_s *out)
     {
       struct xfield_s *f = &x->fields[i];
 
-      if (x->glob && !g_sh.opt_f && pat_has_glob(f->s, f->q, f->len) &&
-          glob_expand(f->s, f->q, f->len, out) > 0)
+      if (x->glob && !g_sh.opt_f && pat_has_glob(f->s, f->q, f->len))
         {
-          free(f->s);
+          if (glob_expand(f->s, f->q, f->len, out) > 0)
+            {
+              free(f->s);
+            }
+          else if (g_sh.so_failglob)
+            {
+              vs_err("no match: %s", f->s);            /* shopt failglob */
+              x->error = true;
+              free(f->s);
+            }
+          else if (g_sh.so_nullglob)
+            {
+              free(f->s);                               /* shopt nullglob: no field */
+            }
+          else
+            {
+              fv_add(out, f->s);
+            }
         }
       else
         {
@@ -1117,24 +2007,61 @@ static void x_finish(struct xctx_s *x, struct fieldv_s *out)
   x->nfields = 0;
 }
 
+static int expand_one_word(const char *text, struct fieldv_s *out)
+{
+  struct xctx_s x;
+
+  x_init(&x);
+  x.split = true;
+  x.glob = true;
+  x_scan(&x, text, strlen(text), false, true);
+  if (x.error)
+    {
+      x_free(&x);
+      return -1;
+    }
+
+  x_finish(&x, out);
+  if (x.error)
+    {
+      x_free(&x);
+      return -1;
+    }
+
+  x_free(&x);
+  return 0;
+}
+
 int expand_words(const struct word_s *w, struct fieldv_s *out)
 {
   for (; w != NULL; w = w->next)
     {
-      struct xctx_s x;
-
-      x_init(&x);
-      x.split = true;
-      x.glob = true;
-      x_scan(&x, w->text, strlen(w->text), false, true);
-      if (x.error)
+      if (vs_feat(VF_BRACE_EXP) && strchr(w->text, '{') != NULL)
         {
-          x_free(&x);
+          /* brace expansion first, on the raw text; each result is then
+           * expanded like any other word
+           */
+
+          struct fieldv_s bw;
+          int k;
+
+          fv_init(&bw);
+          vs_brace_expand(w->text, &bw);
+          for (k = 0; k < bw.n; k++)
+            {
+              if (expand_one_word(bw.v[k], out) != 0)
+                {
+                  fv_free(&bw);
+                  return -1;
+                }
+            }
+
+          fv_free(&bw);
+        }
+      else if (expand_one_word(w->text, out) != 0)
+        {
           return -1;
         }
-
-      x_finish(&x, out);
-      x_free(&x);
     }
 
   return 0;

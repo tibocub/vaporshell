@@ -148,7 +148,10 @@ const char *pos_get(int i);                      /* 1-based; NULL if unset */
  * registered for the calling task (platform_nuttx.c).
  */
 
-#define VS_NTRAPS 65
+#define VS_NTRAPS 68
+#define VS_TRAP_DEBUG  65             /* bash pseudo-signals, after the real ones, */
+#define VS_TRAP_ERR    66             /* in the order bash lists them */
+#define VS_TRAP_RETURN 67
 
 enum unwind_e
 {
@@ -200,6 +203,30 @@ struct shell_s
 
   unsigned long features;     /* mode.h: the active profile's feature bits */
   int profile;                /* enum vs_profile_e */
+
+  /* shopt options that change behaviour (shopt.c); the rest are only
+   * remembered so `shopt` can report them.
+   */
+
+  bool so_nullglob;
+  bool so_dotglob;
+  bool so_failglob;
+  bool so_nocaseglob;
+  bool so_nocasematch;
+  bool so_extglob;
+  bool so_globstar;
+  bool so_expand_aliases;
+  bool so_patsub;
+  unsigned char so_generic[64];
+
+  char **dirstack;            /* pushd/popd: saved directories, most recent first */
+  int ndirs;
+  char *trap_parent[VS_NTRAPS];   /* bash: a subshell's `trap` lists these (the parent's) */
+  bool trap_dirty;                /* ...until the subshell sets a trap of its own */
+  int return_fdepth;              /* function depth a RETURN trap was set at (0: top level) */
+  bool in_err_trap;           /* an ERR/DEBUG/RETURN action is running */
+  bool in_debug_trap;
+  bool in_return_trap;
 
   int lineno;                 /* line of the command being run: $LINENO */
   struct local_s *locals;

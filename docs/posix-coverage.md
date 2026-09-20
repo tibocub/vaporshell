@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-20 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **319 of 321**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **369 of 371**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -70,7 +70,7 @@ in `tests/modes/posix/` or a probe below.
 
 Each table lists probes for one area; the count is probes matching dash.
 
-### Quoting  (6/6)
+### Quoting  (9/9)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -80,8 +80,11 @@ Each table lists probes for one area; the count is probes matching dash.
 | `quote_dquote_nested_cmdsub` | ok |  |
 | `quote_ansi_c` | ok | bash $'...' strings |
 | `quote_locale` | ok | bash $"..." translation |
+| `ansi_c_quote` | ok |  |
+| `ansi_c_control` | ok |  |
+| `locale_dq` | ok |  |
 
-### Parameter expansion  (21/21)
+### Parameter expansion  (29/29)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -106,8 +109,16 @@ Each table lists probes for one area; the count is probes matching dash.
 | `param_indirect` | ok | bash ${!x} |
 | `param_prefix_names` | ok | bash ${!prefix*} |
 | `param_transform` | ok | bash ${x@Q} |
+| `param_substring` | ok |  |
+| `param_substring_positional` | ok |  |
+| `param_replace` | ok |  |
+| `param_replace_amp` | ok |  |
+| `param_case` | ok |  |
+| `param_transform` | ok |  |
+| `param_indirect` | ok |  |
+| `param_prefix_names` | ok |  |
 
-### Other expansions  (21/21)
+### Other expansions  (26/26)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -132,6 +143,11 @@ Each table lists probes for one area; the count is probes matching dash.
 | `brace_expansion` | ok | bash {a,b} and {1..3} |
 | `brace_seq_step` | ok | bash {1..10..3} |
 | `procsub` | ok | bash <(cmd) |
+| `brace_list` | ok |  |
+| `brace_sequence` | ok |  |
+| `brace_padding` | ok |  |
+| `brace_literal` | ok |  |
+| `brace_quoted` | ok |  |
 
 ### Field splitting  (5/5)
 
@@ -143,7 +159,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `split_quoted` | ok |  |
 | `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (11/11)
+### Pathname expansion  (19/19)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -158,8 +174,16 @@ Each table lists probes for one area; the count is probes matching dash.
 | `glob_extglob` | ok | bash shopt -s extglob patterns |
 | `glob_globstar` | ok | bash ** recursive |
 | `glob_nullglob` | ok | bash shopt -s nullglob |
+| `nullglob` | ok |  |
+| `dotglob` | ok |  |
+| `nocaseglob` | ok |  |
+| `nocasematch` | ok |  |
+| `globstar` | ok |  |
+| `extglob` | ok |  |
+| `extglob_case_and_path` | ok |  |
+| `extglob_always_in_dbracket` | ok |  |
 
-### Redirection  (19/19)
+### Redirection  (21/21)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -182,8 +206,10 @@ Each table lists probes for one area; the count is probes matching dash.
 | `redir_on_compound` | ok |  |
 | `redir_on_loop` | ok |  |
 | `redir_persistent_exec` | ok |  |
+| `herestring` | ok |  |
+| `herestring_expansion` | ok |  |
 
-### Compound commands, functions, pipelines  (31/31)
+### Compound commands, functions, pipelines  (45/45)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -218,6 +244,20 @@ Each table lists probes for one area; the count is probes matching dash.
 | `select_loop` | ok | bash select |
 | `time_keyword` | ok | bash time |
 | `coproc` | ok | bash coproc |
+| `dbracket_string` | ok |  |
+| `dbracket_pattern` | ok |  |
+| `dbracket_unary` | ok |  |
+| `dbracket_logic` | ok |  |
+| `dbracket_arith_operands` | ok |  |
+| `dbracket_regex` | ok | needs regcomp on NuttX |
+| `dbracket_lone_unary_error` | ok |  |
+| `arith_command` | ok |  |
+| `arith_for` | ok |  |
+| `arith_for_empty_parts` | ok |  |
+| `function_keyword` | ok |  |
+| `case_fallthrough` | ok |  |
+| `case_continue_testing` | ok |  |
+| `time_keyword` | ok |  |
 
 ### `test` / `[`  (12/12)
 
@@ -406,7 +446,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `LINENO` | ok | dash 0.5.12 has no LINENO |
 | `LINENO_func` | ok | dash 0.5.12 has no LINENO |
 
-### Shell options  (11/11)
+### Shell options  (17/17)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -421,6 +461,12 @@ Each table lists probes for one area; the count is probes matching dash.
 | `opt_errexit_function` | ok |  |
 | `opt_dash_c_args` | ok |  |
 | `opt_interactive_flag` | ok |  |
+| `trap_err` | ok |  |
+| `trap_err_contexts` | ok |  |
+| `trap_debug` | ok |  |
+| `trap_return_function` | ok |  |
+| `trap_return_source` | ok |  |
+| `trap_case_insensitive` | ok |  |
 
 ### Variables  (16/16)
 
@@ -454,7 +500,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `array_slice` | ok | bash ${a[@]:1:2} |
 | `array_unset_elem` | ok | bash unset a[i] |
 
-### Bash builtins  (20/20)
+### Bash builtins  (24/24)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -478,6 +524,10 @@ Each table lists probes for one area; the count is probes matching dash.
 | `bi_test_e_stat` | ok |  |
 | `bi_bind` | ok | bash bind |
 | `bi_exec_c` | ok | bash exec -c |
+| `shopt_query` | ok |  |
+| `shopt_list` | ok |  |
+| `shopt_invalid` | ok |  |
+| `pushd_popd_dirs` | ok |  |
 
 ### Syntax and misc  (22/22)
 
@@ -567,7 +617,10 @@ them as builtins, next to dash.
   Not tested: aliases whose text contains newlines.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell
   has, not the full set dash or bash print.
-- **Signals on NuttX**: real signal traps and `kill` need host builds.
+- **Signals on NuttX** work (`trap` and `kill` on real signals). NuttX applies
+  no default action to an unhandled signal unless it is built with
+  `CONFIG_SIG_DEFAULT`, so `kill` cannot end another task; see
+  `docs/bash-coverage.md`.
 - **NuttX**: no `fork`, so subshells, `$(...)` and pipelines run in-process
   (see `docs/design.md`): correct isolation, but not concurrent, and `&` only
   works for external programs. Paths given to *external programs* are

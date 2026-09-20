@@ -223,14 +223,14 @@ def run_vaporshell(nuttx_dir, script_path, vs_opts="", boot_timeout=8, cmd_timeo
 # SKIP on NuttX instead of a DIFFERS that is not a shell bug:
 #   async         `&` on anything but an external program (no fork, and an
 #                 in-process subshell cannot run concurrently)
-#   signals       trap on real signals, kill
 #   wc-format     toybox wc prints a file name for stdin; output differs from GNU wc
 #   cmd:NAME      an external program the NuttX image does not have
 #   env:NAME      an environment variable NuttX does not set (HOME, HOSTNAME)
+#   regex         [[ =~ ]] needs regcomp, not verified to exist in NuttX's libc
 #   float         printf %f/%e/%g: libc float support is CONFIG_LIBC_FLOATINGPOINT
 #   path-lookup   NuttX finds builtin apps regardless of $PATH
-NUTTX_LACKS = {"async", "signals", "wc-format", "env:HOME", "env:HOSTNAME", "float",
-               "path-lookup",
+NUTTX_LACKS = {"async", "wc-format", "env:HOME", "env:HOSTNAME", "float",
+               "path-lookup", "regex",
                "cmd:sed", "cmd:tr", "cmd:tail", "cmd:mktemp", "cmd:ln"}
 
 

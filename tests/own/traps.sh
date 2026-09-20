@@ -1,4 +1,3 @@
-# requires: signals
 trap 'echo exit trap' EXIT
 trap 'echo usr1 caught' USR1
 kill -s USR1 $$

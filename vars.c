@@ -17,6 +17,7 @@
 #include "ast.h"
 #include "platform.h"
 #include "mode.h"
+#include "exec.h"
 
 #ifdef VAPORSHELL_POSIX
 struct shell_s g_vs_state;
@@ -175,10 +176,7 @@ int var_set(const char *name, const char *value)
     {
       v = var_create(name);
 
-      /* NuttX has no in-process subshell yet, so a child shell only
-       * inherits what is exported: keep the historical behaviour there
-       * (every variable is an environment variable).
-       */
+      /* a platform may want every variable exported (none does today) */
 
       if (vs_plat_export_all())
         {
@@ -410,6 +408,7 @@ void shell_init(const char *arg0)
 
   vs_plat_state_create();
   vs_mode_set(VS_PROFILE_BASH);
+  vs_shopt_defaults();
   g_sh.arg0 = arg0;
   g_sh.pid = getpid();
   g_sh.cmdsub_status = -1;
@@ -479,9 +478,11 @@ void shell_fini(void)
   for (i = 0; i < VS_NTRAPS; i++)
     {
       free(g_sh.trap_action[i]);
+      free(g_sh.trap_parent[i]);
     }
 
   var_locals_pop(0);
+  dirstack_free();
   aliases_free();
   hash_clear();
   vs_plat_state_destroy();

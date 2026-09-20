@@ -41,7 +41,8 @@ enum redir_op_e
   R_RDWR,                     /* <> */
   R_HEREDOC,                  /* << and <<- */
   R_OUT_ERR,                  /* &>  (bash: stdout and stderr) */
-  R_APPEND_ERR                /* &>> */
+  R_APPEND_ERR,               /* &>> */
+  R_HERESTR                   /* <<< (bash): target is the word */
 };
 
 struct redir_s
@@ -69,7 +70,15 @@ enum node_type_e
   N_WHILE,                    /* a: condition, b: body, flag: until */
   N_FOR,                      /* name, words, flag: has "in", a: body */
   N_CASE,                     /* words: subject (single), items */
-  N_FUNCDEF                   /* name, a: body */
+  N_FUNCDEF,                  /* name, a: body */
+  N_DBRACKET,                 /* [[ ]]: a: the expression */
+  N_DB_AND,                   /*   a && b */
+  N_DB_OR,                    /*   a || b */
+  N_DB_NOT,                   /*   ! a */
+  N_DB_TEST,                  /*   name: operator ("" = string test), words: operands */
+  N_ARITH,                    /* (( )): words: the expression */
+  N_ARITHFOR,                 /* for (( )): words: init, cond, step; a: body */
+  N_TIME                      /* time [-p] pipeline: a: the pipeline; flag: -p */
 };
 
 struct case_item_s
@@ -77,6 +86,7 @@ struct case_item_s
   struct case_item_s *next;
   struct word_s *patterns;
   struct node_s *body;        /* an N_LIST, possibly empty */
+  int term;                   /* 0: ;;  1: ;& (fall through)  2: ;;& (keep testing) */
 };
 
 struct node_s

@@ -12,6 +12,7 @@
 
 #include "vaporshell.h"
 #include "expand.h"
+#include "mode.h"
 #include "platform.h"
 
 #define MAX_COMPONENTS 64
@@ -113,7 +114,42 @@ static int match_bracket(const char *p, const char *pq, size_t plen,
   return -1;
 }
 
-bool pat_match(const char *p, const char *pq, size_t plen, const char *str)
+static bool chr_eq(char a, char b, bool ci)
+{
+  return a == b || (ci && tolower((unsigned char)a) == tolower((unsigned char)b));
+}
+
+/* One bracket expression against one character; with ci the other case of
+ * the character is tried too.
+ */
+
+static int bracket_ci(const char *p, const char *pq, size_t plen, size_t pi,
+                      unsigned char ch, size_t *next, bool ci)
+{
+  int r = match_bracket(p, pq, plen, pi, ch, next);
+
+  if (r != 1 && ci)
+    {
+      unsigned char alt = isupper(ch) ? (unsigned char)tolower(ch)
+                                      : (unsigned char)toupper(ch);
+
+      if (alt != ch)
+        {
+          size_t n2;
+
+          if (match_bracket(p, pq, plen, pi, alt, &n2) == 1)
+            {
+              *next = n2;
+              return 1;
+            }
+        }
+    }
+
+  return r;
+}
+
+static bool basic_match(const char *p, const char *pq, size_t plen, const char *str,
+                        bool ci)
 {
   size_t pi = 0;
   const char *sp = str;
@@ -146,8 +182,7 @@ bool pat_match(const char *p, const char *pq, size_t plen, const char *str)
           if (!q && c == '[')
             {
               size_t next;
-              int r = match_bracket(p, pq, plen, pi, (unsigned char)*sp,
-                                    &next);
+              int r = bracket_ci(p, pq, plen, pi, (unsigned char)*sp, &next, ci);
 
               if (r == 1)
                 {
@@ -163,7 +198,7 @@ bool pat_match(const char *p, const char *pq, size_t plen, const char *str)
                   continue;
                 }
             }
-          else if (c == *sp)
+          else if (chr_eq(c, *sp, ci))
             {
               pi++;
               sp++;
@@ -189,6 +224,310 @@ bool pat_match(const char *p, const char *pq, size_t plen, const char *str)
   return pi == plen;
 }
 
+/* ---- extglob: ?(a|b) *(a|b) +(a|b) @(a|b) !(a|b) ------------------------------
+ *
+ * These need real backtracking, so they get a small recursive matcher of
+ * their own, used only when shopt extglob is on and the pattern has one.
+ */
+
+#define XM_MAXALT 64
+
+static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *s,
+               bool ci);
+
+static bool is_ext_op(const char *p, const char *pq, size_t i, size_t pe)
+{
+  return i + 1 < pe && p[i + 1] == '(' && !quoted_at(pq, i) &&
+         !quoted_at(pq, i + 1) && strchr("?*+@!", p[i]) != NULL;
+}
+
+static bool has_ext(const char *p, const char *pq, size_t plen)
+{
+  size_t i;
+
+  for (i = 0; i < plen; i++)
+    {
+      if (is_ext_op(p, pq, i, plen))
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+/* The ')' closing the group whose '(' is at 'open'; (size_t)-1 if none. */
+
+static size_t group_end(const char *p, const char *pq, size_t open, size_t pe)
+{
+  size_t i;
+  int depth = 1;
+
+  for (i = open + 1; i < pe; i++)
+    {
+      if (quoted_at(pq, i))
+        {
+          continue;
+        }
+
+      if (p[i] == '[')
+        {
+          size_t j = i + 1;
+
+          if (j < pe && (p[j] == '!' || p[j] == '^'))
+            {
+              j++;
+            }
+
+          if (j < pe && p[j] == ']')
+            {
+              j++;
+            }
+
+          while (j < pe && p[j] != ']')
+            {
+              j++;
+            }
+
+          if (j < pe)
+            {
+              i = j;
+            }
+        }
+      else if (p[i] == '(')
+        {
+          depth++;
+        }
+      else if (p[i] == ')' && --depth == 0)
+        {
+          return i;
+        }
+    }
+
+  return (size_t)-1;
+}
+
+static int split_alts(const char *p, const char *pq, size_t open, size_t close,
+                      size_t alts[][2])
+{
+  size_t start = open + 1;
+  size_t i;
+  int depth = 0;
+  int n = 0;
+
+  for (i = open + 1; i <= close && n < XM_MAXALT; i++)
+    {
+      if (i < close && quoted_at(pq, i))
+        {
+          continue;
+        }
+
+      if (i < close && p[i] == '(')
+        {
+          depth++;
+        }
+      else if (i < close && p[i] == ')')
+        {
+          depth--;
+        }
+      else if (i == close || (p[i] == '|' && depth == 0))
+        {
+          alts[n][0] = start;
+          alts[n][1] = i;
+          n++;
+          start = i + 1;
+        }
+    }
+
+  return n;
+}
+
+/* Does alternative [a0,a1) match exactly the first 'len' characters of s? */
+
+static bool alt_matches(const char *p, const char *pq, size_t a0, size_t a1,
+                        const char *s, size_t len, bool ci)
+{
+  char *tmp = vs_xstrndup(s, len);
+  bool r = xm(p, pq, a0, a1, tmp, ci);
+
+  free(tmp);
+  return r;
+}
+
+static bool xm_repeat(const char *p, const char *pq, size_t alts[][2], int na,
+                      size_t rest, size_t pe, const char *s, bool ci, bool need_one)
+{
+  size_t len = strlen(s);
+  size_t k;
+  int a;
+
+  if (!need_one && xm(p, pq, rest, pe, s, ci))
+    {
+      return true;
+    }
+
+  for (a = 0; a < na; a++)
+    {
+      for (k = 1; k <= len; k++)
+        {
+          if (alt_matches(p, pq, alts[a][0], alts[a][1], s, k, ci) &&
+              xm_repeat(p, pq, alts, na, rest, pe, s + k, ci, false))
+            {
+              return true;
+            }
+        }
+
+      if (need_one && alt_matches(p, pq, alts[a][0], alts[a][1], s, 0, ci) &&
+          xm(p, pq, rest, pe, s, ci))
+        {
+          return true;                   /* an alternative that matches "" */
+        }
+    }
+
+  return false;
+}
+
+static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *s,
+               bool ci)
+{
+  char c;
+
+  if (pi == pe)
+    {
+      return *s == '\0';
+    }
+
+  c = p[pi];
+  if (is_ext_op(p, pq, pi, pe))
+    {
+      size_t close = group_end(p, pq, pi + 1, pe);
+
+      if (close != (size_t)-1)
+        {
+          size_t alts[XM_MAXALT][2];
+          int na = split_alts(p, pq, pi + 1, close, alts);
+          size_t rest = close + 1;
+          size_t len = strlen(s);
+          size_t k;
+          int a;
+
+          switch (c)
+            {
+              case '*':
+                return xm_repeat(p, pq, alts, na, rest, pe, s, ci, false);
+
+              case '+':
+                return xm_repeat(p, pq, alts, na, rest, pe, s, ci, true);
+
+              case '?':
+                if (xm(p, pq, rest, pe, s, ci))
+                  {
+                    return true;
+                  }
+
+                /* fall through - one occurrence, exactly as @() */
+
+              case '@':
+                for (a = 0; a < na; a++)
+                  {
+                    for (k = 0; k <= len; k++)
+                      {
+                        if (alt_matches(p, pq, alts[a][0], alts[a][1], s, k, ci) &&
+                            xm(p, pq, rest, pe, s + k, ci))
+                          {
+                            return true;
+                          }
+                      }
+                  }
+
+                return false;
+
+              default:                   /* !(...): anything that is not one of them */
+                for (k = 0; k <= len; k++)
+                  {
+                    bool any = false;
+
+                    for (a = 0; a < na && !any; a++)
+                      {
+                        any = alt_matches(p, pq, alts[a][0], alts[a][1], s, k, ci);
+                      }
+
+                    if (!any && xm(p, pq, rest, pe, s + k, ci))
+                      {
+                        return true;
+                      }
+                  }
+
+                return false;
+            }
+        }
+    }
+
+  if (!quoted_at(pq, pi) && c == '*')
+    {
+      size_t k;
+      size_t len = strlen(s);
+
+      for (k = 0; k <= len; k++)
+        {
+          if (xm(p, pq, pi + 1, pe, s + k, ci))
+            {
+              return true;
+            }
+        }
+
+      return false;
+    }
+
+  if (*s == '\0')
+    {
+      return false;
+    }
+
+  if (!quoted_at(pq, pi) && c == '?')
+    {
+      return xm(p, pq, pi + 1, pe, s + 1, ci);
+    }
+
+  if (!quoted_at(pq, pi) && c == '[')
+    {
+      size_t next;
+      int r = bracket_ci(p, pq, pe, pi, (unsigned char)*s, &next, ci);
+
+      if (r == 1)
+        {
+          return xm(p, pq, next, pe, s + 1, ci);
+        }
+
+      if (r != -1 || *s != '[')
+        {
+          return false;
+        }
+    }
+  else if (!chr_eq(c, *s, ci))
+    {
+      return false;
+    }
+
+  return xm(p, pq, pi + 1, pe, s + 1, ci);
+}
+
+bool pat_match_ci(const char *p, const char *pq, size_t plen, const char *str,
+                  bool ci)
+{
+  if (g_sh.so_extglob && has_ext(p, pq, plen))
+    {
+      return xm(p, pq, 0, plen, str, ci);
+    }
+
+  return basic_match(p, pq, plen, str, ci);
+}
+
+bool pat_match(const char *p, const char *pq, size_t plen, const char *str)
+{
+  return pat_match_ci(p, pq, plen, str, false);
+}
+
 bool pat_has_glob(const char *p, const char *pq, size_t plen)
 {
   size_t i;
@@ -198,6 +537,11 @@ bool pat_has_glob(const char *p, const char *pq, size_t plen)
       if (!quoted_at(pq, i) && (p[i] == '*' || p[i] == '?' || p[i] == '['))
         {
           return true;
+        }
+
+      if (g_sh.so_extglob && is_ext_op(p, pq, i, plen))
+        {
+          return true;                   /* +(a|b) @(a) !(a) */
         }
     }
 
@@ -220,6 +564,9 @@ struct gctx_s
   int n;
   struct fieldv_s *res;
   int added;
+  bool ci;                      /* nocaseglob */
+  bool dotglob;
+  bool globstar;
 };
 
 static char *join_path(const char *base, const char *name)
@@ -266,6 +613,70 @@ static void sort_names(char **v, size_t n)
     }
 }
 
+static void walk(struct gctx_s *g, const char *base, int idx);
+
+/* `**` with shopt globstar: zero or more directories. */
+
+static void walk_globstar(struct gctx_s *g, const char *base, int idx, bool last)
+{
+  DIR *dir;
+  struct dirent *ent;
+  char **names = NULL;
+  size_t nnames = 0;
+  size_t i;
+
+  if (!last)
+    {
+      walk(g, base, idx + 1);              /* ** matched no directory at all */
+    }
+
+  dir = opendir(VS_FS(base[0] != '\0' ? base : "."));
+  if (dir == NULL)
+    {
+      return;
+    }
+
+  while ((ent = readdir(dir)) != NULL)
+    {
+      const char *nm = ent->d_name;
+
+      if (strcmp(nm, ".") == 0 || strcmp(nm, "..") == 0 ||
+          (nm[0] == '.' && !g->dotglob))
+        {
+          continue;
+        }
+
+      names = vs_xrealloc(names, (nnames + 1) * sizeof(char *));
+      names[nnames++] = vs_xstrdup(nm);
+    }
+
+  closedir(dir);
+  sort_names(names, nnames);
+  for (i = 0; i < nnames; i++)
+    {
+      char *np = join_path(base, names[i]);
+      struct stat st;
+
+      if (last)
+        {
+          fv_add(g->res, vs_xstrdup(np));
+          g->added++;
+        }
+
+      /* symbolic links are not followed, as in bash */
+
+      if (lstat(VS_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
+        {
+          walk(g, np, idx);
+        }
+
+      free(np);
+      free(names[i]);
+    }
+
+  free(names);
+}
+
 static void walk(struct gctx_s *g, const char *base, int idx)
 {
   const struct comp_s *c;
@@ -305,6 +716,13 @@ static void walk(struct gctx_s *g, const char *base, int idx)
 
       walk(g, nb, idx + 1);
       free(nb);
+      return;
+    }
+
+  if (g->globstar && c->len == 2 && g->p[c->off] == '*' && g->p[c->off + 1] == '*' &&
+      !quoted_at(g->pq != NULL ? g->pq + c->off : NULL, 0))
+    {
+      walk_globstar(g, base, idx, last);
       return;
     }
 
@@ -357,12 +775,12 @@ static void walk(struct gctx_s *g, const char *base, int idx)
             continue;
           }
 
-        if (nm[0] == '.' && pp[0] != '.')
+        if (nm[0] == '.' && pp[0] != '.' && !g->dotglob)
           {
             continue;
           }
 
-        if (pat_match(pp, pq, c->len, nm))
+        if (pat_match_ci(pp, pq, c->len, nm, g->ci))
           {
             names = vs_xrealloc(names, (nnames + 1) * sizeof(char *));
             names[nnames++] = vs_xstrdup(nm);
@@ -412,6 +830,9 @@ int glob_expand(const char *p, const char *pq, size_t plen,
   g.n = 0;
   g.res = out;
   g.added = 0;
+  g.ci = g_sh.so_nocaseglob;
+  g.dotglob = g_sh.so_dotglob;
+  g.globstar = g_sh.so_globstar;
 
   for (i = 0; i <= plen; i++)
     {
@@ -430,5 +851,27 @@ int glob_expand(const char *p, const char *pq, size_t plen,
     }
 
   walk(&g, "", 0);
+
+  if (g.globstar && g.added > 1)
+    {
+      /* bash sorts the results of a ** pattern as complete paths */
+
+      int has = 0;
+      size_t k;
+
+      for (k = 0; k + 1 < plen; k++)
+        {
+          if (p[k] == '*' && p[k + 1] == '*')
+            {
+              has = 1;
+            }
+        }
+
+      if (has)
+        {
+          sort_names(out->v + (out->n - g.added), (size_t)g.added);
+        }
+    }
+
   return g.added;
 }

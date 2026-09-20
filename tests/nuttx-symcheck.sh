@@ -10,12 +10,16 @@
 #
 #   sh tests/nuttx-symcheck.sh ../nuttx/staging [member-pattern]
 #
-# member-pattern (default "vaporshell") selects vaporshell's own object
-# files inside libapps.a; NuttX puts the source directory in their names.
+# member-pattern (default: this checkout's real path with / turned into .)
+# selects vaporshell's own object files inside libapps.a; NuttX puts the
+# source path in their names.
 # Exit status 1 if any collision is found.
 
 STAGING=$1
-PAT=${2:-vaporshell}
+# NuttX names each object after the source path (".home.me.vaporshell"), so the
+# default pattern is this checkout's own real path, whatever the directory is called.
+HERE=$(cd "$(dirname "$0")/.." && pwd -P)
+PAT=${2:-$(printf '%s' "$HERE" | tr / .)}
 
 if [ -z "$STAGING" ] || [ ! -f "$STAGING/libapps.a" ]; then
     echo "usage: $0 path/to/nuttx/staging [member-pattern]" >&2
@@ -32,6 +36,17 @@ mkdir "$TMP/objs"
 members=$(ar t "$STAGING/libapps.a" | grep "$PAT")
 if [ -z "$members" ]; then
     echo "no members matching '$PAT' in libapps.a" >&2
+    exit 2
+fi
+
+nmembers=$(echo "$members" | wc -l)
+if [ "$nmembers" -lt 10 ]; then
+    # vaporshell has ~25 object files: matching only a few means the pattern
+    # is picking up the wrong thing (NuttX names objects after the source
+    # directory), and "no collisions" would be an empty claim.
+    echo "only $nmembers members match '$PAT' in libapps.a (expected ~25):" >&2
+    echo "$members" | sed 's/^/  /' >&2
+    echo "pass the member pattern as the second argument" >&2
     exit 2
 fi
 
