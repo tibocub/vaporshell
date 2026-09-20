@@ -40,6 +40,14 @@ struct pat_s
 /* expand.c */
 
 int expand_words(const struct word_s *w, struct fieldv_s *out);
+
+/* An array subscript as an index: expanded, then arithmetic. A negative one
+ * counts from one past the highest index of array 'name' (NULL: none allowed).
+ * 0 on success; -1 after saying why.
+ */
+
+int expand_subscript(const char *sub, size_t n, const char *name, long *idx);
+char *vs_quote_word(const char *v);        /* malloc'd: 'it'\\''s' or $'a\\tb' */
 void vs_brace_expand(const char *word, struct fieldv_s *out);      /* brace.c */
 char *expand_word_str(const char *raw);       /* no split, no glob */
 char *expand_assign_str(const char *raw);     /* also ~ after ':' and '=' */

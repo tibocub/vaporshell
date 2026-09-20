@@ -889,3 +889,65 @@ trap 'echo x' err; trap -p 2>/dev/null | grep -c ERR
 
 ## glob_collation_assign | glob
 : > a.txt; : > B.txt; LC_ALL=C; echo *; unset LC_ALL; LC_ALL=C echo *
+
+## array_literal_forms | array
+a=(x "y y" z); echo ${#a[@]} "${a[1]}" $a; b=(); echo ${#b[@]}; c=([2]=p q [7]=r s); echo ${!c[@]}
+
+## array_expansion_forms | array
+a=(x "y y" z); echo ${a[@]}; echo "${a[*]}"; for e in "${a[@]}"; do echo "<$e>"; done; IFS=:; echo "${a[*]}"
+
+## array_counts_indices | array
+a=(p q); a[5]=z; echo ${#a[@]} ${#a[5]} ${!a[@]} "${!a[*]}"
+
+## array_append_forms | array
+a=(x); a+=(y z); a+=w; a[1]+=Q; echo ${a[@]}; s=v; s+=(t); echo ${s[@]}
+
+## array_scalar_convert | array
+s=v; s[2]=x; echo ${s[@]} ${!s[@]}; a=(1 2 3); a=x; echo ${a[@]}
+
+## array_negative_index | array
+a=(a b c d); echo ${a[-1]} ${a[-4]}; a[-1]=Z; echo ${a[@]}
+
+## array_arith_index | array
+a=(10 20 30); i=1; echo ${a[i]} ${a[i+1]} $((a[0] + a[2])); (( a[1] += 5 )); echo ${a[@]}; (( a[i++] )); echo $i
+
+## array_slices | array
+a=(a b c d e); echo ${a[@]:1:2} ${a[@]: -2} ${a[@]:3}; unset "a[1]"; echo ${a[@]:1:2}
+
+## array_element_operators | array
+a=(hello.txt "wor ld"); echo ${a[0]%.txt} ${a[0]:1:3} ${a[0]/l/L} ${a[0]^^} ${#a[1]} ${a[5]:-d}
+
+## array_per_element_operators | array
+a=(foo.txt bar.txt); echo ${a[@]%.txt} ${a[@]/o/0} ${a[@]^^} ${a[@]#*.}; b=("a b" c); echo ${b[@]@Q}
+
+## array_defaults | array
+a=(x); b=(); echo ${a[@]:-none} ${b[@]:-none} ${u[@]:-none} ${a[3]:=v} ${!a[@]}
+
+## array_unset_forms | array
+a=(1 2 3 4); unset "a[1]"; echo ${!a[@]}; unset "a[-1]"; echo ${!a[@]}; unset "a[@]"; echo ${#a[@]}; s=v; unset "s[1]" 2>/dev/null; echo $?
+
+## array_test_v | array
+d=(x y); [[ -v d ]] && echo v; [[ -v d[1] ]] && echo v1; [[ -v d[5] ]] || echo n5; e=(); [[ -v e ]] || echo e-unset
+
+## array_scoping | array
+a=(1 2); (a[0]=9; echo ${a[@]}); echo ${a[@]}; f() { local a; a=(p q); echo ${a[@]}; }; f; echo ${a[@]}; a=x true; echo ${a[@]}
+
+## array_set_listing | array
+zz=(x "y z" "q\"r"); y=scalar; b1="two words"; set | while IFS= read -r l; do case $l in zz=*|y=*|b1=*) echo "$l";; esac; done
+
+## array_literal_multiline | array
+a=(
+  one   # a comment
+  "two words"
+  three
+)
+echo ${#a[@]} "${a[1]}"
+
+## param_positional_braced | param
+set -- a b c; echo "${@}|${*}|${#@}"; echo "${@:-d}"; set --; echo "[${@-x}][${*:-y}]"
+
+## param_positional_trim | param | dash and bash differ here: dash trims the joined string, bash each parameter
+set -- foo.txt bar.txt; echo ${@%.txt}; echo "${*#*.}"
+
+## scalar_plus_equals | syntax
+x=a; x+=b; x+=c; echo $x; y+=z; echo $y

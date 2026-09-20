@@ -540,9 +540,19 @@ static int bi_unset(int argc, char **argv)
         {
           func_unset(argv[i]);
         }
-      else if (var_unset(argv[i]) != 0)
+      else
         {
-          status = 1;
+          bool handled;
+          int st = asg_unset_ref(argv[i], &handled);
+
+          if (handled)
+            {
+              status = st != 0 ? 1 : status;
+            }
+          else if (var_unset(argv[i]) != 0)
+            {
+              status = 1;
+            }
         }
     }
 
@@ -698,6 +708,69 @@ static void list_options(bool reusable)
     }
 }
 
+/* An array as `set` prints it: a=([0]="x" [1]="y z"). Inside the double
+ * quotes " \ $ and ` are escaped.
+ */
+
+/* `set` prints a scalar bare unless bash would have to quote it: a leading
+ * ~ or #, a shell metacharacter, or a control character.
+ */
+
+static void print_set_scalar(const char *name, const char *value)
+{
+  const char *p;
+  bool quote = value[0] == '~' || value[0] == '#';
+
+  for (p = value; *p != '\0' && !quote; p++)
+    {
+      quote = strchr(" \t\n'\"\\|&;()<>!{}*[?]^$`", *p) != NULL ||
+              (unsigned char)*p < 0x20 || *p == 0x7f;
+    }
+
+  if (quote)
+    {
+      char *q = vs_quote_word(value);
+
+      printf("%s=%s\n", name, q);
+      free(q);
+    }
+  else
+    {
+      printf("%s=%s\n", name, value);
+    }
+}
+
+static int cmp_var_names(const void *a, const void *b)
+{
+  return strcmp((*(struct var_s *const *)a)->name,     /* bash sorts by bytes here, not by locale */
+                (*(struct var_s *const *)b)->name);
+}
+
+static void print_array(const struct var_s *v)
+{
+  size_t i;
+  const char *p;
+
+  printf("%s=(", v->name);
+  for (i = 0; i < v->arr->n; i++)
+    {
+      printf("%s[%ld]=\"", i > 0 ? " " : "", v->arr->e[i].idx);
+      for (p = v->arr->e[i].val; *p != '\0'; p++)
+        {
+          if (*p == '"' || *p == '\\' || *p == '$' || *p == '`')
+            {
+              putchar('\\');
+            }
+
+          putchar(*p);
+        }
+
+      putchar('"');
+    }
+
+  puts(")");
+}
+
 static int bi_set(int argc, char **argv)
 {
   int i = 1;
@@ -706,15 +779,45 @@ static int bi_set(int argc, char **argv)
   if (argc == 1)
     {
       struct var_s *v;
+      struct var_s **sorted;
+      size_t nv = 0;
+      size_t k;
+
+      /* bash lists them by name */
 
       for (v = g_sh.vars; v != NULL; v = v->next)
         {
-          if (v->value != NULL)
+          nv++;
+        }
+
+      sorted = vs_xmalloc((nv + 1) * sizeof(*sorted));
+      for (nv = 0, v = g_sh.vars; v != NULL; v = v->next)
+        {
+          sorted[nv++] = v;
+        }
+
+      qsort(sorted, nv, sizeof(*sorted), cmp_var_names);
+      for (k = 0; k < nv; k++)
+        {
+          v = sorted[k];
+          if (v->arr != NULL)
             {
-              print_quoted(v->name, v->value, "");
+              print_array(v);
+            }
+          else if (v->value != NULL)
+            {
+              if (vs_feat(VF_BASH_SYNTAX))
+                {
+                  print_set_scalar(v->name, v->value);      /* bash: quoted only when needed */
+                }
+              else
+                {
+                  print_quoted(v->name, v->value, "");      /* dash: always */
+                }
             }
         }
 
+      free(sorted);
       return 0;
     }
 

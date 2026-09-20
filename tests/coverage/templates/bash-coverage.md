@@ -62,7 +62,7 @@ When bash publishes a new release:
 
 Status is against vaporshell's bash mode. "not implemented" means the feature
 is absent; "n/a" means it belongs to something not built (readline, job
-control, arrays, `[[`, `time`, coprocesses); "verified" means a probe or
+control, associative arrays, coprocesses); "verified" means a probe or
 test compares it with bash 5.3.
 
 | NEWS | change | vaporshell |
@@ -84,7 +84,7 @@ test compares it with bash 5.3.
 | q | `GLOBSORT` | not implemented (assignment is accepted, has no effect) |
 | r | `compgen -V` | n/a |
 | s | `${ command; }` / `${|command;}` | not implemented |
-| t | `array_expand_once` | n/a (arrays not built) |
+| t | `array_expand_once` | n/a (`shopt array_expand_once` is an error to set; indexed arrays exist, associative ones do not yet) |
 | v | `TIMEFORMAT` precision | n/a (`time` keyword not built) |
 | w | `BASH_MONOSECONDS` | not implemented |
 | x | `BASH_TRAPSIG` | not implemented |
@@ -143,6 +143,23 @@ vaporshell (bash mode) has it as a builtin.
   the shell goes on, where bash aborts the rest of a `-c` command list and, for
   a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
   operators on `$@` are rejected rather than applied to each parameter.
+- **Arrays**: indexed arrays are implemented: literals (multi-line, with
+  comments, `[i]=v` elements), `a[i]=v`, `+=`, negative and arithmetic
+  subscripts (also inside `$(( ))`), `$a` meaning `${a[0]}`, every
+  `${a[...]}` form including `[@]`/`[*]`, `${#a[@]}`, `${!a[@]}`, index-based
+  slices, defaults, per-element `#` `%` `/` `^` `,` `@Q`, `unset a[i]`,
+  `[[ -v a[i] ]]`, and `set` listing them. Not yet: associative arrays
+  (`declare -A`), `declare`/`typeset -a`, array literals as arguments of
+  `local`/`export`/`readonly` (they need declaration-builtin handling, so
+  `local a=(x y)` currently sets the *string* `(x y)`), `mapfile`, `read -a`,
+  `PIPESTATUS`, `BASH_REMATCH`, `FUNCNAME`, `BASH_SOURCE`, `BASH_VERSINFO`.
+  `a[1]=x cmd` (an element assignment in front of a command) is an error here.
+  Arrays are not exported to child processes, as in bash. A bad subscript in
+  an expansion or in arithmetic prints a message and reads as empty/0, as in
+  bash; in an assignment it is an error.
+- **`${@}` and `${*}`** follow each shell in its own mode: bash applies
+  operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
+  mode to the parameters joined into one string, without slices or replacement.
 - **Collation**: glob results and `[[ a < b ]]` are ordered by the collation
   locale (`LC_ALL`, then `LC_COLLATE`, then `LANG`, following assignments) using
   `strcoll`, as bash does, so `a.txt` sorts before `B.txt` under en_US.UTF-8.

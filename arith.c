@@ -74,9 +74,10 @@ static long wrap_mul(long x, long y)
  * expression of its own.
  */
 
-static long var_value(struct ar_s *a, const char *name)
+/* The value of a variable's text: it is itself an arithmetic expression. */
+
+static long str_value(struct ar_s *a, const char *v)
 {
-  const char *v = var_get(name);
   long r;
 
   if (v == NULL || v[0] == '\0')
@@ -107,6 +108,128 @@ static long var_value(struct ar_s *a, const char *name)
   }
 
   return r;
+}
+
+static long var_value(struct ar_s *a, const char *name)
+{
+  return str_value(a, var_get(name));
+}
+
+/* ---- Assignable things: name and name[expr] --------------------------------- */
+
+struct lv_s
+{
+  char name[128];
+  bool elem;
+  bool bad;              /* a negative subscript out of range: reads 0, stores nothing */
+  long idx;
+};
+
+/* The end of the [...] that starts at p (which is on the [), or NULL. */
+
+static const char *skip_subscript(const char *p)
+{
+  int depth = 0;
+
+  for (; *p != '\0'; p++)
+    {
+      if (*p == '[')
+        {
+          depth++;
+        }
+      else if (*p == ']' && --depth == 0)
+        {
+          return p + 1;
+        }
+    }
+
+  return NULL;
+}
+
+/* Reads `name` or `name[expr]` at a->p (an identifier start). The subscript
+ * is evaluated here, once; a negative one counts from the end of the array.
+ */
+
+static bool read_lvalue(struct ar_s *a, struct lv_s *lv)
+{
+  size_t n = 0;
+
+  while (id_char(*a->p) && n < sizeof(lv->name) - 1)
+    {
+      lv->name[n++] = *a->p++;
+    }
+
+  lv->name[n] = '\0';
+  lv->elem = false;
+  lv->bad = false;
+  lv->idx = 0;
+  if (*a->p == '[' && vs_feat(VF_BASH_SYNTAX))
+    {
+      long idx;
+
+      a->p++;
+      idx = parse_comma(a);
+      ws(a);
+      if (*a->p != ']')
+        {
+          ar_fail(a, "bad array subscript");
+          return false;
+        }
+
+      a->p++;
+      if (idx < 0 && a->skip == 0)
+        {
+          struct arr_s *arr = var_array(lv->name, false);
+          long top = arr != NULL ? arr_max_index(arr)
+                                 : (var_get(lv->name) != NULL ? 0 : -1);
+
+          idx += top + 1;
+          if (idx < 0 || top < 0)
+            {
+              vs_err("%s[%ld]: bad array subscript", lv->name, idx - top - 1);
+              lv->bad = true;               /* a warning, not an error: as in bash */
+            }
+        }
+
+      lv->elem = true;
+      lv->idx = idx;
+    }
+
+  return true;
+}
+
+static long lv_value(struct ar_s *a, const struct lv_s *lv)
+{
+  if (lv->bad)
+    {
+      return 0;
+    }
+
+  if (!lv->elem)
+    {
+      return var_value(a, lv->name);
+    }
+
+  return str_value(a, var_elem_get(lv->name, lv->idx));
+}
+
+static bool lv_store(struct ar_s *a, const struct lv_s *lv, long v)
+{
+  char buf[32];
+
+  if (a->skip != 0 || a->err || lv->bad)
+    {
+      return true;
+    }
+
+  snprintf(buf, sizeof(buf), "%ld", v);
+  if ((lv->elem ? var_elem_set(lv->name, lv->idx, buf) : var_set(lv->name, buf)) != 0)
+    {
+      a->err = true;
+      return false;
+    }
+
+  return true;
 }
 
 static long parse_primary(struct ar_s *a)
@@ -195,34 +318,25 @@ static long parse_primary(struct ar_s *a)
 
   if (id_start(*a->p))
     {
-      char name[128];
-      size_t n = 0;
+      struct lv_s lv;
 
-      while (id_char(*a->p) && n < sizeof(name) - 1)
+      if (!read_lvalue(a, &lv))
         {
-          name[n++] = *a->p++;
+          return 0;
         }
 
-      name[n] = '\0';
       ws(a);
       if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
                                     strncmp(a->p, "--", 2) == 0))
         {
-          long old = var_value(a, name);
-          char buf[32];
+          long old = lv_value(a, &lv);
 
-          snprintf(buf, sizeof(buf), "%ld", a->p[0] == '+' ? wrap_add(old, 1)
-                                                            : wrap_sub(old, 1));
+          lv_store(a, &lv, a->p[0] == '+' ? wrap_add(old, 1) : wrap_sub(old, 1));
           a->p += 2;
-          if (a->skip == 0 && !a->err && var_set(name, buf) != 0)
-            {
-              a->err = true;
-            }
-
           return old;
         }
 
-      return var_value(a, name);
+      return lv_value(a, &lv);
     }
 
   ar_fail(a, *a->p == '\0' ? "operand expected" : "syntax error");
@@ -257,27 +371,19 @@ static long parse_prefix(struct ar_s *a)
   if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
                                 strncmp(a->p, "--", 2) == 0) && id_start(a->p[2]))
     {
-      char name[128];
-      size_t n = 0;
+      struct lv_s lv;
       char op = a->p[0];
       long v;
-      char buf[32];
 
       a->p += 2;
-      while (id_char(*a->p) && n < sizeof(name) - 1)
+      if (!read_lvalue(a, &lv))
         {
-          name[n++] = *a->p++;
+          return 0;
         }
 
-      name[n] = '\0';
-      v = var_value(a, name);
+      v = lv_value(a, &lv);
       v = (op == '+') ? wrap_add(v, 1) : wrap_sub(v, 1);
-      snprintf(buf, sizeof(buf), "%ld", v);
-      if (a->skip == 0 && !a->err && var_set(name, buf) != 0)
-        {
-          a->err = true;
-        }
-
+      lv_store(a, &lv, v);
       return v;
     }
 
@@ -516,38 +622,53 @@ static long parse_ternary(struct ar_s *a)
 static long parse_assign(struct ar_s *a)
 {
   const char *save;
-  char name[128];
-  size_t n = 0;
+  const char *q;
   char op[4] = "";
   size_t oplen = 0;
 
   ws(a);
   save = a->p;
+  q = a->p;
 
-  if (id_start(*a->p))
+  /* Look for `name[...] op=` in the text alone: the subscript may have side
+   * effects (a[i++]) and must be evaluated once, not once here and once again
+   * when it is not an assignment after all.
+   */
+
+  if (id_start(*q))
     {
-      while (id_char(*a->p) && n < sizeof(name) - 1)
+      while (id_char(*q))
         {
-          name[n++] = *a->p++;
+          q++;
         }
 
-      name[n] = '\0';
-      ws(a);
+      if (*q == '[' && vs_feat(VF_BASH_SYNTAX))
+        {
+          q = skip_subscript(q);
+        }
 
-      if (a->p[0] == '=' && a->p[1] != '=')
+      while (q != NULL && (*q == ' ' || *q == '\t' || *q == '\n'))
+        {
+          q++;
+        }
+
+      if (q == NULL)
+        {
+          /* an unclosed [ : the normal path reports it */
+        }
+      else if (q[0] == '=' && q[1] != '=')
         {
           oplen = 1;
         }
-      else if (strchr("+-*/%&^|", a->p[0]) != NULL && a->p[1] == '=')
+      else if (q[0] != '\0' && strchr("+-*/%&^|", q[0]) != NULL && q[1] == '=')   /* strchr matches the NUL! */
         {
-          op[0] = a->p[0];
+          op[0] = q[0];
           oplen = 2;
         }
-      else if ((a->p[0] == '<' || a->p[0] == '>') && a->p[1] == a->p[0] &&
-               a->p[2] == '=')
+      else if ((q[0] == '<' || q[0] == '>') && q[1] == q[0] && q[2] == '=')
         {
-          op[0] = a->p[0];
-          op[1] = a->p[0];
+          op[0] = q[0];
+          op[1] = q[0];
           oplen = 3;
         }
     }
@@ -558,27 +679,26 @@ static long parse_assign(struct ar_s *a)
       return parse_ternary(a);
     }
 
-  a->p += oplen;
-
   {
-    long rhs = parse_assign(a);
-    long result = rhs;
-    char buf[32];
+    struct lv_s lv;
+    long rhs;
+    long result;
 
+    if (!read_lvalue(a, &lv))
+      {
+        return 0;
+      }
+
+    ws(a);
+    a->p += oplen;
+    rhs = parse_assign(a);
+    result = rhs;
     if (op[0] != '\0')
       {
-        result = apply(a, op, var_value(a, name), rhs);
+        result = apply(a, op, lv_value(a, &lv), rhs);
       }
 
-    if (a->skip == 0 && !a->err)
-      {
-        snprintf(buf, sizeof(buf), "%ld", result);
-        if (var_set(name, buf) != 0)
-          {
-            a->err = true;
-          }
-      }
-
+    lv_store(a, &lv, result);
     return result;
   }
 }

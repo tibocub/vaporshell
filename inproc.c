@@ -68,6 +68,7 @@ static struct var_s *clone_vars(const struct var_s *v)
 
       c->name = vs_xstrdup(v->name);
       c->value = v->value != NULL ? vs_xstrdup(v->value) : NULL;
+      c->arr = v->arr != NULL ? arr_clone(v->arr) : NULL;
       c->flags = v->flags;
       c->next = NULL;
       *tail = c;
@@ -85,6 +86,7 @@ static void free_vars(struct var_s *v)
 
       free(v->name);
       free(v->value);
+      arr_free(v->arr);
       free(v);
       v = n;
     }

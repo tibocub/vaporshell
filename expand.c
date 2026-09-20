@@ -251,10 +251,26 @@ static bool is_special_char(char c)
  * the next call.
  */
 
+/* ${a[i]} reuses the whole scalar ${...} machinery: the element's value is
+ * planted here and get_param() hands it out for exactly that name (matched by
+ * pointer, so an expansion nested in an operand, or a plain $a, is unaffected).
+ */
+
+static const char *g_ov_name;
+static const char *g_ov_val;
+static bool g_ov_has_idx;            /* the override is ${a[i]}: assigning goes to element i */
+static long g_ov_idx;
+
 static bool get_param(const char *name, size_t n, const char **val,
                       char *buf, size_t bufsz)
 {
   *val = NULL;
+
+  if (g_ov_name != NULL && name == g_ov_name)
+    {
+      *val = g_ov_val;
+      return g_ov_val != NULL;
+    }
 
   if (n == 1 && is_special_char(name[0]))
     {
@@ -480,6 +496,60 @@ static bool ext_op_at(const char *in, size_t i, size_t n)
       default:
         return false;
     }
+}
+
+int expand_subscript(const char *sub, size_t n, const char *name, long *idx)
+{
+  char *text = operand_str(sub, n, false);
+  long v = 0;
+
+  if (text == NULL)
+    {
+      return -1;
+    }
+
+  if (text[0] == '\0')
+    {
+      vs_err("%s: bad array subscript", name != NULL ? name : "");
+      free(text);
+      return -1;
+    }
+
+  if (arith_eval(text, &v) != 0)
+    {
+      free(text);
+      return -1;
+    }
+
+  free(text);
+  if (v < 0)
+    {
+      long top = -1;
+
+      if (name != NULL)
+        {
+          struct arr_s *a = var_array(name, false);
+
+          if (a != NULL)
+            {
+              top = arr_max_index(a);
+            }
+          else if (var_get(name) != NULL)
+            {
+              top = 0;                  /* a scalar has just element 0 */
+            }
+        }
+
+      v += top + 1;
+      if (v < 0 || top < 0)
+        {
+          vs_err("%s: bad array subscript", name != NULL ? name : "");
+          return -1;
+        }
+    }
+
+  *idx = v;
+  return 0;
 }
 
 static void ext_fail(struct xctx_s *x, const char *what)
@@ -976,6 +1046,13 @@ static char *quote_for_reuse(const char *v)
   return sb_take(&out);
 }
 
+/* The value quoted so the shell reads it back the same (used by set, ${x@Q}). */
+
+char *vs_quote_word(const char *v)
+{
+  return quote_for_reuse(v);
+}
+
 static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
                           char op, bool dq)
 {
@@ -1268,7 +1345,466 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
   ext_fail(x, "bad substitution");
 }
 
-static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
+static void x_positional(struct xctx_s *x, bool at, bool dq, int from, int to);
+static void trim_and_add(struct xctx_s *x, const char *value, char op, bool longest,
+                         const char *word, size_t wn, bool dq);
+
+/* ---- Multi-valued parameters: $@ $* ${a[@]} ${a[*]} ------------------------------ */
+
+/* The words of a list, as "$@" / "$*" / $@ / $* give them. */
+
+static void x_emit_list(struct xctx_s *x, bool at, bool dq, char *const *vals, int cnt)
+{
+  int k;
+
+  if (dq && at)
+    {
+      x->saw_at = true;
+      for (k = 0; k < cnt; k++)
+        {
+          if (k > 0)
+            {
+              x_push(x);
+            }
+
+          x->present = true;
+          x_adds(x, vals[k], true);
+        }
+    }
+  else if (dq || !x->split)
+    {
+      const char *ifs = var_get("IFS");
+      char sep = (at || ifs == NULL) ? ' ' : ifs[0];
+
+      x->present = x->present || cnt > 0;
+      for (k = 0; k < cnt; k++)
+        {
+          if (k > 0 && sep != '\0')
+            {
+              x_addc(x, sep, dq);
+            }
+
+          x_adds(x, vals[k], dq);
+        }
+    }
+  else
+    {
+      for (k = 0; k < cnt; k++)
+        {
+          if (k > 0)
+            {
+              x_push(x);
+            }
+
+          x_add_value(x, vals[k], false);
+        }
+    }
+}
+
+/* Between the results of an operator applied to each element in turn. */
+
+static void x_multi_between(struct xctx_s *x, bool at, bool dq)
+{
+  if ((dq && at) || (!dq && x->split))
+    {
+      x_push(x);                        /* one word per element */
+    }
+  else
+    {
+      const char *ifs = var_get("IFS");
+      char sep = (at || ifs == NULL) ? ' ' : ifs[0];
+
+      if (sep != '\0')
+        {
+          x_addc(x, sep, dq);
+        }
+    }
+}
+
+struct mlist_s
+{
+  char **v;
+  long *idx;
+  int n;
+};
+
+static void mlist_free(struct mlist_s *m)
+{
+  int k;
+
+  for (k = 0; k < m->n; k++)
+    {
+      free(m->v[k]);
+    }
+
+  free(m->v);
+  free(m->idx);
+}
+
+/* A private copy of the elements: an operand such as ${a[@]/x/$(...)} may run
+ * code, and the array must not move under us.
+ */
+
+static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool positional)
+{
+  m->v = NULL;
+  m->idx = NULL;
+  m->n = 0;
+  if (positional)
+    {
+      int k;
+
+      m->v = vs_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(char *));
+      m->idx = vs_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(long));
+      for (k = 1; k <= g_sh.npos; k++)
+        {
+          m->v[m->n] = vs_xstrdup(pos_get(k));
+          m->idx[m->n++] = k;
+        }
+
+      return;
+    }
+
+  {
+    char *nm = vs_xstrndup(name, nlen);
+    struct arr_s *a = var_array(nm, false);
+
+    if (a != NULL)
+      {
+        size_t k;
+
+        m->v = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
+        m->idx = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(long));
+        for (k = 0; k < a->n; k++)
+          {
+            m->v[m->n] = vs_xstrdup(a->e[k].val);
+            m->idx[m->n++] = a->e[k].idx;
+          }
+      }
+    else if (var_get(nm) != NULL)
+      {
+        m->v = vs_xmalloc(sizeof(char *));
+        m->idx = vs_xmalloc(sizeof(long));
+        m->v[0] = vs_xstrdup(var_get(nm));
+        m->idx[0] = 0;
+        m->n = 1;
+      }
+
+    free(nm);
+  }
+}
+
+static void x_multi_bad(struct xctx_s *x, const char *name, size_t nlen, const char *rest,
+                        size_t rn)
+{
+  vs_err("${%.*s%.*s}: bad substitution", (int)nlen, name, (int)rn, rest);
+  x->error = true;
+  bad_subst_fatal();
+}
+
+/* POSIX mode (dash): the operators of ${@...} and ${*...} work on the
+ * positional parameters *joined* into one string, so ${@%.txt} trims only the
+ * end of the last one, and ${#@} is that string's length. There are no
+ * slices and no per-element operators; those are bash's.
+ */
+
+static void x_multi_posix(struct xctx_s *x, const char *name, size_t nlen, bool star,
+                          const char *rest, size_t rn, bool length, bool dq)
+{
+  const char *ifs = var_get("IFS");
+  char sep = (!star || ifs == NULL) ? ' ' : ifs[0];
+  struct sbuf_s joined;
+  int k;
+
+  sb_init(&joined);
+  for (k = 1; k <= g_sh.npos; k++)
+    {
+      if (k > 1 && sep != '\0')
+        {
+          sb_addc(&joined, sep);
+        }
+
+      sb_adds(&joined, pos_get(k));
+    }
+
+  {
+    const char *j = joined.s != NULL ? joined.s : "";
+    bool colon = rn > 0 && rest[0] == ':';
+    size_t skip = colon ? 1 : 0;
+    char op = rn > skip ? rest[skip] : '\0';
+
+    if (length)
+      {
+        char buf[24];
+
+        if (rn > 0)
+          {
+            x_multi_bad(x, name, nlen, rest, rn);
+          }
+        else
+          {
+            snprintf(buf, sizeof(buf), "%lu", (unsigned long)strlen(j));
+            x_add_value(x, buf, dq);
+          }
+      }
+    else if (rn == 0)
+      {
+        x_positional(x, !star, dq, 1, g_sh.npos);
+      }
+    else if (op == '-')
+      {
+        if (colon && j[0] == '\0')
+          {
+            x_operand(x, rest + skip + 1, rn - skip - 1, dq);
+          }
+        else
+          {
+            x_positional(x, !star, dq, 1, g_sh.npos);   /* $@ always counts as set */
+          }
+      }
+    else if (op == '+')
+      {
+        if (!colon || j[0] != '\0')
+          {
+            x_operand(x, rest + skip + 1, rn - skip - 1, dq);
+          }
+      }
+    else if (op == '=' || op == '?')
+      {
+        /* fine while the value is there; when it would have to be assigned
+         * (=) or complained about (?) it cannot be: $@ is not a variable
+         */
+
+        if (colon && j[0] == '\0')
+          {
+            x_multi_bad(x, name, nlen, rest, rn);
+          }
+        else
+          {
+            x_positional(x, !star, dq, 1, g_sh.npos);
+          }
+      }
+    else if (!colon && (op == '#' || op == '%'))
+      {
+        bool longest = rn > 1 && rest[1] == op;
+        size_t off = longest ? 2 : 1;
+
+        x->present = true;
+        trim_and_add(x, j, op, longest, rest + off, rn - off, dq);
+      }
+    else
+      {
+        x_multi_bad(x, name, nlen, rest, rn);
+      }
+  }
+
+  sb_free(&joined);
+}
+
+/* ${@...} ${*...} ${a[@]...} ${a[*]...}: 'rest' is what follows the name and
+ * subscript. length is a leading # (the count).
+ */
+
+static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positional,
+                    bool star, const char *rest, size_t rn, bool length, bool dq)
+{
+  struct mlist_s m;
+  bool at = !star;
+  int k;
+
+  if (positional && !vs_feat(VF_PARAM_EXT))
+    {
+      x_multi_posix(x, name, nlen, star, rest, rn, length, dq);
+      return;
+    }
+
+  if (length)
+    {
+      char buf[24];
+
+      if (rn > 0)
+        {
+          x_multi_bad(x, name, nlen, rest, rn);
+          return;
+        }
+
+      mlist_collect(&m, name, nlen, positional);
+      snprintf(buf, sizeof(buf), "%d", m.n);
+      mlist_free(&m);
+      x_add_value(x, buf, dq);
+      return;
+    }
+
+  /* a slice of the positional parameters keeps its own, verified code */
+
+  if (positional && rn > 0 && rest[0] == ':' && (rn < 2 || strchr("-=?+", rest[1]) == NULL))
+    {
+      ext_substring(x, name, nlen, rest + 1, rn - 1, dq);
+      return;
+    }
+
+  if (rn == 0)
+    {
+      if (positional)
+        {
+          x_positional(x, at, dq, 1, g_sh.npos);
+          return;
+        }
+
+      mlist_collect(&m, name, nlen, false);
+      x_emit_list(x, at, dq, m.v, m.n);
+      mlist_free(&m);
+      return;
+    }
+
+  mlist_collect(&m, name, nlen, positional);
+
+  /* ${a[@]:off:len}: by index for an array */
+
+  if (rest[0] == ':' && rn >= 2 && strchr("-=?+", rest[1]) == NULL)
+    {
+      long off;
+      long len;
+      bool has_len;
+      long top = m.n > 0 ? m.idx[m.n - 1] : -1;
+      int taken = 0;
+
+      if (ext_offsets(rest + 1, rn - 1, &off, &len, &has_len) != 0)
+        {
+          x->error = true;
+          mlist_free(&m);
+          return;
+        }
+
+      if (off < 0)
+        {
+          off += top + 1;
+        }
+
+      if (has_len && len < 0)
+        {
+          ext_fail(x, "substring expression < 0");
+          mlist_free(&m);
+          return;
+        }
+
+      if (off >= 0)
+        {
+          char **sel = vs_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
+
+          for (k = 0; k < m.n && (!has_len || taken < len); k++)
+            {
+              if (m.idx[k] >= off)
+                {
+                  sel[taken++] = m.v[k];
+                }
+            }
+
+          x_emit_list(x, at, dq, sel, taken);
+          free(sel);
+        }
+      else
+        {
+          x_emit_list(x, at, dq, m.v, 0);
+        }
+
+      mlist_free(&m);
+      return;
+    }
+
+  /* ${a[@]:-w} ${a[@]-w} ${a[@]:+w} ${a[@]+w}: an empty list counts as unset */
+
+  if ((rest[0] == ':' && rn >= 2 && (rest[1] == '-' || rest[1] == '+')) ||
+      rest[0] == '-' || rest[0] == '+')
+    {
+      size_t skip = rest[0] == ':' ? 2 : 1;
+      char op = rest[skip - 1];
+
+      if ((op == '-') == (m.n == 0))
+        {
+          x_operand(x, rest + skip, rn - skip, dq);
+        }
+      else if (op == '-')
+        {
+          x_emit_list(x, at, dq, m.v, m.n);
+        }
+
+      mlist_free(&m);
+      return;
+    }
+
+  /* an operator applied to every element */
+
+  {
+    char op = rest[0];
+    bool longest = false;
+    const char *word = NULL;
+    size_t wn = 0;
+    size_t skip = 1;
+
+    if (op == '#' || op == '%')
+      {
+        if (rn > 1 && rest[1] == op)
+          {
+            longest = true;
+            skip = 2;
+          }
+
+        word = rest + skip;
+        wn = rn - skip;
+      }
+    else if (!(op == '/' || op == '^' || op == ',' ||
+               (op == '@' && rn == 2 && strchr("QULuE", rest[1]) != NULL)))
+      {
+        mlist_free(&m);
+        x_multi_bad(x, name, nlen, rest, rn);
+        return;
+      }
+
+    if (m.n == 0 && dq && at)
+      {
+        x->saw_at = true;
+      }
+
+    for (k = 0; k < m.n && !x->error; k++)
+      {
+        if (k > 0)
+          {
+            x_multi_between(x, at, dq);
+          }
+
+        x->present = true;
+        if (op == '#' || op == '%')
+          {
+            trim_and_add(x, m.v[k], op, longest, word, wn, dq);
+          }
+        else
+          {
+            g_ov_name = name;               /* the operators fetch the value with get_param */
+            g_ov_val = m.v[k];
+            if (op == '/')
+              {
+                ext_replace_op(x, name, nlen, rest + 1, rn - 1, dq);
+              }
+            else if (op == '^' || op == ',')
+              {
+                ext_case(x, name, nlen, rest, rn, dq);
+              }
+            else
+              {
+                ext_transform(x, name, nlen, rest[1], dq);
+              }
+
+            g_ov_name = NULL;
+            g_ov_val = NULL;
+          }
+      }
+  }
+
+  mlist_free(&m);
+}
+
+static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
 {
   const char *name;
   size_t nlen;
@@ -1325,6 +1861,14 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
       return;
     }
 
+  if (nlen == 1 && (name[0] == '@' || name[0] == '*'))
+    {
+      /* $@ and $* with or without an operator: one path with ${a[@]} */
+
+      x_multi(x, name, nlen, true, name[0] == '*', in + i, n - i, length, dq);
+      return;
+    }
+
   if (vs_feat(VF_PARAM_EXT) && !length && i < n && ext_op_at(in, i, n))
     {
       x_param_ext(x, name, nlen, in + i, n - i, dq);
@@ -1357,17 +1901,6 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
 
       word = in + i;
       wn = n - i;
-    }
-
-  if (nlen == 1 && (name[0] == '@' || name[0] == '*') && op == '\0')
-    {
-      if (length)
-        {
-          snprintf(buf, sizeof(buf), "%d", g_sh.npos);
-          x_add_value(x, buf, dq);
-        }
-
-      return;
     }
 
   isset = get_param(name, nlen, &val, buf, sizeof(buf));
@@ -1441,7 +1974,8 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
                 }
 
               nm = vs_xstrndup(name, nlen);
-              if (var_set(nm, v) != 0)
+              if ((g_ov_name == name && g_ov_has_idx) ? var_elem_set(nm, g_ov_idx, v) != 0
+                                                       : var_set(nm, v) != 0)
                 {
                   x->error = true;
                 }
@@ -1555,6 +2089,188 @@ static void x_positional(struct xctx_s *x, bool at, bool dq, int from, int to)
           x_add_value(x, pos_or_arg0(k), false);
         }
     }
+}
+
+/* ${!a[@]}: the indexes that are set. */
+
+static void x_indices(struct xctx_s *x, const char *name, size_t nlen, bool star, bool dq)
+{
+  struct mlist_s m;
+  char **strs;
+  int k;
+
+  mlist_collect(&m, name, nlen, false);
+  strs = vs_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
+  for (k = 0; k < m.n; k++)
+    {
+      char buf[24];
+
+      snprintf(buf, sizeof(buf), "%ld", m.idx[k]);
+      strs[k] = vs_xstrdup(buf);
+    }
+
+  x_emit_list(x, !star, dq, strs, m.n);
+  for (k = 0; k < m.n; k++)
+    {
+      free(strs[k]);
+    }
+
+  free(strs);
+  mlist_free(&m);
+}
+
+/* ${...}: the array forms (a subscript after the name) are picked out here;
+ * everything else is the scalar code, unchanged.
+ */
+
+static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
+{
+  size_t p = 0;
+  size_t s;
+  size_t close;
+  bool all;
+  bool star;
+  const char *sub;
+  size_t sublen;
+
+  if (!vs_feat(VF_BASH_SYNTAX) || n < 2)
+    {
+      x_braced_inner(x, in, n, dq);
+      return;
+    }
+
+  if (in[0] == '#' || in[0] == '!')
+    {
+      p = 1;
+    }
+
+  if (p >= n || !nm_start(in[p]))
+    {
+      x_braced_inner(x, in, n, dq);
+      return;
+    }
+
+  for (s = p; s < n && nm_char(in[s]); s++)
+    {
+    }
+
+  if (s >= n || in[s] != '[')
+    {
+      x_braced_inner(x, in, n, dq);
+      return;
+    }
+
+  close = asg_subscript_end(in, n, s);
+  if (close == (size_t)-1)
+    {
+      x_multi_bad(x, in, n, "", 0);
+      return;
+    }
+
+  sub = in + s + 1;
+  sublen = close - s - 1;
+  all = sublen == 1 && (sub[0] == '@' || sub[0] == '*');
+  star = all && sub[0] == '*';
+
+  if (all)
+    {
+      if (in[0] == '!')
+        {
+          if (close + 1 != n)
+            {
+              x_multi_bad(x, in, n, "", 0);
+              return;
+            }
+
+          x_indices(x, in + p, s - p, star, dq);
+        }
+      else
+        {
+          x_multi(x, in + p, s - p, false, star, in + close + 1, n - close - 1,
+                  in[0] == '#', dq);
+        }
+
+      return;
+    }
+
+  if (in[0] == '!')
+    {
+      /* ${!a[i]}: the element's value is the name of the variable to expand */
+
+      char *nm = vs_xstrndup(in + p, s - p);
+      long ix;
+      const char *target;
+
+      if (close + 1 != n || expand_subscript(sub, sublen, nm, &ix) != 0)
+        {
+          free(nm);
+          x_multi_bad(x, in, n, "", 0);
+          return;
+        }
+
+      target = var_elem_get(nm, ix);
+      free(nm);
+      if (target == NULL || target[0] == '\0' || !valid_param(target, strlen(target)))
+        {
+          vs_err("%s: invalid indirect expansion", target != NULL ? target : "");
+          x->error = true;
+          return;
+        }
+
+      {
+        const char *tv;
+        char tbuf[32];
+
+        if (get_param(target, strlen(target), &tv, tbuf, sizeof(tbuf)))
+          {
+            x->present = true;
+            x_add_value(x, tv, dq);
+          }
+      }
+
+      return;
+    }
+
+  {
+    char *nm = vs_xstrndup(in + p, s - p);
+    char *in2;
+    char *ev;
+    long idx;
+    const char *save_name = g_ov_name;
+    const char *save_val = g_ov_val;
+    bool save_has = g_ov_has_idx;
+    long save_idx = g_ov_idx;
+    const char *cur;
+
+    if (expand_subscript(sub, sublen, nm, &idx) != 0)
+      {
+        free(nm);
+        return;                             /* an error was printed; it expands to nothing */
+      }
+
+    cur = var_elem_get(nm, idx);
+    ev = cur != NULL ? vs_xstrdup(cur) : NULL;
+    free(nm);
+
+    /* the same text without the [subscript], so the scalar code can take over */
+
+    in2 = vs_xmalloc(n + 1);
+    memcpy(in2, in, s);
+    memcpy(in2 + s, in + close + 1, n - close - 1);
+    in2[n - (close + 1 - s)] = '\0';
+
+    g_ov_name = in2 + p;
+    g_ov_val = ev;
+    g_ov_has_idx = true;
+    g_ov_idx = idx;
+    x_braced_inner(x, in2, n - (close + 1 - s), dq);
+    g_ov_name = save_name;
+    g_ov_val = save_val;
+    g_ov_has_idx = save_has;
+    g_ov_idx = save_idx;
+    free(in2);
+    free(ev);
+  }
 }
 
 /* $name, $1, $@, $* and the other one-character parameters. *i is at the

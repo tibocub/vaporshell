@@ -238,6 +238,138 @@ static int skip_construct(struct lexer_s *lx, skip_fn fn, size_t i,
   return r;
 }
 
+/* Is 'w' (the text so far) `name=` or `name+=`, the start of an array
+ * assignment when a ( follows?
+ */
+
+static bool compound_target(const char *w, size_t len)
+{
+  size_t n;
+
+  if (len < 2 || w[len - 1] != '=')
+    {
+      return false;
+    }
+
+  n = len - 1;
+  if (n > 0 && w[n - 1] == '+')
+    {
+      n--;
+    }
+
+  return n > 0 && is_valid_name(w, n);
+}
+
+/* The ( of `a=(` is at lx->pos. Finds the matching ) the way bash reads an
+ * array literal: whitespace and newlines separate words, # starts a comment
+ * at a word start, and quotes, $(...), ${...} and backticks nest. It may need
+ * more input lines. On success *endp is just past the ).
+ */
+
+static bool scan_compound(struct lexer_s *lx, size_t *endp)
+{
+  size_t i = lx->pos + 1;
+  int depth = 1;
+  bool word_start = true;
+
+  for (; ; )
+    {
+      char c;
+
+      while (i >= lx->len)
+        {
+          if (!lex_more(lx))
+            {
+              lex_error(lx, true, "unexpected end of file while looking for "
+                                  "matching `)'");
+              return false;
+            }
+        }
+
+      c = lx->buf[i];
+      if (c == ' ' || c == '\t' || c == '\n')
+        {
+          word_start = true;
+          i++;
+          continue;
+        }
+
+      if (c == '#' && word_start)
+        {
+          while (i < lx->len && lx->buf[i] != '\n')
+            {
+              i++;
+              if (i >= lx->len)
+                {
+                  lex_more(lx);          /* the comment runs to the end of its line */
+                }
+            }
+
+          continue;
+        }
+
+      word_start = false;
+      if (c == '\\')
+        {
+          if (i + 1 >= lx->len)
+            {
+              lex_more(lx);
+            }
+
+          i += 2;
+          continue;
+        }
+
+      if (c == '\'' || c == '"' || c == '`' || c == '$')
+        {
+          size_t e;
+          int r;
+
+          if (c == '$' && i + 1 >= lx->len)
+            {
+              lex_more(lx);
+            }
+
+          if (c == '\'')
+            {
+              r = skip_construct(lx, ws_skip_squote, i, &e, "`''");
+            }
+          else if (c == '"')
+            {
+              r = skip_construct(lx, ws_skip_dquote, i, &e, "`\"'");
+            }
+          else if (c == '`')
+            {
+              r = skip_construct(lx, ws_skip_backtick, i, &e, "`` ` ''");
+            }
+          else
+            {
+              r = skip_construct(lx, ws_skip_dollar, i, &e, "`)' or `}'");
+            }
+
+          if (r != WS_OK)
+            {
+              return false;
+            }
+
+          i = e;
+          continue;
+        }
+
+      if (c == '(')
+        {
+          depth++;
+        }
+      else if (c == ')' && --depth == 0)
+        {
+          *endp = i + 1;
+          return true;
+        }
+
+      i++;
+    }
+}
+
 static int lex_word(struct lexer_s *lx, struct token_s *tok)
 {
   struct sbuf_s w;
@@ -254,6 +386,25 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
 
       if (is_meta(c))
         {
+          /* array assignment: name=( ... ) is one word, newlines and all */
+
+          if (c == '(' && !quoted && vs_feat(VF_BASH_SYNTAX) &&
+              compound_target(w.s != NULL ? w.s : "", w.len))
+            {
+              size_t end;
+
+              if (!scan_compound(lx, &end))
+                {
+                  sb_free(&w);
+                  tok->type = T_ERROR;
+                  return -1;
+                }
+
+              sb_addn(&w, lx->buf + lx->pos, end - lx->pos);
+              lx->pos = end;
+              continue;
+            }
+
           /* extglob: ?( *( +( @( !( belong to the word, as far as the ) */
 
           if (c == '(' && (g_sh.so_extglob || lx->force_extglob) && w.len > 0 &&

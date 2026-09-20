@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-20 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **371 of 373**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **390 of 392**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -84,7 +84,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `ansi_c_control` | ok |  |
 | `locale_dq` | ok |  |
 
-### Parameter expansion  (29/29)
+### Parameter expansion  (31/31)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -117,6 +117,8 @@ Each table lists probes for one area; the count is probes matching dash.
 | `param_transform` | ok |  |
 | `param_indirect` | ok |  |
 | `param_prefix_names` | ok |  |
+| `param_positional_braced` | ok |  |
+| `param_positional_trim` | ok | dash and bash differ here: dash trims the joined string, bash each parameter |
 
 ### Other expansions  (26/26)
 
@@ -491,7 +493,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `bashvar_ifs_default` | ok |  |
 | `bashvar_path_default` | ok |  |
 
-### Arrays  (6/6)
+### Arrays  (22/22)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -501,6 +503,22 @@ Each table lists probes for one area; the count is probes matching dash.
 | `array_indices` | ok | bash ${!a[@]} |
 | `array_slice` | ok | bash ${a[@]:1:2} |
 | `array_unset_elem` | ok | bash unset a[i] |
+| `array_literal_forms` | ok |  |
+| `array_expansion_forms` | ok |  |
+| `array_counts_indices` | ok |  |
+| `array_append_forms` | ok |  |
+| `array_scalar_convert` | ok |  |
+| `array_negative_index` | ok |  |
+| `array_arith_index` | ok |  |
+| `array_slices` | ok |  |
+| `array_element_operators` | ok |  |
+| `array_per_element_operators` | ok |  |
+| `array_defaults` | ok |  |
+| `array_unset_forms` | ok |  |
+| `array_test_v` | ok |  |
+| `array_scoping` | ok |  |
+| `array_set_listing` | ok |  |
+| `array_literal_multiline` | ok |  |
 
 ### Bash builtins  (24/24)
 
@@ -531,7 +549,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `shopt_invalid` | ok |  |
 | `pushd_popd_dirs` | ok |  |
 
-### Syntax and misc  (22/22)
+### Syntax and misc  (23/23)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -557,6 +575,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `misc_arith_in_dollar_quote` | ok |  |
 | `misc_amp_background` | ok |  |
 | `misc_time_p` | ok | bash time -p |
+| `scalar_plus_equals` | ok |  |
 
 
 ## POSIX utilities as builtins

@@ -272,7 +272,7 @@ static bool t_primary(struct tst_s *t)
         {
           case 'n': return b[0] != '\0';
           case 'z': return b[0] == '\0';
-          case 'v': return var_get(b) != NULL;
+          case 'v': return asg_ref_isset(b);
           case 't':
             {
               long fd;

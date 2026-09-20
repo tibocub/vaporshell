@@ -17,6 +17,7 @@
 #include "vaporshell.h"
 #include "mode.h"
 #include "parse.h"
+#include "exec.h"
 
 #define MAX_DEPTH 200
 
@@ -172,16 +173,6 @@ static bool at_list_end(struct parser_s *p)
   return false;
 }
 
-static bool name_start(char c)
-{
-  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
-}
-
-static bool name_char(char c)
-{
-  return name_start(c) || (c >= '0' && c <= '9');
-}
-
 /* POSIX: a function name is a name. Bash's default accepts almost any
  * word (foo-bar, a.b, ...) that is not an expansion or an assignment.
  */
@@ -213,19 +204,7 @@ static bool is_func_name(const char *s)
 
 static bool is_assign_word(const char *text)
 {
-  size_t i = 0;
-
-  if (!name_start(text[0]))
-    {
-      return false;
-    }
-
-  while (name_char(text[i]))
-    {
-      i++;
-    }
-
-  return text[i] == '=';
+  return asg_is_word(text);
 }
 
 /* ---- Redirections -------------------------------------------------------- */

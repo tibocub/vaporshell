@@ -458,32 +458,16 @@ struct tmpvar_s
 {
   char *name;
   char *old;
+  struct arr_s *old_arr;      /* the variable was an array: a copy, put back afterwards */
   bool had;
   unsigned flags;
 };
-
-/* Assignment words always contain '=' (the parser checked). */
 
 /* A redirection that cannot be set up: 1 in bash, 2 in dash. */
 
 static int redir_fail_status(void)
 {
   return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
-}
-
-static void split_assign(const char *text, char **name, const char **value)
-{
-  const char *eq = strchr(text, '=');
-
-  if (eq == NULL)
-    {
-      *name = vs_xstrdup(text);
-      *value = "";
-      return;
-    }
-
-  *name = vs_xstrndup(text, (size_t)(eq - text));
-  *value = eq + 1;
 }
 
 static int exec_assign_only(struct node_s *n)
@@ -499,20 +483,11 @@ static int exec_assign_only(struct node_s *n)
 
   for (w = n->assigns; w != NULL && g_sh.unwind == UW_NONE; w = w->next)
     {
-      char *name;
-      const char *raw;
-      char *val;
-
-      split_assign(w->text, &name, &raw);
-      val = expand_assign_str(raw);
-      if (val == NULL || var_set(name, val) != 0)
+      if (assign_apply(w->text) != 0)
         {
           status = 1;
           vs_special_error();
         }
-
-      free(val);
-      free(name);
     }
 
   if (n->redirs != NULL)
@@ -546,6 +521,13 @@ static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
             {
               v->flags = tv[i].flags;
             }
+          else if (tv[i].old_arr != NULL)
+            {
+              arr_free(v->arr);            /* an array: element 0 was shadowed */
+              v->arr = tv[i].old_arr;
+              tv[i].old_arr = NULL;
+              v->flags = tv[i].flags;
+            }
           else if (tv[i].had)
             {
               free(v->value);
@@ -561,6 +543,7 @@ static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
         }
 
       free(tv[i].old);
+      arr_free(tv[i].old_arr);
       free(tv[i].name);
     }
 
@@ -642,10 +625,27 @@ static int exec_simple(struct node_s *n)
       char *name;
       const char *raw;
       char *val;
+      bool append;
       struct var_s *v;
 
-      split_assign(w->text, &name, &raw);
+      if (!assign_scalar_parts(w->text, &name, &raw, &append))
+        {
+          vs_err("%s: an array assignment cannot precede a command", w->text);
+          status = 1;
+          goto out;
+        }
+
       val = expand_assign_str(raw);
+      if (val != NULL && append && var_get(name) != NULL)
+        {
+          char *both = vs_xmalloc(strlen(var_get(name)) + strlen(val) + 1);
+
+          strcpy(both, var_get(name));
+          strcat(both, val);
+          free(val);
+          val = both;
+        }
+
       if (val == NULL)
         {
           free(name);
@@ -658,6 +658,7 @@ static int exec_simple(struct node_s *n)
       tv[ntv].name = name;
       tv[ntv].had = (v != NULL && v->value != NULL);
       tv[ntv].old = tv[ntv].had ? vs_xstrdup(v->value) : NULL;
+      tv[ntv].old_arr = (v != NULL && v->arr != NULL) ? arr_clone(v->arr) : NULL;
       tv[ntv].flags = v != NULL ? v->flags : 0;
       ntv++;
 
@@ -1562,7 +1563,7 @@ static int db_test(struct node_s *n)
 
       if (strcmp(op, "-v") == 0)
         {
-          r = var_get(a) != NULL ? 0 : 1;
+          r = asg_ref_isset(a) ? 0 : 1;
         }
       else if (strcmp(op, "-o") == 0)
         {

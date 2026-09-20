@@ -134,6 +134,11 @@ const char *var_get(const char *name)
       return bash_var(name);
     }
 
+  if (v != NULL && v->arr != NULL)
+    {
+      return arr_get(v->arr, 0);        /* $a is ${a[0]} */
+    }
+
   return v != NULL ? v->value : NULL;
 }
 
@@ -144,6 +149,7 @@ static struct var_s *var_create(const char *name)
   v->name = vs_xstrdup(name);
   v->value = NULL;
   v->flags = 0;
+  v->arr = NULL;
   v->next = g_sh.vars;
   g_sh.vars = v;
   return v;
@@ -202,6 +208,12 @@ int var_set(const char *name, const char *value)
       v->flags |= VF_EXPORT;
     }
 
+  if (v->arr != NULL)
+    {
+      arr_set(v->arr, 0, value);       /* a=x on an array sets a[0] */
+      return 0;
+    }
+
   free(v->value);
   v->value = vs_xstrdup(value);
   if (name[0] == 'P' && strcmp(name, "PATH") == 0)
@@ -249,6 +261,7 @@ int var_unset(const char *name)
           *pv = v->next;
           free(v->name);
           free(v->value);
+          arr_free(v->arr);
           free(v);
           if (var_is_locale_var(name))
             {
@@ -480,6 +493,7 @@ void shell_fini(void)
       g_sh.vars = v->next;
       free(v->name);
       free(v->value);
+      arr_free(v->arr);
       free(v);
     }
 
@@ -533,6 +547,12 @@ int var_local_declare(const char *name, const char *value, bool inherit)
       l->name = vs_xstrdup(name);
       l->had = v != NULL && v->value != NULL;
       l->old = l->had ? vs_xstrdup(v->value) : NULL;
+      l->old_arr = NULL;
+      if (v != NULL && v->arr != NULL && !inherit)
+        {
+          l->old_arr = v->arr;           /* the outer array waits here until the function returns */
+          v->arr = NULL;
+        }
       l->flags = v != NULL ? v->flags : 0;
       l->depth = g_sh.func_depth;
       l->next = g_sh.locals;
@@ -561,7 +581,7 @@ void var_locals_pop(int depth)
       struct var_s *v = var_lookup(l->name);
 
       g_sh.locals = l->next;
-      if (l->had)
+      if (l->had || l->old_arr != NULL)
         {
           if (v == NULL)
             {
@@ -570,6 +590,8 @@ void var_locals_pop(int depth)
 
           free(v->value);
           v->value = l->old;
+          arr_free(v->arr);
+          v->arr = l->old_arr;
           v->flags = l->flags;
         }
       else
@@ -585,4 +607,152 @@ void var_locals_pop(int depth)
       free(l->name);
       free(l);
     }
+}
+
+
+/* ---- Arrays: the variable-level calls ---------------------------------------- */
+
+/* The array behind 'name'. With create, a scalar is turned into an array whose
+ * element 0 is its old value (bash does the same for `a[1]=x` on `a=v`), and
+ * a missing variable is created empty.
+ */
+
+struct arr_s *var_array(const char *name, bool create)
+{
+  struct var_s *v = var_lookup(name);
+
+  if (v != NULL && v->arr != NULL)
+    {
+      return v->arr;
+    }
+
+  if (!create)
+    {
+      return NULL;
+    }
+
+  if (v == NULL)
+    {
+      v = var_create(name);
+    }
+  else if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return NULL;
+    }
+
+  v->arr = arr_new();
+  if (v->value != NULL)
+    {
+      arr_set(v->arr, 0, v->value);
+      free(v->value);
+      v->value = NULL;
+    }
+
+  return v->arr;
+}
+
+bool var_is_array(const char *name)
+{
+  struct var_s *v = var_lookup(name);
+
+  return v != NULL && v->arr != NULL;
+}
+
+const char *var_elem_get(const char *name, long idx)
+{
+  struct var_s *v = var_lookup(name);
+
+  if (v == NULL)
+    {
+      return idx == 0 ? var_get(name) : NULL;   /* computed variables have an element 0 */
+    }
+
+  if (v->arr != NULL)
+    {
+      return arr_get(v->arr, idx);
+    }
+
+  return idx == 0 ? v->value : NULL;
+}
+
+int var_elem_set(const char *name, long idx, const char *val)
+{
+  struct var_s *v = var_lookup(name);
+  struct arr_s *a;
+
+  if (v != NULL && (v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  a = var_array(name, true);
+  if (a == NULL)
+    {
+      return -1;
+    }
+
+  arr_set(a, idx, val);
+  if (g_sh.opt_a)
+    {
+      var_lookup(name)->flags |= VF_EXPORT;
+    }
+
+  return 0;
+}
+
+int var_elem_unset(const char *name, long idx)
+{
+  struct var_s *v = var_lookup(name);
+
+  if (v == NULL)
+    {
+      return 0;
+    }
+
+  if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  if (v->arr != NULL)
+    {
+      arr_unset(v->arr, idx);
+    }
+  else if (idx == 0)
+    {
+      return var_unset(name);          /* unset a[0] on a scalar unsets it */
+    }
+
+  return 0;
+}
+
+/* name=(...): the finished array replaces whatever the variable was. */
+
+int var_array_replace(const char *name, struct arr_s *arr)
+{
+  struct var_s *v = var_lookup(name);
+
+  if (v == NULL)
+    {
+      v = var_create(name);
+    }
+  else if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  free(v->value);
+  v->value = NULL;
+  arr_free(v->arr);
+  v->arr = arr;
+  if (g_sh.opt_a)
+    {
+      v->flags |= VF_EXPORT;
+    }
+
+  return 0;
 }

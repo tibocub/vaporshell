@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **345 of 373**.
+Probes matching bash in bash mode: **371 of 392**.
 
 
 ## How this is measured
@@ -66,7 +66,7 @@ When bash publishes a new release:
 
 Status is against vaporshell's bash mode. "not implemented" means the feature
 is absent; "n/a" means it belongs to something not built (readline, job
-control, arrays, `[[`, `time`, coprocesses); "verified" means a probe or
+control, associative arrays, coprocesses); "verified" means a probe or
 test compares it with bash 5.3.
 
 | NEWS | change | vaporshell |
@@ -88,7 +88,7 @@ test compares it with bash 5.3.
 | q | `GLOBSORT` | not implemented (assignment is accepted, has no effect) |
 | r | `compgen -V` | n/a |
 | s | `${ command; }` / `${|command;}` | not implemented |
-| t | `array_expand_once` | n/a (arrays not built) |
+| t | `array_expand_once` | n/a (`shopt array_expand_once` is an error to set; indexed arrays exist, associative ones do not yet) |
 | v | `TIMEFORMAT` precision | n/a (`time` keyword not built) |
 | w | `BASH_MONOSECONDS` | not implemented |
 | x | `BASH_TRAPSIG` | not implemented |
@@ -122,7 +122,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `ansi_c_control` | ok |  |
 | `locale_dq` | ok |  |
 
-### Parameter expansion  (29/29)
+### Parameter expansion  (31/31)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -155,6 +155,8 @@ Each table lists probes for one area; the count is probes matching bash.
 | `param_transform` | ok |  |
 | `param_indirect` | ok |  |
 | `param_prefix_names` | ok |  |
+| `param_positional_braced` | ok |  |
+| `param_positional_trim` | ok | dash and bash differ here: dash trims the joined string, bash each parameter |
 
 ### Other expansions  (25/26)
 
@@ -508,7 +510,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (13/16)
+### Variables  (14/16)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -517,7 +519,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bashvar_random` | ok | bash RANDOM |
 | `bashvar_seconds` | ok | bash SECONDS |
 | `bashvar_funcname` | **differs** | bash FUNCNAME |
-| `bashvar_bash_source` | **differs** | bash BASH_SOURCE |
+| `bashvar_bash_source` | ok | bash BASH_SOURCE |
 | `bashvar_uid` | ok | bash UID EUID |
 | `bashvar_ppid` | ok |  |
 | `bashvar_hostname` | ok | bash HOSTNAME |
@@ -529,16 +531,32 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bashvar_ifs_default` | ok |  |
 | `bashvar_path_default` | ok |  |
 
-### Arrays  (0/6)
+### Arrays  (22/22)
 
 | probe | bash mode | note |
 |---|---|---|
-| `array_index` | **differs** | bash indexed arrays |
-| `array_append` | **differs** | bash += |
-| `array_assoc` | **differs** | bash declare -A |
-| `array_indices` | **differs** | bash ${!a[@]} |
-| `array_slice` | **differs** | bash ${a[@]:1:2} |
-| `array_unset_elem` | **differs** | bash unset a[i] |
+| `array_index` | ok | bash indexed arrays |
+| `array_append` | ok | bash += |
+| `array_assoc` | ok | bash declare -A |
+| `array_indices` | ok | bash ${!a[@]} |
+| `array_slice` | ok | bash ${a[@]:1:2} |
+| `array_unset_elem` | ok | bash unset a[i] |
+| `array_literal_forms` | ok |  |
+| `array_expansion_forms` | ok |  |
+| `array_counts_indices` | ok |  |
+| `array_append_forms` | ok |  |
+| `array_scalar_convert` | ok |  |
+| `array_negative_index` | ok |  |
+| `array_arith_index` | ok |  |
+| `array_slices` | ok |  |
+| `array_element_operators` | ok |  |
+| `array_per_element_operators` | ok |  |
+| `array_defaults` | ok |  |
+| `array_unset_forms` | ok |  |
+| `array_test_v` | ok |  |
+| `array_scoping` | ok |  |
+| `array_set_listing` | ok |  |
+| `array_literal_multiline` | ok |  |
 
 ### Bash builtins  (13/24)
 
@@ -569,7 +587,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `shopt_invalid` | ok |  |
 | `pushd_popd_dirs` | ok |  |
 
-### Syntax and misc  (22/22)
+### Syntax and misc  (23/23)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -595,6 +613,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `misc_arith_in_dollar_quote` | ok |  |
 | `misc_amp_background` | ok |  |
 | `misc_time_p` | ok | bash time -p |
+| `scalar_plus_equals` | ok |  |
 
 
 ## Builtins against bash's own list
@@ -639,6 +658,23 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 43 of the
   the shell goes on, where bash aborts the rest of a `-c` command list and, for
   a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
   operators on `$@` are rejected rather than applied to each parameter.
+- **Arrays**: indexed arrays are implemented: literals (multi-line, with
+  comments, `[i]=v` elements), `a[i]=v`, `+=`, negative and arithmetic
+  subscripts (also inside `$(( ))`), `$a` meaning `${a[0]}`, every
+  `${a[...]}` form including `[@]`/`[*]`, `${#a[@]}`, `${!a[@]}`, index-based
+  slices, defaults, per-element `#` `%` `/` `^` `,` `@Q`, `unset a[i]`,
+  `[[ -v a[i] ]]`, and `set` listing them. Not yet: associative arrays
+  (`declare -A`), `declare`/`typeset -a`, array literals as arguments of
+  `local`/`export`/`readonly` (they need declaration-builtin handling, so
+  `local a=(x y)` currently sets the *string* `(x y)`), `mapfile`, `read -a`,
+  `PIPESTATUS`, `BASH_REMATCH`, `FUNCNAME`, `BASH_SOURCE`, `BASH_VERSINFO`.
+  `a[1]=x cmd` (an element assignment in front of a command) is an error here.
+  Arrays are not exported to child processes, as in bash. A bad subscript in
+  an expansion or in arithmetic prints a message and reads as empty/0, as in
+  bash; in an assignment it is an error.
+- **`${@}` and `${*}`** follow each shell in its own mode: bash applies
+  operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
+  mode to the parameters joined into one string, without slices or replacement.
 - **Collation**: glob results and `[[ a < b ]]` are ordered by the collation
   locale (`LC_ALL`, then `LC_COLLATE`, then `LANG`, following assignments) using
   `strcoll`, as bash does, so `a.txt` sorts before `B.txt` under en_US.UTF-8.
