@@ -329,9 +329,22 @@ was replaced. Layers, each calling only downward:
 - **Platform layer** (`platform.h`): the only code that differs between
   NuttX and a host OS. Host: `fork` for subshells, `&`, pipelines and
   command substitution, own PATH search, `posix_spawn`. NuttX: no `fork`
-  (only the sim has one), so those constructs are limited -- an in-process
-  subshell (snapshot/restore of variables, cwd and fds) is the intended fix
-  and is not built yet.
+  (only the sim has one), so `inproc.c` runs them **in-process**: the shell
+  state (variables, functions, positional parameters, options, traps,
+  aliases, hash, cwd, umask, fds 0-9) is snapshotted, the body runs against a
+  private copy, and the snapshot is put back. `$(...)` captures stdout
+  through a pipe drained by a helper thread (a single task cannot both write
+  and read a 1 KiB NuttX pipe); a pipeline runs plain external programs as
+  real processes and every other stage as an in-process subshell, handing
+  output to the next stage through a feeder thread.
+  Limits: not concurrent (an in-process stage finishes before the next one
+  reads, so an endless in-process producer into `head` never ends), `&` only
+  works for external programs, `exec cmd` inside a subshell runs `cmd` and
+  ends the subshell, and the shell's task stack is used by nested
+  substitutions. It needs pthreads; without them NuttX falls back to the old
+  child-shell substitution and external-only pipelines (untested). The same
+  code runs on a host when `VS_INPROC` is set, which is how `tests/check-all.sh`
+  proves it against bash and dash.
 - **Out of memory is fatal** (`vs_xmalloc`), which keeps every caller free
   of NULL checks.
 

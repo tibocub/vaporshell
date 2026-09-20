@@ -330,6 +330,60 @@ void trap_run_exit(void)
 
 /* A forked subshell keeps ignored signals ignored and drops the rest. */
 
+/* In-process subshells (inproc.c): the subshell starts with the traps a
+ * forked child would have. The parent's actions stay referenced from the
+ * caller's saved copy of the state, so nothing of theirs is freed here.
+ */
+
+void trap_subshell_enter(void)
+{
+  int i;
+
+  for (i = 0; i < NTRAPS; i++)
+    {
+      char *a = g_sh.trap_action[i];
+
+      if (a == NULL)
+        {
+          continue;
+        }
+
+      if (a[0] == '\0')
+        {
+          g_sh.trap_action[i] = vs_xstrdup("");      /* ignored stays ignored */
+        }
+      else
+        {
+          g_sh.trap_action[i] = NULL;
+          install(i, NULL);
+        }
+    }
+
+  memset((void *)g_sh.trap_flag, 0, sizeof(g_sh.trap_flag));
+  g_sh.trap_pending = 0;
+}
+
+/* Called before the parent's state is put back: drops the subshell's own
+ * actions and reinstalls the parent's handlers.
+ */
+
+void trap_subshell_leave(const struct shell_s *saved)
+{
+  int i;
+
+  for (i = 0; i < NTRAPS; i++)
+    {
+      bool touched = g_sh.trap_action[i] != NULL;
+
+      free(g_sh.trap_action[i]);
+      g_sh.trap_action[i] = saved->trap_action[i];
+      if (touched || saved->trap_action[i] != NULL)
+        {
+          install(i, saved->trap_action[i]);
+        }
+    }
+}
+
 void trap_reset_in_child(void)
 {
   int i;

@@ -20,7 +20,8 @@ REFSHELL  ?= bash
 # Strict C99 + POSIX.1-2008 on purpose: it's what keeps this portable
 # instead of accidentally glibc-only.
 CFLAGS    ?= -O2
-CFLAGS    += -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
+LDLIBS    += -pthread
+CFLAGS    += -pthread -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
              -DVAPORSHELL_POSIX -Iposix -I. -MMD -MP $(EXTRA_CFLAGS)
 
 # Every top-level .c is part of the NuttX build too (see the Makefile's

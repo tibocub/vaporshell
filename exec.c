@@ -797,9 +797,15 @@ static int exec_case(struct node_s *n)
 
 static int exec_subshell(struct node_s *n)
 {
-  pid_t pid = vs_plat_fork();
+  pid_t pid;
   struct node_s *only = n->a;
 
+  if (vs_inproc_enabled())
+    {
+      return vs_inproc_subshell(only);
+    }
+
+  pid = vs_plat_fork();
   if (pid < 0)
     {
       vs_err("( ): not supported on this platform yet");
@@ -1048,6 +1054,188 @@ static int run_stages(struct node_s *first, int nst)
 
 #endif
 
+/* ---- Pipelines without fork ------------------------------------------------
+ *
+ * A stage that is a plain external program (a literal name, no redirection,
+ * not a builtin or function) is spawned and streams as it would anywhere.
+ * Every other stage runs in-process as a subshell. When an in-process stage
+ * feeds the next one its output is captured and handed over by a helper
+ * thread (inproc.c), so nothing can deadlock on a full pipe. The one
+ * difference from a real pipeline: an in-process stage runs to completion
+ * before the stage after it starts reading, so an in-process producer that
+ * never ends (`while true; do echo y; done | head -1`) does not terminate.
+ */
+
+static bool is_literal_word(const char *t)
+{
+  for (; *t != '\0'; t++)
+    {
+      if (!((*t >= 'a' && *t <= 'z') || (*t >= 'A' && *t <= 'Z') ||
+            (*t >= '0' && *t <= '9') || strchr("_./+:@%-", *t) != NULL))
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
+static bool stage_is_plain_external(const struct node_s *st)
+{
+  const char *name;
+
+  if (st->type != N_SIMPLE || st->redirs != NULL || st->assigns != NULL ||
+      st->words == NULL)
+    {
+      return false;
+    }
+
+  name = st->words->text;
+  return is_literal_word(name) && func_find(name) == NULL &&
+         (builtin_find(name) == NULL || vs_plat_external_fallback(name));
+}
+
+static void cloexec(int fd)
+{
+#ifdef FD_CLOEXEC
+  fcntl(fd, F_SETFD, FD_CLOEXEC);
+#else
+  (void)fd;
+#endif
+}
+
+static int run_stages_inproc(struct node_s *first, int nst)
+{
+  pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
+  int *stat_of = vs_xmalloc((size_t)nst * sizeof(int));
+  struct node_s *stage = first;
+  int in_fd = -1;
+  int failed = 0;
+  int status = 1;
+  int i;
+
+  for (i = 0; i < nst; i++, stage = stage->next)
+    {
+      bool last = (i == nst - 1);
+      int pp[2] = { -1, -1 };
+
+      pids[i] = -1;
+      stat_of[i] = 0;
+
+      if (!last && pipe(pp) != 0)
+        {
+          vs_err("pipe: %s", strerror(errno));
+          stat_of[i] = 1;
+          break;
+        }
+
+      if (pp[0] >= 0)
+        {
+          cloexec(pp[0]);
+          cloexec(pp[1]);
+        }
+
+      if (stage_is_plain_external(stage))
+        {
+          struct fieldv_s argv;
+          char *path = NULL;
+          char **envp;
+          int err = 0;
+          int closes[2];
+          int nc = 0;
+
+          fv_init(&argv);
+          if (expand_words(stage->words, &argv) != 0 || argv.n == 0)
+            {
+              stat_of[i] = 1;
+            }
+          else
+            {
+              path = hash_find_command(argv.v[0], var_get("PATH"), &err);
+              envp = var_build_env();
+              if (pp[0] >= 0)
+                {
+                  closes[nc++] = pp[0];         /* the reader end is ours */
+                }
+
+              if (path == NULL ||
+                  vs_plat_spawn(path, argv.v, envp, in_fd, pp[1], closes, nc,
+                                &pids[i]) != 0)
+                {
+                  vs_err("%s: command not found", argv.v[0]);
+                  pids[i] = -1;
+                  stat_of[i] = 127;
+                }
+
+              env_free(envp);
+              free(path);
+            }
+
+          fv_free(&argv);
+          if (pp[1] >= 0)
+            {
+              close(pp[1]);
+            }
+
+          if (in_fd >= 0)
+            {
+              close(in_fd);
+            }
+
+          in_fd = pp[0];
+        }
+      else
+        {
+          char *captured = NULL;
+
+          stat_of[i] = vs_inproc_stage(stage, in_fd, last ? NULL : &captured);
+          if (in_fd >= 0)
+            {
+              close(in_fd);
+              in_fd = -1;
+            }
+
+          if (!last)
+            {
+              /* pp[0] becomes the next stage's stdin; a thread fills it. */
+
+              vs_inproc_feed(pp[1], captured != NULL ? captured : vs_xstrdup(""),
+                             captured != NULL ? strlen(captured) : 0);
+              in_fd = pp[0];
+            }
+        }
+    }
+
+  if (in_fd >= 0)
+    {
+      close(in_fd);
+    }
+
+  for (i = 0; i < nst; i++)
+    {
+      int s = pids[i] > 0 ? wait_for(pids[i]) : stat_of[i];
+
+      if (s != 0)
+        {
+          failed = s;
+        }
+
+      if (i == nst - 1)
+        {
+          status = s;
+        }
+    }
+
+  if (g_sh.opt_pipefail && failed != 0)
+    {
+      status = failed;
+    }
+
+  free(pids);
+  free(stat_of);
+  return status;
+}
+
 static int exec_pipeline(struct node_s *n)
 {
   int nst = count_stages(n->a);
@@ -1058,7 +1246,18 @@ static int exec_pipeline(struct node_s *n)
       g_sh.noerrexit++;
     }
 
-  status = (nst == 1) ? exec_node(n->a) : run_stages(n->a, nst);
+  if (nst == 1)
+    {
+      status = exec_node(n->a);
+    }
+  else if (vs_inproc_enabled())
+    {
+      status = run_stages_inproc(n->a, nst);
+    }
+  else
+    {
+      status = run_stages(n->a, nst);
+    }
 
   if (n->flag)
     {
@@ -1260,6 +1459,17 @@ char *run_cmdsub(const char *text, size_t len)
 
   sb_init(&out);
   fflush(NULL);
+
+  if (vs_inproc_enabled())
+    {
+      char *r = vs_inproc_cmdsub(text, len, &status);
+
+      g_sh.cmdsub_status = status;
+      out.s = r != NULL ? r : vs_xstrdup("");
+      out.len = strlen(out.s);
+      out.cap = out.len + 1;
+      goto strip;
+    }
 
   if (!vs_plat_have_fork())
     {

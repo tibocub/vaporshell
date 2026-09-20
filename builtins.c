@@ -771,10 +771,17 @@ static int bi_exec(int argc, char **argv)
       return 0;                 /* redirections were made permanent */
     }
 
-  if (!vs_plat_have_fork())
+  if (!vs_plat_have_fork() || g_sh.in_subshell > 0)
     {
-      vs_err("exec: not supported on this platform yet");
-      return 1;
+      /* No process to replace (NuttX), or an in-process subshell whose
+       * "process" is the shell itself: run the command, then finish.
+       */
+
+      int st = run_argv(argc - 1, argv + 1, true);
+
+      g_sh.unwind = UW_EXIT;
+      g_sh.last_status = st;
+      return st;
     }
 
   path = vs_plat_find_command(argv[1], var_get("PATH"), &err);

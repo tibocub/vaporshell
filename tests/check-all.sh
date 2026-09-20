@@ -37,4 +37,17 @@ if command -v "$DASH" >/dev/null 2>&1; then
     sh "$HERE/posix-check.sh" "$VS" "$DASH" modes/posix --posix || rc=1
 fi
 
+# The same suites again with subshells and $(...) run in-process, the way
+# they must on NuttX (which has no fork). VS_INPROC is a test hook; see
+# inproc.c. Skipped if the caller already set it.
+if [ -z "$VS_INPROC" ]; then
+    echo "-- in-process subshells (VS_INPROC=1) --"
+    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH" own || rc=1
+    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH" modes/bash || rc=1
+    if command -v "$DASH" >/dev/null 2>&1; then
+        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH" own --posix || rc=1
+        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH" modes/posix --posix || rc=1
+    fi
+fi
+
 exit $rc

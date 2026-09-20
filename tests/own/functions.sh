@@ -1,4 +1,3 @@
-# requires: cmdsub-state
 greet() { echo "hello $1 ($# args)"; }
 greet world
 greet a b c

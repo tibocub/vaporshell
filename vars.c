@@ -414,6 +414,7 @@ void shell_init(const char *arg0)
   g_sh.pid = getpid();
   g_sh.cmdsub_status = -1;
   g_sh.self = "vaporshell";
+  g_sh.force_inproc = getenv("VS_INPROC") != NULL;    /* test hook, see inproc.c */
   vars_import(environ);
 
   /* getopts starts scanning at the first argument. */

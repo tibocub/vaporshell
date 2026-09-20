@@ -135,13 +135,18 @@ rough pass rule (see `tests/smoosh-check.sh`); dash scores 147 and
 POSIX mode deliberately does not have.) The rest are listed in `tests/smoosh-known-failures.txt`.
 
 Platform notes: on the standalone build `( )`, `&`, pipelines with
-builtins/functions, and `$(...)` fork. NuttX has no `fork()`, so there
-those cases are limited: `$(...)` runs a child `vaporshell -c` (and
-variables are exported so it can see them), a pipeline stage must be an
-external program (or a builtin tbx also provides: `true`, `false`, `pwd`,
-`test`, `[`), and `( )`, `&`, `exec` and other builtins in a pipeline
-report "not supported on this platform yet". An in-process subshell is the
-intended fix.
+builtins/functions, and `$(...)` fork. NuttX has no `fork()`, so there they
+run **in-process** (`inproc.c`): the shell's state is snapshotted, the body
+runs, and the snapshot is restored, so subshells still cannot change the
+parent. `$(...)` output and in-process pipeline stages are handed over by
+small helper threads (NuttX pipes hold only 1 KiB), so functions and
+variables are visible inside `$(...)` and builtins work in pipelines. What
+differs from a real subshell: it is not concurrent (an endless in-process
+producer piped into `head` never ends), `&` only works for external
+programs, and nested `$(...)` uses the shell's own task stack (raise the
+stack size for deeply nested scripts). This needs pthreads. `VS_INPROC=1` runs
+the same code on a host, which `make check` uses to test it against bash and
+dash.
 
 NuttX: built and run in the simulator against `releases/13.0` with the
 vaporOS `sim:nsh` configuration (`tests/nuttx-sim-smoke.py` drives it).

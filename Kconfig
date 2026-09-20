@@ -20,5 +20,9 @@ config VAPOROS_VAPORSHELL_PRIORITY
 config VAPOROS_VAPORSHELL_STACKSIZE
 	int "stack size"
 	default DEFAULT_TASK_STACKSIZE
+	---help---
+		Subshells and $(...) run inside the shell's own task (there is no
+		fork), so nested substitutions and function calls recurse on this
+		stack. Raise it for scripts that nest deeply.
 
 endif

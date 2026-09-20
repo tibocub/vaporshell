@@ -1,4 +1,4 @@
-# requires: fork
+# requires: cmd:sed cmd:tr wc-format
 x=outer
 ( x=inner; echo $x )
 echo $x

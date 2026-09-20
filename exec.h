@@ -78,6 +78,16 @@ int vs_set_named_option(const char *name, bool on);
 
 int bi_help(int argc, char **argv);
 int bi_test(int argc, char **argv);
+/* Subshells without fork() -- inproc.c. */
+
+bool vs_inproc_enabled(void);
+int vs_inproc_subshell(struct node_s *body);
+char *vs_inproc_cmdsub(const char *text, size_t len, int *status);
+int vs_inproc_stage(struct node_s *stage, int in_fd, char **out);
+int vs_inproc_feed(int fd, char *buf, size_t len);
+void trap_subshell_enter(void);
+void trap_subshell_leave(const struct shell_s *saved);
+
 int bi_echo(int argc, char **argv);
 int bi_getopts(int argc, char **argv);
 int bi_local(int argc, char **argv);

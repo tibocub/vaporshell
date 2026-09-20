@@ -1,4 +1,3 @@
-# requires: fork
 set -e
 true && echo ok1
 false || echo ok2

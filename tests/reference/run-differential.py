@@ -188,15 +188,15 @@ def run_vaporshell(nuttx_dir, script_path, boot_timeout=8, cmd_timeout=8,
 # What the NuttX build cannot do (yet), as tokens a test names in a
 # "# requires:" line near its top. A test that needs one is reported as
 # SKIP on NuttX instead of a DIFFERS that is not a shell bug:
-#   fork          ( ), &, pipelines containing builtins   (no in-process subshell yet)
-#   cmdsub-state  functions/variables visible inside $(...) (the child is a fresh shell)
+#   async         `&` on anything but an external program (no fork, and an
+#                 in-process subshell cannot run concurrently)
 #   signals       trap on real signals, kill
 #   wc-format     toybox wc prints a file name for stdin; output differs from GNU wc
 #   cmd:NAME      an external program the NuttX image does not have
 #   env:NAME      an environment variable NuttX does not set
 #   float         printf %f/%e/%g: libc float support is CONFIG_LIBC_FLOATINGPOINT
 #   path-lookup   NuttX finds builtin apps regardless of $PATH
-NUTTX_LACKS = {"fork", "cmdsub-state", "signals", "wc-format", "env:HOME", "float",
+NUTTX_LACKS = {"async", "signals", "wc-format", "env:HOME", "float",
                "path-lookup",
                "cmd:sed", "cmd:tr", "cmd:tail", "cmd:mktemp", "cmd:ln"}
 

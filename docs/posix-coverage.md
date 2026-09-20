@@ -567,9 +567,9 @@ them as builtins, next to dash.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell
   has, not the full set dash or bash print.
 - **Signals on NuttX**: real signal traps and `kill` need host builds.
-- **NuttX**: no `fork`, so `( )`, `&` and pipelines containing builtins are
-  not supported there; functions and variables are not visible inside `$(...)`
-  (the substitution runs a fresh shell). Paths given to *external programs* are
+- **NuttX**: no `fork`, so subshells, `$(...)` and pipelines run in-process
+  (see `docs/design.md`): correct isolation, but not concurrent, and `&` only
+  works for external programs. Paths given to *external programs* are
   not normalised: NuttX's VFS cannot resolve `.` or `..`, so `cat ./file` fails
   there even though the shell's own file operations handle it.
 - **Locale and multibyte text**: untested.

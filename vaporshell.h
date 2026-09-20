@@ -171,6 +171,8 @@ struct shell_s
   bool opt_v;             /* set -v: echo input lines as they are read */
   bool opt_pipefail;      /* set -o pipefail (bash) */
   int trap_depth;         /* inside a trap action */
+  int in_subshell;        /* running in-process as a subshell (inproc.c) */
+  bool force_inproc;      /* VS_INPROC: use in-process subshells even with fork() */
   int dot_depth;          /* nesting of `.`/source: `return` is valid inside */
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */

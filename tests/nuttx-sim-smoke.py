@@ -35,7 +35,11 @@ CASES = [
     ("for i in 1 2 3; do echo n$i; done", "n3"),
     ("nosuchcmd; echo rc=$?", "rc=127"),
     ("type nosuch; echo rc=$?", "rc=1"),
-    ("( echo x )", "vaporshell: ( ): not supported on this platform yet"),
+    ("( echo x )", "x"),
+    ("x=1; ( x=2 ); echo x=$x", "x=1"),
+    ("f() { echo in-f; }; y=$(f); echo $y", "in-f"),
+    ("echo abc | { read v; echo got:$v; }", "got:abc"),
+    ("fn() { i=0; while [ $i -lt 200 ]; do echo row$i-padding-padding; i=$((i+1)); done; }; fn | wc -l | { read n rest; echo lines=$n; }", "lines=200"),
     ("echo bg &", "vaporshell: &: background jobs are not supported on this platform yet"),
     ("trap 'echo bye' EXIT; echo trap-set", "trap-set"),
 ]

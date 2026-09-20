@@ -1,4 +1,4 @@
-# requires: fork cmd:mktemp
+# requires: cmd:mktemp
 t=$(mktemp -d); cd $t
 echo one > f; echo two >> f; cat f
 cat < f
