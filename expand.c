@@ -742,6 +742,40 @@ static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
  * replacement an unquoted & stands for the matched text (bash 5.2+ default).
  */
 
+/* How much of the value a pattern can possibly match, so the search does not
+ * try what cannot fit. A pattern of plain characters matches exactly its own
+ * text; one without `*` or a `(` group matches at most a few bytes per pattern
+ * character (a `?` or bracket is one character, up to 4 bytes of UTF-8).
+ * Anything else can match any length.
+ */
+
+static void rep_shape(const struct pat_s *pat, bool *literal, bool *bounded)
+{
+  size_t k;
+
+  *literal = pat->len > 0;
+  *bounded = true;
+  for (k = 0; k < pat->len; k++)
+    {
+      char c = pat->s[k];
+
+      if (pat->q != NULL && pat->q[k])
+        {
+          continue;                    /* quoted: it stands for itself */
+        }
+
+      if (c == '*' || c == '(')
+        {
+          *literal = false;
+          *bounded = false;
+        }
+      else if (strchr("?[\\)|", c) != NULL)
+        {
+          *literal = false;
+        }
+    }
+}
+
 static char *ext_replace(const char *val, const struct pat_s *pat,
                          const struct pat_s *rep, bool all, bool at_start,
                          bool at_end)
@@ -751,16 +785,29 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
   struct sbuf_s out;
   size_t i = 0;
   bool allow_empty = at_start || at_end;
+  bool literal;
+  bool bounded;
 
+  rep_shape(pat, &literal, &bounded);
   sb_init(&out);
   while (i <= vl)
     {
       size_t hit = (size_t)-1;
       size_t j;
 
-      if (!(at_start && i != 0))
+      if (!(at_start && i != 0) && literal)
         {
-          for (j = vl; ; j--)
+          if (i + pat->len <= vl && memcmp(val + i, pat->s, pat->len) == 0 &&
+              (!at_end || i + pat->len == vl))
+            {
+              hit = i + pat->len;
+            }
+        }
+      else if (!(at_start && i != 0))
+        {
+          size_t jmax = bounded && vl - i > 4 * pat->len ? i + 4 * pat->len : vl;
+
+          for (j = jmax; ; j--)
             {
               if ((j > i || allow_empty) && (!at_end || j == vl))
                 {

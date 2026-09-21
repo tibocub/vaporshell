@@ -80,42 +80,6 @@ static void flag_letters(const struct var_s *v, char *out)
   *t = '\0';
 }
 
-static void print_scalar_value(const char *s)
-{
-  const char *p;
-  bool ctrl = false;
-
-  for (p = s; *p != '\0'; p++)
-    {
-      if ((unsigned char)*p < 0x20 || *p == 0x7f)
-        {
-          ctrl = true;
-        }
-    }
-
-  if (ctrl)
-    {
-      char *q = vs_quote_word(s);        /* $'a\tb' */
-
-      fputs(q, stdout);
-      free(q);
-      return;
-    }
-
-  putchar('"');
-  for (p = s; *p != '\0'; p++)
-    {
-      if (*p == '"' || *p == '\\' || *p == '$' || *p == '`')
-        {
-          putchar('\\');
-        }
-
-      putchar(*p);
-    }
-
-  putchar('"');
-}
-
 static void print_decl(const struct var_s *v)
 {
   char fl[16];
@@ -133,7 +97,7 @@ static void print_decl(const struct var_s *v)
   else if (v->value != NULL)
     {
       putchar('=');
-      print_scalar_value(v->value);
+      vs_print_dq(v->value);
     }
 
   putchar('\n');

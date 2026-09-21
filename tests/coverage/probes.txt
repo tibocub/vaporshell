@@ -1026,3 +1026,42 @@ echo "[${BASH_SOURCE[@]}][${BASH_LINENO[@]}][${FUNCNAME[@]}]"
 
 ## bash_versinfo | bashvar
 echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]} ${BASH_VERSINFO[2]} ${BASH_VERSINFO[3]} ${BASH_VERSINFO[4]} ${#BASH_VERSINFO[@]}"; (( BASH_VERSINFO[0] >= 4 )) && echo modern
+
+## mapfile_basic | bashbuiltin
+printf 'a\nb b\n\nc\n' > f.tmp; mapfile a < f.tmp; declare -p a; mapfile -t b < f.tmp; declare -p b; rm -f f.tmp
+
+## mapfile_limits | bashbuiltin
+printf 'a\nb b\n\nc\n' > f.tmp; mapfile -t -n 2 a < f.tmp; declare -p a; mapfile -t -s 1 -n 2 b < f.tmp; declare -p b; rm -f f.tmp
+
+## mapfile_origin | bashbuiltin
+printf 'a\nb\n' > f.tmp; x=(p q r); mapfile -t -O 1 x < f.tmp; declare -p x; mapfile -t y < /dev/null; declare -p y; rm -f f.tmp
+
+## mapfile_delimiter | bashbuiltin
+printf 'a,b,c' | { mapfile -d , -t h; declare -p h; }; printf 'a\0b\0' | { mapfile -d "" -t i; declare -p i; }
+
+## mapfile_callback | bashbuiltin
+printf '1\n2\n3\n4\n' | { cb() { echo "cb $1 [$2]"; }; mapfile -t -c 2 -C cb k; declare -p k; }
+
+## mapfile_errors | bashbuiltin
+mapfile -t 1bad </dev/null 2>/dev/null; echo rc=$?; mapfile -t -n x a </dev/null 2>/dev/null; echo rc=$?; declare -A A; mapfile -t A </dev/null 2>/dev/null; echo rc=$?
+
+## mapfile_consumes_only_what_it_takes | bashbuiltin
+printf 'a\nb\nc\nd\n' > f.tmp; { mapfile -t -n 2 a; read -r x; echo "${a[*]}|$x"; } < f.tmp; rm -f f.tmp
+
+## read_array_basic | bashbuiltin
+read -a a <<< "a b  c"; declare -p a; read -ra b <<< "x  y"; declare -p b; read -a c <<< ""; declare -p c
+
+## read_array_ifs | bashbuiltin
+IFS=, read -a a <<< "a,b,,c,"; declare -p a; IFS=" :" read -a b <<< "a : b :  : c"; declare -p b; IFS= read -a c <<< "  x y  "; declare -p c
+
+## read_array_backslash_and_eof | bashbuiltin
+read -a a <<< 'a\ b c'; declare -p a; read -r -a b <<< 'a\ b c'; declare -p b; printf 'x y' | { read -a c; echo rc=$?; declare -p c; }
+
+## read_ifs_mixed_delimiters | posix
+printf '%s\n' 'a, b ,c' | { IFS=" ," read a b c; echo "[$a][$b][$c]"; }; printf '%s\n' 'x:y:' | { IFS=: read a b; echo "[$a][$b]"; }; printf '%s\n' 'x::' | { IFS=: read a; echo "[$a]"; }
+
+## read_reply_unsplit | bashbuiltin
+read <<< "  a b  "; echo "[$REPLY]"; read <<< 'a\ b'; echo "[$REPLY]"
+
+## printf_q_control_chars | bashbuiltin
+printf '%q\n' $'a\nb' $'t\tb' $'\x01x' "a,b" "x~y" "~x" "#a" "a#b"

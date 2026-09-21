@@ -86,9 +86,11 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
                   int in_fd, int out_fd, const int *close_fds, int nclose,
                   pid_t *pid);
 
-/* Can a builtin of this name also be run as a separate program? Where
- * pipelines cannot fork (NuttX), such a builtin is started as that program
- * when it is a pipeline stage (true, false, pwd, test, ...).
+/* Can a builtin of this name also be run as a separate program? A background
+ * job (`cmd &`) needs a process, so it is started as that program (true,
+ * false, pwd, test, ...); so is a pipeline stage where stages can neither
+ * fork nor run in-process. With in-process pipelines (inproc.c) a pipeline
+ * stage runs the shell's own builtin instead.
  */
 
 bool vs_plat_external_fallback(const char *name);

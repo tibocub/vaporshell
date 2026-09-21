@@ -766,11 +766,25 @@ static int cmp_var_names(const void *a, const void *b)
                 (*(struct var_s *const *)b)->name);
 }
 
-/* The quoted text of one array element value, as `set` and `declare -p` show it. */
+/* The text of a value as `set` and `declare -p` show it: in double quotes, or
+ * as $'...' when it holds control characters, which is what bash does.
+ */
 
-static void print_dq(const char *s)
+void vs_print_dq(const char *s)
 {
   const char *p;
+
+  for (p = s; *p != '\0'; p++)
+    {
+      if ((unsigned char)*p < 0x20 || *p == 0x7f)
+        {
+          char *q = vs_quote_word(s);
+
+          fputs(q, stdout);
+          free(q);
+          return;
+        }
+    }
 
   putchar('"');
   for (p = s; *p != '\0'; p++)
@@ -815,17 +829,17 @@ void vs_print_array_body(const struct arr_s *a)
           else
             {
               putchar('[');
-              print_dq(a->e[i].key);
+              vs_print_dq(a->e[i].key);
               fputs("]=", stdout);
             }
 
-          print_dq(a->e[i].val);
+          vs_print_dq(a->e[i].val);
           putchar(' ');
         }
       else
         {
           printf("%s[%ld]=", i > 0 ? " " : "", a->e[i].idx);
-          print_dq(a->e[i].val);
+          vs_print_dq(a->e[i].val);
         }
     }
 
@@ -1233,6 +1247,14 @@ static int wait_readable(int fd, long ms)
   return poll(&pfd, 1, (int)ms) > 0 ? 1 : 0;
 }
 
+/* read [-r] [-a array] [-d delim] [-n nchars] [-p prompt] [-t timeout] [-u fd]
+ *      [name ...]
+ *
+ * Options may be bundled (`read -ra parts`); an option that takes a value
+ * takes the rest of its bundle, or else the next word. The line is cut into
+ * fields by read_split() (readsplit.c).
+ */
+
 static int bi_read(int argc, char **argv)
 {
   int rfd = STDIN_FILENO;
@@ -1240,7 +1262,7 @@ static int bi_read(int argc, char **argv)
   long maxn = -1;
   long timeout_ms = -1;
   const char *prompt = NULL;
-  bool silent = false;
+  const char *array = NULL;
   bool raw = false;
   int i = 1;
   struct sbuf_s line;
@@ -1248,62 +1270,105 @@ static int bi_read(int argc, char **argv)
   bool eof = false;
   int nvars;
   char **names;
-  const char *p;
+  struct fieldv_s fields;
+  int badname = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+  bool whole = false;
   int k;
 
   for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
     {
-      if (strcmp(argv[i], "-r") == 0)
-        {
-          raw = true;
-        }
-      else if (strcmp(argv[i], "--") == 0)
+      const char *c;
+
+      if (strcmp(argv[i], "--") == 0)
         {
           i++;
           break;
         }
-      else if (vs_feat(VF_READ_EXT) && strcmp(argv[i], "-s") == 0)
-        {
-          silent = true;
-        }
-      else if (i + 1 < argc && strlen(argv[i]) == 2 &&
-               (argv[i][1] == 'p' ||
-                (vs_feat(VF_READ_EXT) && strchr("ndtu", argv[i][1]) != NULL)))
-        {
-          const char *val = argv[++i];
 
-          switch (argv[i - 1][1])
+      for (c = argv[i] + 1; *c != '\0'; c++)
+        {
+          char opt = *c;
+          const char *val;
+
+          if (opt == 'r')
+            {
+              raw = true;
+              continue;
+            }
+
+          if (opt == 's' && vs_feat(VF_READ_EXT))
+            {
+              continue;                /* no terminal echo control yet */
+            }
+
+          if (opt != 'p' && !(vs_feat(VF_READ_EXT) && strchr("andtu", opt) != NULL))
+            {
+              vs_err("read: -%c: invalid option", opt);
+              return 2;
+            }
+
+          if (c[1] != '\0')
+            {
+              val = c + 1;                        /* -nVALUE, -pPROMPT */
+              c += strlen(c) - 1;
+            }
+          else if (i + 1 < argc)
+            {
+              val = argv[++i];
+            }
+          else
+            {
+              vs_err("read: -%c: option requires an argument", opt);
+              return 2;
+            }
+
+          switch (opt)
             {
               case 'p': prompt = val; break;
+              case 'a': array = val; break;
               case 'n': maxn = atol(val); break;
               case 'd': delim = val[0] != '\0' ? (unsigned char)val[0] : 0; break;
               case 't': timeout_ms = (long)(atof(val) * 1000.0); break;
               default:  rfd = atoi(val); break;
             }
         }
-      else
-        {
-          vs_err("read: %s: invalid option", argv[i]);
-          return 2;
-        }
     }
 
   nvars = argc - i;
   names = argv + i;
-  if (nvars == 0)
+  if (array != NULL)
+    {
+      /* read -a: the fields go to one array; any names after it are ignored */
+
+      if (!is_valid_name(array, strlen(array)))
+        {
+          vs_err("read: `%s': not a valid identifier", array);
+          return badname;
+        }
+
+      if (var_is_assoc(array))
+        {
+          vs_err("read: %s: not an indexed array", array);
+          return 1;
+        }
+
+      nvars = 0;
+    }
+  else if (nvars == 0)
     {
       static char *reply[] = { "REPLY" };
 
       names = reply;
       nvars = 1;
+      whole = true;                /* bash: REPLY is the line as read, unsplit */
     }
 
-  for (k = 0; k < nvars; k++)
+  for (k = 0; array == NULL && k < nvars; k++)
     {
       if (!is_valid_name(names[k], strlen(names[k])))
         {
           vs_err("read: `%s': not a valid identifier", names[k]);
-          return 2;
+          return badname;
         }
     }
 
@@ -1315,7 +1380,6 @@ static int bi_read(int argc, char **argv)
       fflush(stderr);
     }
 
-  (void)silent;                 /* no terminal echo control yet */
   if (timeout_ms >= 0)
     {
       if (!wait_readable(rfd, timeout_ms))
@@ -1372,61 +1436,33 @@ static int bi_read(int argc, char **argv)
         }
     }
 
-  /* Split into at most nvars fields; the last gets the remainder. */
-
-  p = line.s != NULL ? line.s : "";
-  for (k = 0; k < nvars; k++)
+  fv_init(&fields);
+  read_split(line.s != NULL ? line.s : "", ifs, raw, whole ? -1 : nvars, &fields);
+  if (array != NULL)
     {
-      struct sbuf_s field;
+      /* a fresh array, then one element per field (so -i/-l/-u apply) */
 
-      sb_init(&field);
-      while (*p != '\0' && strchr(ifs, *p) != NULL && strchr(" \t\n", *p) != NULL)
+      if (var_array_replace(array, arr_new()) != 0)
         {
-          p++;
+          fv_free(&fields);
+          sb_free(&line);
+          return 1;
         }
 
-      if (k == nvars - 1)
+      for (k = 0; k < fields.n; k++)
         {
-          const char *end = p + strlen(p);
-
-          while (end > p && strchr(ifs, end[-1]) != NULL &&
-                 strchr(" \t\n", end[-1]) != NULL)
-            {
-              end--;
-            }
-
-          while (p < end)
-            {
-              if (*p == '\\' && !raw && p + 1 < end)
-                {
-                  p++;
-                }
-
-              sb_addc(&field, *p++);
-            }
+          var_elem_set(array, k, fields.v[k]);
         }
-      else
+    }
+  else
+    {
+      for (k = 0; k < nvars; k++)
         {
-          while (*p != '\0' && strchr(ifs, *p) == NULL)
-            {
-              if (*p == '\\' && !raw && p[1] != '\0')
-                {
-                  p++;
-                }
-
-              sb_addc(&field, *p++);
-            }
-
-          if (*p != '\0')
-            {
-              p++;
-            }
+          var_set(names[k], fields.v[k]);
         }
-
-      var_set(names[k], field.s != NULL ? field.s : "");
-      sb_free(&field);
     }
 
+  fv_free(&fields);
   sb_free(&line);
   return eof ? 1 : 0;
 }
@@ -1830,6 +1866,8 @@ const struct builtin_s g_vs_builtins[] =
   { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VS_M_ALL },
   { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VS_M_ALL },
   { "declare",  bi_declare,  false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes", VS_M_BASH },
+  { "mapfile",  bi_mapfile,  false, "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: read lines into an array", VS_M_BASH },
+  { "readarray", bi_mapfile, false, "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: a synonym for mapfile", VS_M_BASH },
   { "typeset",  bi_declare,  false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare", VS_M_BASH },
   { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VS_M_ALL },
 #ifdef VAPORSHELL_POSIX

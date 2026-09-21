@@ -817,6 +817,7 @@ int var_array_replace(const char *name, struct arr_s *arr)
   else if ((v->flags & VF_READONLY) != 0)
     {
       vs_err("%s: readonly variable", name);
+      arr_free(arr);                       /* the array is ours to take, even if refused */
       return -1;
     }
 

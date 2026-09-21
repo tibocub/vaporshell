@@ -152,7 +152,7 @@ vaporshell (bash mode) has it as a builtin.
   index-based slices, defaults, per-element `#` `%` `/` `^` `,` `@Q`,
   `unset a[i]`, `[[ -v a[i] ]]`, and `set`/`declare -p` listing them.
   Associative arrays keep **insertion order**; bash's is its hash order, which
-  no script may rely on. Not yet: `mapfile`/`readarray` and `read -a`.
+  no script may rely on.
   `a[1]=x cmd` (an element assignment in front of a command) is an error here.
   Arrays are not exported to child processes, as in bash. A bad subscript in
   an expansion or in arithmetic prints a message and reads as empty/0, as in
@@ -169,6 +169,19 @@ vaporshell (bash mode) has it as a builtin.
   error rather than silence: `-n` (namerefs) and `-f` (printing a function's
   body). `declare` with no arguments lists variables in `set` format but not
   functions.
+- **`mapfile`/`readarray` and `read -a`** fill indexed arrays. `mapfile` has
+  `-d -n -O -s -t -u -C -c` (options may be bundled, `-tn 2`); the callback is
+  run as a shell command with the index and the line appended, before that
+  element is stored, and `-n` reads byte by byte so nothing past the last line
+  taken is consumed. The array is emptied first unless `-O` is given, even
+  `-O 0`. `read` takes bundled options (`read -ra parts`), `-a array`
+  (extra names after it are ignored) and, with no name, puts the whole
+  unsplit line in `REPLY`. Not supported: `read -e -E -i -N`.
+- **`read` field splitting** follows POSIX and matches dash and bash exactly:
+  IFS whitespace is trimmed and merged, any other IFS character is a delimiter
+  of its own, and the last name takes the rest of the line (a single trailing
+  delimiter is dropped, `x:` gives `x`). Earlier versions got mixed IFS such as
+  `" ,"` wrong.
 - **Special variables**: `PIPESTATUS` (recorded by every simple command,
   `[[`, `((`, subshell and pipeline; a compound command adds nothing, so
   `while false; do :; done` leaves the `1` of its condition), `BASH_REMATCH`
@@ -182,6 +195,17 @@ vaporshell (bash mode) has it as a builtin.
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
   operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
   mode to the parameters joined into one string, without slices or replacement.
+- **Pattern matching is by byte, not by character.** In a UTF-8 locale bash's
+  `?` and `[...]` match one character (`é`); here they match one byte, so
+  `[[ é == ? ]]` is false and `${s//?/X}` writes two X's for `é`. Literal text
+  is unaffected. NuttX has no locales, so byte matching is already right there.
+- **Unquoted `${v:off}`, `${v/p/r}`, `${v^^}` and `${v,,}`** keep an empty first
+  field when the result starts with whitespace (`set -- ${v:1}` gives two
+  fields where bash gives one), and the unquoted alternative in `${v:+ a}` is
+  not split at all. The plain forms (`${v}`, `#`, `%`, `:-`) are right.
+- **Pipeline stages run the shell's builtins**, also on NuttX, where an installed
+  program of the same name (the coreutils `printf`, say) is used only for
+  `cmd &`. A stage that is not a plain command already ran in-process.
 - **Collation**: glob results and `[[ a < b ]]` are ordered by the collation
   locale (`LC_ALL`, then `LC_COLLATE`, then `LANG`, following assignments) using
   `strcoll`, as bash does, so `a.txt` sorts before `B.txt` under en_US.UTF-8.
@@ -198,8 +222,9 @@ vaporshell (bash mode) has it as a builtin.
   `extdebug`, `localvar_inherit`, `localvar_unset`, ...) are an error to *set*
   so a script that depends on them fails loudly instead of quietly running
   wrong.
-- **`[[ ]]`**: `=~` uses POSIX ERE from `regcomp` (host only for now) and does
-  not set `BASH_REMATCH`, which needs arrays. The operands of `-eq` etc. are
+- **`[[ ]]`**: `=~` uses POSIX ERE from `regcomp` (host only for now) and sets
+  `BASH_REMATCH`; the right side is read as one word, parentheses and all, and
+  `nocasematch` applies to it. The operands of `-eq` etc. are
   arithmetic expressions and extglob patterns are always recognised on the
   right of `==`, both as in bash.
 - **`DEBUG` trap**: runs before simple commands, `for` iterations, `case`,
@@ -216,6 +241,6 @@ vaporshell (bash mode) has it as a builtin.
 
 No probes exist for: interactive behaviour (line editing, history,
 completion, prompts, job control), `PS1`-`PS4` expansion beyond `PS4` under
-`set -x`, locale-dependent behaviour, `set -x` trace formatting, `mapfile`,
+`set -x`, locale-dependent behaviour, `set -x` trace formatting,
 `coproc`, the `shopt` options that only matter interactively, and error-message text. "ok" above says nothing
 about these.

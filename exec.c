@@ -1235,7 +1235,15 @@ static bool is_literal_word(const char *t)
   return true;
 }
 
-static bool stage_is_plain_external(const struct node_s *st)
+/* Is this a plain command that can run as a separate program? For a pipeline
+ * stage (in_pipeline) a builtin that also exists as a program (the coreutils
+ * true, printf, test ...) is still run as the builtin when stages can run
+ * in-process: the two are not the same (on NuttX the coreutils printf dropped
+ * every %s argument), and the builtin is what every other platform uses. A
+ * background job (`cmd &`) needs a real process either way.
+ */
+
+static bool stage_is_plain_external(const struct node_s *st, bool in_pipeline)
 {
   const char *name;
 
@@ -1246,8 +1254,10 @@ static bool stage_is_plain_external(const struct node_s *st)
     }
 
   name = st->words->text;
+
   return is_literal_word(name) && func_find(name) == NULL &&
-         (builtin_find(name) == NULL || vs_plat_external_fallback(name));
+         (builtin_find(name) == NULL ||
+          ((!in_pipeline || !vs_inproc_enabled()) && vs_plat_external_fallback(name)));
 }
 
 static void cloexec(int fd)
@@ -1263,12 +1273,14 @@ static int run_stages_inproc(struct node_s *first, int nst)
 {
   pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
   int *stat_of = vs_xmalloc((size_t)nst * sizeof(int));
+  void **feeders = vs_xmalloc((size_t)nst * sizeof(void *));   /* threads to wait for at the end */
   struct node_s *stage = first;
   int in_fd = -1;
   int failed = 0;
   int status = 1;
   int i;
 
+  memset(feeders, 0, (size_t)nst * sizeof(void *));
   for (i = 0; i < nst; i++, stage = stage->next)
     {
       bool last = (i == nst - 1);
@@ -1290,7 +1302,7 @@ static int run_stages_inproc(struct node_s *first, int nst)
           cloexec(pp[1]);
         }
 
-      if (stage_is_plain_external(stage))
+      if (stage_is_plain_external(stage, true))
         {
           struct fieldv_s argv;
           char *path = NULL;
@@ -1342,8 +1354,9 @@ static int run_stages_inproc(struct node_s *first, int nst)
       else
         {
           char *captured = NULL;
+          size_t caplen = 0;
 
-          stat_of[i] = vs_inproc_stage(stage, in_fd, last ? NULL : &captured);
+          stat_of[i] = vs_inproc_stage(stage, in_fd, last ? NULL : &captured, &caplen);
           if (in_fd >= 0)
             {
               close(in_fd);
@@ -1354,8 +1367,8 @@ static int run_stages_inproc(struct node_s *first, int nst)
             {
               /* pp[0] becomes the next stage's stdin; a thread fills it. */
 
-              vs_inproc_feed(pp[1], captured != NULL ? captured : vs_xstrdup(""),
-                             captured != NULL ? strlen(captured) : 0);
+              feeders[i] = vs_inproc_feed(pp[1], captured != NULL ? captured : vs_xstrdup(""),
+                                          captured != NULL ? caplen : 0);   /* not strlen: NULs may be data */
               in_fd = pp[0];
             }
         }
@@ -1383,6 +1396,17 @@ static int run_stages_inproc(struct node_s *first, int nst)
         }
     }
 
+  /* No feeder thread may outlive this pipeline: it owns a descriptor number
+   * the caller's cleanup will free and the next pipeline will reuse. Every
+   * read end is closed by now, so a feeder still holding data gets EPIPE.
+   */
+
+  for (i = 0; i < nst; i++)
+    {
+      vs_inproc_feed_wait(feeders[i]);
+    }
+
+  free(feeders);
   if (g_sh.opt_pipefail && failed != 0)
     {
       status = failed;
@@ -1495,7 +1519,7 @@ static int exec_async(struct node_s *n)
       struct node_s *st = (n->type == N_PIPE && !n->flag && n->a != NULL &&
                            n->a->next == NULL) ? n->a : n;
 
-      if (stage_is_plain_external(st))
+      if (stage_is_plain_external(st, false))
         {
           return exec_async_spawn(st);
         }

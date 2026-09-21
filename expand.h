@@ -24,6 +24,10 @@ struct fieldv_s
 
 void fv_init(struct fieldv_s *f);
 void fv_add(struct fieldv_s *f, char *owned);   /* takes ownership */
+
+/* readsplit.c: the fields `read` makes of a line, by IFS (also for read -a) */
+
+void read_split(const char *line, const char *ifs, bool raw, int nvars, struct fieldv_s *out);
 void fv_free(struct fieldv_s *f);
 
 /* A pattern is text plus a parallel array marking characters that were

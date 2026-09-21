@@ -546,15 +546,16 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
         }
     }
 
-  if (status == 0 && var_array_replace(a->name, na) != 0)
+  if (status == 0)
     {
-      status = 1;
-      na = NULL;
+      if (var_array_replace(a->name, na) != 0)      /* takes na, even when it refuses */
+        {
+          status = 1;
+        }
     }
-
-  if (status != 0)
+  else
     {
-      arr_free(na);           /* on success the variable owns it */
+      arr_free(na);
     }
 
   return status;

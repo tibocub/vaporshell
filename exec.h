@@ -83,8 +83,9 @@ int bi_test(int argc, char **argv);
 bool vs_inproc_enabled(void);
 int vs_inproc_subshell(struct node_s *body);
 char *vs_inproc_cmdsub(const char *text, size_t len, int *status);
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out);
-int vs_inproc_feed(int fd, char *buf, size_t len);
+int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen);
+void *vs_inproc_feed(int fd, char *buf, size_t len);   /* a handle for _wait, or NULL */
+void vs_inproc_feed_wait(void *handle);
 void trap_subshell_enter(void);
 void trap_run_err(int status);
 void trap_run_debug(void);
@@ -116,10 +117,12 @@ bool asg_is_word(const char *text);
 /* declare.c: the declaration builtins in bash mode */
 
 int bi_declare(int argc, char **argv);
+int bi_mapfile(int argc, char **argv);            /* mapfile.c: mapfile, readarray */
 int bi_local_decl(int argc, char **argv);
 int bi_export_decl(int argc, char **argv);
 int bi_readonly_decl(int argc, char **argv);
-void vs_print_array_body(const struct arr_s *a);      /* builtins.c: ([0]="x" ...) */
+void vs_print_array_body(const struct arr_s *a);
+void vs_print_dq(const char *s);                     /* "..." or $'...' */      /* builtins.c: ([0]="x" ...) */
 bool asg_ref_isset(const char *text);                /* -v name / name[i] / name[@] */
 int asg_unset_ref(const char *text, bool *handled);  /* unset name[i]; handled=false if not that form */
 size_t asg_subscript_end(const char *s, size_t len, size_t open);   /* the ] for a [ */

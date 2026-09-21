@@ -452,15 +452,23 @@ fail:
   return -1;
 }
 
-/* Restores stdout, waits for the last byte, returns the text (malloc'd). */
+/* Restores stdout, waits for the last byte, returns the text (malloc'd). *len,
+ * if given, is how many bytes it is: the text may hold NULs, which a string
+ * cannot say.
+ */
 
-static char *capture_end(struct capture_s *c)
+static char *capture_end(struct capture_s *c, size_t *len)
 {
   fflush(NULL);
   dup2(c->save_fd, STDOUT_FILENO);  /* drops the last write end: EOF for the thread */
   close(c->save_fd);
   pthread_join(c->tid, NULL);
   close(c->rfd);
+
+  if (len != NULL)
+    {
+      *len = (c->buf == NULL || c->failed) ? 0 : c->len;
+    }
 
   if (c->buf == NULL || c->failed)
     {
@@ -512,17 +520,18 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
 
   *status = run_string(text, len);
   *status = subshell_finish(*status);
-  out = capture_end(&cap);
+  out = capture_end(&cap, NULL);
   snap_leave(&s);
   return out;
 }
 
 /* One stage of a pipeline, run as a subshell. in_fd (or -1) becomes its
  * stdin. If 'out' is not NULL its stdout is captured and returned there
- * (malloc'd); otherwise it writes where the pipeline writes.
+ * (malloc'd, *outlen bytes, NULs included); otherwise it writes where the
+ * pipeline writes.
  */
 
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out)
+int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
 {
   struct snap_s s;
   struct capture_s cap;
@@ -549,16 +558,23 @@ int vs_inproc_stage(struct node_s *stage, int in_fd, char **out)
   status = subshell_finish(status);
   if (out != NULL)
     {
-      *out = capture_end(&cap);
+      *out = capture_end(&cap, outlen);
     }
 
   snap_leave(&s);
   return status;
 }
 
-/* Feeds 'buf' into fd from a helper thread, then closes fd and frees buf,
- * so the next stage can read while this one is already finished. The
- * thread blocks SIGPIPE: a reader that quits early is not an error.
+/* Feeds 'buf' into fd from a helper thread, then closes fd and frees buf, so
+ * the next stage can read while this one is already finished. The thread
+ * blocks SIGPIPE: a reader that quits early is not an error.
+ *
+ * The thread must not outlive the pipeline. It owns a descriptor number, and a
+ * subshell's cleanup closes every descriptor opened inside it: were the
+ * thread still running by then, that number would be free for the next
+ * pipeline to reuse, and this thread's own close() would land on the new
+ * pipe. So the caller gets a handle and waits for it (vs_inproc_feed_wait)
+ * once the stages are done and their read ends are closed.
  */
 
 struct feed_s
@@ -566,6 +582,7 @@ struct feed_s
   int fd;
   char *buf;
   size_t len;
+  pthread_t tid;
 };
 
 static void *feed_main(void *arg)
@@ -601,14 +618,17 @@ static void *feed_main(void *arg)
 
   close(f->fd);
   free(f->buf);
-  free(f);
+  f->buf = NULL;
   return NULL;
 }
 
-int vs_inproc_feed(int fd, char *buf, size_t len)
+/* Returns a handle for vs_inproc_feed_wait(), or NULL if there was nothing to
+ * feed (fd is closed and buf freed either way).
+ */
+
+void *vs_inproc_feed(int fd, char *buf, size_t len)
 {
   struct feed_s *f;
-  pthread_t tid;
   pthread_attr_t at;
   int ret;
 
@@ -616,7 +636,7 @@ int vs_inproc_feed(int fd, char *buf, size_t len)
     {
       close(fd);
       free(buf);
-      return 0;
+      return NULL;
     }
 
   f = vs_xmalloc(sizeof(*f));
@@ -625,18 +645,30 @@ int vs_inproc_feed(int fd, char *buf, size_t len)
   f->len = len;
   pthread_attr_init(&at);
   pthread_attr_setstacksize(&at, DRAIN_STACK);
-  pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-  ret = pthread_create(&tid, &at, feed_main, f);
+  ret = pthread_create(&f->tid, &at, feed_main, f);
   pthread_attr_destroy(&at);
   if (ret != 0)
     {
       close(fd);
       free(buf);
       free(f);
-      return -1;
+      return NULL;
     }
 
-  return 0;
+  return f;
+}
+
+/* Waits for the feeder to have written what it could and closed its end. */
+
+void vs_inproc_feed_wait(void *handle)
+{
+  struct feed_s *f = handle;
+
+  if (f != NULL)
+    {
+      pthread_join(f->tid, NULL);
+      free(f);
+    }
 }
 
 #else /* !HAVE_INPROC */
@@ -655,20 +687,26 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
   return NULL;
 }
 
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out)
+int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
 {
   (void)stage;
   (void)in_fd;
+  (void)outlen;
   *out = NULL;
   return 1;
 }
 
-int vs_inproc_feed(int fd, char *buf, size_t len)
+void *vs_inproc_feed(int fd, char *buf, size_t len)
 {
   (void)buf;
   (void)len;
   close(fd);
-  return -1;
+  return NULL;
+}
+
+void vs_inproc_feed_wait(void *handle)
+{
+  (void)handle;
 }
 
 #endif

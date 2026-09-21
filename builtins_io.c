@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "vaporshell.h"
+#include "expand.h"
 #include "exec.h"
 
 /* Escape flavours, combined per caller. */
@@ -546,19 +547,41 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                   }
                 else if (conv == 'q')
                   {
-                    /* shell-quote: backslash before anything unsafe */
+                    /* shell-quote as bash does: a backslash before anything
+                     * unsafe, or $'...' for a string with control characters
+                     */
 
-                    if (str[0] == '\0')
+                    const char *s0 = str;
+                    bool ctrl = false;
+
+                    for (; *s0 != '\0'; s0++)
+                      {
+                        ctrl = ctrl || (unsigned char)*s0 < 0x20 || *s0 == 0x7f;
+                      }
+
+                    if (ctrl)
+                      {
+                        char *qw = vs_quote_word(str);
+
+                        sb_adds(&tmp, qw);
+                        free(qw);
+                        str += strlen(str);
+                      }
+                    else if (str[0] == '\0')
                       {
                         sb_adds(&tmp, "''");
                       }
 
-                    for (; *str != '\0'; str++)
+                    for (s0 = str; *str != '\0'; str++)
                       {
-                        if (!((*str >= 'a' && *str <= 'z') ||
-                              (*str >= 'A' && *str <= 'Z') ||
-                              (*str >= '0' && *str <= '9') ||
-                              strchr("_-./:,@%+=", *str) != NULL))
+                        bool safe = (*str >= 'a' && *str <= 'z') ||
+                                    (*str >= 'A' && *str <= 'Z') ||
+                                    (*str >= '0' && *str <= '9') ||
+                                    strchr("_-./:%+=@", *str) != NULL ||
+                                    (str != s0 && (*str == '#' || *str == '~')) ||
+                                    ((unsigned char)*str >= 0x80 && MB_CUR_MAX > 1);
+
+                        if (!safe)
                           {
                             sb_addc(&tmp, '\\');
                           }
