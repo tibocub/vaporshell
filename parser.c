@@ -1100,6 +1100,70 @@ static struct node_s *db_or(struct dbctx_s *c)
   return l;
 }
 
+/* The right side of =~: a regular expression is read as one word. Parentheses
+ * nest (so a group may contain spaces) and quotes and $(...) are honoured; it
+ * ends at the first blank outside them. Returns NULL if there is nothing.
+ */
+
+static char *scan_regex_word(struct parser_s *p)
+{
+  struct lexer_s *lx = &p->lx;
+  size_t i = lx->pos;
+  size_t start;
+  int depth = 0;
+
+  while (i < lx->len && (lx->buf[i] == ' ' || lx->buf[i] == '\t'))
+    {
+      i++;
+    }
+
+  start = i;
+  while (i < lx->len)
+    {
+      char c = lx->buf[i];
+      size_t e;
+
+      if (c == '\\' && i + 1 < lx->len)
+        {
+          i += 2;
+          continue;
+        }
+
+      if ((c == '\'' && ws_skip_squote(lx->buf, lx->len, i, &e) == WS_OK) ||
+          (c == '"' && ws_skip_dquote(lx->buf, lx->len, i, &e) == WS_OK) ||
+          (c == '`' && ws_skip_backtick(lx->buf, lx->len, i, &e) == WS_OK) ||
+          (c == '$' && i + 1 < lx->len && (lx->buf[i + 1] == '(' || lx->buf[i + 1] == '{') &&
+           ws_skip_dollar(lx->buf, lx->len, i, &e) == WS_OK))
+        {
+          i = e;
+          continue;
+        }
+
+      if (c == '(')
+        {
+          depth++;
+        }
+      else if (c == ')' && depth > 0)
+        {
+          depth--;
+        }
+      else if (depth == 0 && (c == ' ' || c == '\t' || c == '\n'))
+        {
+          break;
+        }
+
+      i++;
+    }
+
+  if (i == start)
+    {
+      return NULL;
+    }
+
+  lx->pos = i;
+  return arena_strndup(lx->arena, lx->buf + start, i - start);
+}
+
 static struct node_s *parse_dbracket(struct parser_s *p)
 {
   struct node_s *n = new_node(p, N_DBRACKET);
@@ -1115,7 +1179,30 @@ static struct node_s *parse_dbracket(struct parser_s *p)
 
   for (; ; )
     {
-      struct token_s *t = peek(p);
+      struct token_s *t;
+
+      if (c.n > 0 && !p->have && c.t[c.n - 1].type == T_WORD && !c.t[c.n - 1].quoted &&
+          strcmp(c.t[c.n - 1].text, "=~") == 0)
+        {
+          char *rx = scan_regex_word(p);
+
+          if (rx != NULL)
+            {
+              if (c.n == cap)
+                {
+                  cap *= 2;
+                  c.t = vs_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
+                }
+
+              c.t[c.n].type = T_WORD;
+              c.t[c.n].quoted = strpbrk(rx, "'\"\\") != NULL;
+              c.t[c.n].text = rx;
+              c.n++;
+              continue;
+            }
+        }
+
+      t = peek(p);
 
       if (t->type == T_EOF || t->type == T_ERROR)
         {

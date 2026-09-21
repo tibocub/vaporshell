@@ -58,12 +58,17 @@ void sb_free(struct sbuf_s *b);
 
 #define VF_EXPORT   0x01
 #define VF_READONLY 0x02
+#define VF_INTEGER  0x04            /* declare -i: assignments are arithmetic */
+#define VF_LOWER    0x08            /* declare -l */
+#define VF_UPPER    0x10            /* declare -u */
+#define VF_NOVALUE  0x20            /* an array declared but not yet assigned: `declare -a a` */
 
 /* An indexed array: only the elements that are set, sorted by index (array.c). */
 
 struct arr_elem_s
 {
-  long idx;
+  long idx;               /* indexed arrays */
+  char *key;              /* associative arrays: the key (idx is unused) */
   char *val;
 };
 
@@ -72,6 +77,15 @@ struct arr_s
   struct arr_elem_s *e;
   size_t n;
   size_t cap;
+  bool assoc;             /* declare -A: elements are found by key, in insertion order */
+};
+
+/* A resolved subscript: an index, or a key for an associative array. */
+
+struct subref_s
+{
+  long idx;
+  char *key;              /* malloc'd; non-NULL for an associative array */
 };
 
 struct var_s
@@ -115,13 +129,36 @@ struct hash_s
 struct node_s;
 struct arena_s;
 
+/* One level of the call stack: a function call or a sourced file. It lives on the
+ * C stack of whoever is calling, linked through g_sh.frame (special.c).
+ */
+
+struct frame_s
+{
+  struct frame_s *up;
+  char *name;             /* the function's name, or "source" */
+  char *src;              /* where its code is: BASH_SOURCE */
+  int line;               /* the line it was called from: BASH_LINENO */
+  bool is_func;
+};
+
 struct func_s
 {
   struct func_s *next;
   char *name;
+  char *src;              /* the file it was defined in (BASH_SOURCE while it runs) */
   struct node_s *body;
   struct arena_s *arena;  /* keeps 'body' alive; see arena_retain() */
 };
+
+/* special.c: PIPESTATUS, FUNCNAME, BASH_SOURCE, BASH_LINENO, BASH_VERSINFO */
+
+void ps_record(int i, int status);
+void ps_single(int status);
+void frame_push(struct frame_s *f, const char *name, const char *src, int line, bool is_func);
+void frame_pop(struct frame_s *f);
+void special_refresh(const char *name);
+void special_init(void);
 
 bool is_valid_name(const char *s, size_t len);
 struct var_s *var_lookup(const char *name);
@@ -136,6 +173,7 @@ int var_unset(const char *name);                 /* -1: readonly */
  */
 
 struct arr_s *arr_new(void);
+struct arr_s *arr_new_assoc(void);
 void arr_free(struct arr_s *a);
 void arr_clear(struct arr_s *a);
 struct arr_s *arr_clone(const struct arr_s *a);
@@ -145,6 +183,9 @@ void arr_set(struct arr_s *a, long idx, const char *val);
 void arr_unset(struct arr_s *a, long idx);
 void arr_append(struct arr_s *a, const char *val);
 long arr_max_index(const struct arr_s *a);
+const char *arr_get_key(const struct arr_s *a, const char *key);
+void arr_set_key(struct arr_s *a, const char *key, const char *val);
+void arr_unset_key(struct arr_s *a, const char *key);
 
 struct arr_s *var_array(const char *name, bool create);   /* NULL: not an array */
 bool var_is_array(const char *name);
@@ -152,6 +193,19 @@ const char *var_elem_get(const char *name, long idx);      /* NULL: unset */
 int var_elem_set(const char *name, long idx, const char *val);   /* -1: readonly */
 int var_elem_unset(const char *name, long idx);                  /* -1: readonly */
 int var_array_replace(const char *name, struct arr_s *arr);       /* takes 'arr'; -1: readonly */
+
+bool var_is_assoc(const char *name);
+struct arr_s *var_assoc(const char *name, bool create);   /* NULL: not associative */
+const char *var_ref_get(const char *name, const struct subref_s *r);
+int var_ref_set(const char *name, const struct subref_s *r, const char *val);
+int var_ref_unset(const char *name, const struct subref_s *r);
+void subref_free(struct subref_s *r);
+
+/* The value a variable's attributes make of an assignment: -i evaluates it as
+ * arithmetic, -l and -u change its case. Malloc'd.
+ */
+
+char *var_attr_value(unsigned flags, const char *value);
 char **var_build_env(void);                      /* free with env_free() */
 void env_free(char **env);
 void vars_import(char **environ_list);
@@ -268,6 +322,15 @@ struct shell_s
   bool in_err_trap;           /* an ERR/DEBUG/RETURN action is running */
   bool in_debug_trap;
   bool in_return_trap;
+
+  int ps[64];                 /* PIPESTATUS: the statuses of the last pipeline */
+  int nps;
+  unsigned lazy_dirty;        /* which computed variables to rebuild on the next lookup */
+  struct frame_s *frame;      /* innermost function/source frame */
+  const char *cur_src;        /* the file whose code is running ($0 for -c) */
+  const char *cur_script;     /* the script file given on the command line, if any */
+  bool script_main;           /* running a script file: FUNCNAME ends with "main" */
+  unsigned long long decl_raw;   /* bit i: argv[i] of the declaration builtin running is an array literal, unexpanded */
 
   int lineno;                 /* line of the command being run: $LINENO */
   struct local_s *locals;

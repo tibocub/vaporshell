@@ -258,8 +258,7 @@ static bool is_special_char(char c)
 
 static const char *g_ov_name;
 static const char *g_ov_val;
-static bool g_ov_has_idx;            /* the override is ${a[i]}: assigning goes to element i */
-static long g_ov_idx;
+static const struct subref_s *g_ov_ref;   /* the override is ${a[i]}: assigning goes to that element */
 
 static bool get_param(const char *name, size_t n, const char **val,
                       char *buf, size_t bufsz)
@@ -550,6 +549,19 @@ int expand_subscript(const char *sub, size_t n, const char *name, long *idx)
 
   *idx = v;
   return 0;
+}
+
+int expand_subref(const char *sub, size_t n, const char *name, struct subref_s *r)
+{
+  r->key = NULL;
+  r->idx = 0;
+  if (name != NULL && var_is_assoc(name))
+    {
+      r->key = operand_str(sub, n, false);        /* a key is a string, not arithmetic */
+      return r->key != NULL ? 0 : -1;
+    }
+
+  return expand_subscript(sub, n, name, &r->idx);
 }
 
 static void ext_fail(struct xctx_s *x, const char *what)
@@ -1425,6 +1437,7 @@ struct mlist_s
 {
   char **v;
   long *idx;
+  char **keys;           /* associative arrays: the keys (idx is unused) */
   int n;
 };
 
@@ -1435,10 +1448,15 @@ static void mlist_free(struct mlist_s *m)
   for (k = 0; k < m->n; k++)
     {
       free(m->v[k]);
+      if (m->keys != NULL)
+        {
+          free(m->keys[k]);
+        }
     }
 
   free(m->v);
   free(m->idx);
+  free(m->keys);
 }
 
 /* A private copy of the elements: an operand such as ${a[@]/x/$(...)} may run
@@ -1449,6 +1467,7 @@ static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool
 {
   m->v = NULL;
   m->idx = NULL;
+  m->keys = NULL;
   m->n = 0;
   if (positional)
     {
@@ -1475,8 +1494,18 @@ static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool
 
         m->v = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
         m->idx = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(long));
+        if (a->assoc)
+          {
+            m->keys = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
+          }
+
         for (k = 0; k < a->n; k++)
           {
+            if (a->assoc)
+              {
+                m->keys[m->n] = vs_xstrdup(a->e[k].key);
+              }
+
             m->v[m->n] = vs_xstrdup(a->e[k].val);
             m->idx[m->n++] = a->e[k].idx;
           }
@@ -1663,6 +1692,13 @@ static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positi
 
   if (rest[0] == ':' && rn >= 2 && strchr("-=?+", rest[1]) == NULL)
     {
+      if (m.keys != NULL)
+        {
+          mlist_free(&m);                 /* an associative array has no positions */
+          x_multi_bad(x, name, nlen, rest, rn);
+          return;
+        }
+
       long off;
       long len;
       bool has_len;
@@ -1974,8 +2010,8 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
                 }
 
               nm = vs_xstrndup(name, nlen);
-              if ((g_ov_name == name && g_ov_has_idx) ? var_elem_set(nm, g_ov_idx, v) != 0
-                                                       : var_set(nm, v) != 0)
+              if ((g_ov_name == name && g_ov_ref != NULL) ? var_ref_set(nm, g_ov_ref, v) != 0
+                                                          : var_set(nm, v) != 0)
                 {
                   x->error = true;
                 }
@@ -2106,7 +2142,7 @@ static void x_indices(struct xctx_s *x, const char *name, size_t nlen, bool star
       char buf[24];
 
       snprintf(buf, sizeof(buf), "%ld", m.idx[k]);
-      strs[k] = vs_xstrdup(buf);
+      strs[k] = vs_xstrdup(m.keys != NULL ? m.keys[k] : buf);
     }
 
   x_emit_list(x, !star, dq, strs, m.n);
@@ -2198,22 +2234,23 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
       /* ${!a[i]}: the element's value is the name of the variable to expand */
 
       char *nm = vs_xstrndup(in + p, s - p);
-      long ix;
+      struct subref_s ir;
       const char *target;
 
-      if (close + 1 != n || expand_subscript(sub, sublen, nm, &ix) != 0)
+      if (close + 1 != n || expand_subref(sub, sublen, nm, &ir) != 0)
         {
           free(nm);
           x_multi_bad(x, in, n, "", 0);
           return;
         }
 
-      target = var_elem_get(nm, ix);
+      target = var_ref_get(nm, &ir);
       free(nm);
       if (target == NULL || target[0] == '\0' || !valid_param(target, strlen(target)))
         {
           vs_err("%s: invalid indirect expansion", target != NULL ? target : "");
           x->error = true;
+          subref_free(&ir);
           return;
         }
 
@@ -2228,6 +2265,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
           }
       }
 
+      subref_free(&ir);
       return;
     }
 
@@ -2235,20 +2273,19 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
     char *nm = vs_xstrndup(in + p, s - p);
     char *in2;
     char *ev;
-    long idx;
+    struct subref_s ref;
     const char *save_name = g_ov_name;
     const char *save_val = g_ov_val;
-    bool save_has = g_ov_has_idx;
-    long save_idx = g_ov_idx;
+    const struct subref_s *save_ref = g_ov_ref;
     const char *cur;
 
-    if (expand_subscript(sub, sublen, nm, &idx) != 0)
+    if (expand_subref(sub, sublen, nm, &ref) != 0)
       {
         free(nm);
         return;                             /* an error was printed; it expands to nothing */
       }
 
-    cur = var_elem_get(nm, idx);
+    cur = var_ref_get(nm, &ref);
     ev = cur != NULL ? vs_xstrdup(cur) : NULL;
     free(nm);
 
@@ -2261,15 +2298,14 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
 
     g_ov_name = in2 + p;
     g_ov_val = ev;
-    g_ov_has_idx = true;
-    g_ov_idx = idx;
+    g_ov_ref = &ref;
     x_braced_inner(x, in2, n - (close + 1 - s), dq);
     g_ov_name = save_name;
     g_ov_val = save_val;
-    g_ov_has_idx = save_has;
-    g_ov_idx = save_idx;
+    g_ov_ref = save_ref;
     free(in2);
     free(ev);
+    subref_free(&ref);
   }
 }
 

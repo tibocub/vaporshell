@@ -225,6 +225,11 @@ int bi_local(int argc, char **argv)
   int status = 0;
   int i;
 
+  if (vs_feat(VF_BASH_SYNTAX))
+    {
+      return bi_local_decl(argc, argv);     /* attributes and arrays: declare.c */
+    }
+
   if (g_sh.func_depth == 0)
     {
       vs_err("local: can only be used in a function");

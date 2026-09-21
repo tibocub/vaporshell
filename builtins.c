@@ -295,7 +295,17 @@ static int bi_dot(int argc, char **argv)
 
   g_sh.syntax_error = false;
   g_sh.dot_depth++;
-  status = run_file(file);
+  {
+    struct frame_s frame;
+    const char *outer_src = g_sh.cur_src;
+
+    frame_push(&frame, "source", file, g_sh.lineno, false);
+    g_sh.cur_src = file;
+    status = run_file(file);
+    g_sh.cur_src = outer_src;
+    frame_pop(&frame);
+  }
+
   g_sh.dot_depth--;
   if (g_sh.trap_action[VS_TRAP_RETURN] != NULL && g_sh.unwind == UW_NONE)
     {
@@ -498,11 +508,21 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
 
 static int bi_export(int argc, char **argv)
 {
+  if (vs_feat(VF_BASH_SYNTAX))
+    {
+      return bi_export_decl(argc, argv);
+    }
+
   return mark_vars(argc, argv, VF_EXPORT, "export");
 }
 
 static int bi_readonly(int argc, char **argv)
 {
+  if (vs_feat(VF_BASH_SYNTAX))
+    {
+      return bi_readonly_decl(argc, argv);
+    }
+
   return mark_vars(argc, argv, VF_READONLY, "readonly");
 }
 
@@ -746,29 +766,77 @@ static int cmp_var_names(const void *a, const void *b)
                 (*(struct var_s *const *)b)->name);
 }
 
-static void print_array(const struct var_s *v)
+/* The quoted text of one array element value, as `set` and `declare -p` show it. */
+
+static void print_dq(const char *s)
 {
-  size_t i;
   const char *p;
 
-  printf("%s=(", v->name);
-  for (i = 0; i < v->arr->n; i++)
+  putchar('"');
+  for (p = s; *p != '\0'; p++)
     {
-      printf("%s[%ld]=\"", i > 0 ? " " : "", v->arr->e[i].idx);
-      for (p = v->arr->e[i].val; *p != '\0'; p++)
+      if (*p == '"' || *p == '\\' || *p == '$' || *p == '`')
         {
-          if (*p == '"' || *p == '\\' || *p == '$' || *p == '`')
-            {
-              putchar('\\');
-            }
-
-          putchar(*p);
+          putchar('\\');
         }
 
-      putchar('"');
+      putchar(*p);
     }
 
-  puts(")");
+  putchar('"');
+}
+
+/* The (...) part: ([0]="x" [1]="y z") for an indexed array, and
+ * ([k]="v" ) for an associative one -- bash leaves a space before the ).
+ */
+
+void vs_print_array_body(const struct arr_s *a)
+{
+  size_t i;
+
+  putchar('(');
+  for (i = 0; i < a->n; i++)
+    {
+      if (a->assoc)
+        {
+          bool plain = a->e[i].key[0] != '\0';
+          const char *k;
+
+          for (k = a->e[i].key; *k != '\0' && plain; k++)
+            {
+              plain = (*k >= 'a' && *k <= 'z') || (*k >= 'A' && *k <= 'Z') ||
+                      (*k >= '0' && *k <= '9') || *k == '_';
+            }
+
+          if (plain)
+            {
+              printf("[%s]=", a->e[i].key);
+            }
+          else
+            {
+              putchar('[');
+              print_dq(a->e[i].key);
+              fputs("]=", stdout);
+            }
+
+          print_dq(a->e[i].val);
+          putchar(' ');
+        }
+      else
+        {
+          printf("%s[%ld]=", i > 0 ? " " : "", a->e[i].idx);
+          print_dq(a->e[i].val);
+        }
+    }
+
+  putchar(')');
+}
+
+static void print_array(const struct var_s *v)
+{
+  printf("%s=", v->name);
+  vs_print_array_body(v->arr);
+  putchar('\n');
 }
 
 static int bi_set(int argc, char **argv)
@@ -1761,6 +1829,8 @@ const struct builtin_s g_vs_builtins[] =
   { "unalias",  bi_unalias,  false, "unalias [-a] name...: remove aliases", VS_M_ALL },
   { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VS_M_ALL },
   { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VS_M_ALL },
+  { "declare",  bi_declare,  false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes", VS_M_BASH },
+  { "typeset",  bi_declare,  false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare", VS_M_BASH },
   { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VS_M_ALL },
 #ifdef VAPORSHELL_POSIX
   { "times",    bi_times,    true,  "print accumulated process times", VS_M_ALL },

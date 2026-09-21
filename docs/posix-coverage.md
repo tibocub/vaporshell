@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-20 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **390 of 392**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **415 of 417**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -472,7 +472,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (16/16)
+### Variables  (24/24)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -492,8 +492,16 @@ Each table lists probes for one area; the count is probes matching dash.
 | `bashvar_ps4` | ok |  |
 | `bashvar_ifs_default` | ok |  |
 | `bashvar_path_default` | ok |  |
+| `pipestatus_pipeline` | ok |  |
+| `pipestatus_compound_and_negation` | ok |  |
+| `pipestatus_function_and_subshell` | ok |  |
+| `bash_rematch_groups` | ok |  |
+| `bash_rematch_cleared` | ok |  |
+| `funcname_stack` | ok |  |
+| `bash_source_top_level` | ok |  |
+| `bash_versinfo` | ok |  |
 
-### Arrays  (22/22)
+### Arrays  (28/28)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -519,8 +527,14 @@ Each table lists probes for one area; the count is probes matching dash.
 | `array_scoping` | ok |  |
 | `array_set_listing` | ok |  |
 | `array_literal_multiline` | ok |  |
+| `assoc_basics` | ok |  |
+| `assoc_pairs_literal` | ok |  |
+| `assoc_keys_with_spaces` | ok |  |
+| `assoc_arithmetic` | ok |  |
+| `assoc_unset_and_test` | ok |  |
+| `assoc_convert` | ok |  |
 
-### Bash builtins  (24/24)
+### Bash builtins  (35/35)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -548,6 +562,17 @@ Each table lists probes for one area; the count is probes matching dash.
 | `shopt_list` | ok |  |
 | `shopt_invalid` | ok |  |
 | `pushd_popd_dirs` | ok |  |
+| `decl_print_scalars` | ok |  |
+| `decl_print_arrays` | ok |  |
+| `decl_attribute_order` | ok |  |
+| `decl_integer` | ok |  |
+| `decl_case_attributes` | ok |  |
+| `decl_scope` | ok |  |
+| `decl_no_word_splitting` | ok |  |
+| `decl_attribute_removal` | ok |  |
+| `decl_array_literals_in_builtins` | ok |  |
+| `decl_errors` | ok |  |
+| `decl_typeset` | ok |  |
 
 ### Syntax and misc  (23/23)
 

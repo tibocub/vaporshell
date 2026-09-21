@@ -8,12 +8,14 @@
 
 #include <nuttx/config.h>
 #include <nuttx/compiler.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
+#include "expand.h"
 #include "ast.h"
 #include "platform.h"
 #include "mode.h"
@@ -48,6 +50,11 @@ bool is_valid_name(const char *s, size_t len)
 struct var_s *var_lookup(const char *name)
 {
   struct var_s *v;
+
+  if (g_sh.lazy_dirty != 0 && (name[0] == 'P' || name[0] == 'F' || name[0] == 'B'))
+    {
+      special_refresh(name);            /* PIPESTATUS, FUNCNAME, BASH_*: built on demand */
+    }
 
   for (v = g_sh.vars; v != NULL; v = v->next)
     {
@@ -136,7 +143,8 @@ const char *var_get(const char *name)
 
   if (v != NULL && v->arr != NULL)
     {
-      return arr_get(v->arr, 0);        /* $a is ${a[0]} */
+      return v->arr->assoc ? arr_get_key(v->arr, "0")
+                           : arr_get(v->arr, 0);        /* $a is ${a[0]} */
     }
 
   return v != NULL ? v->value : NULL;
@@ -208,9 +216,44 @@ int var_set(const char *name, const char *value)
       v->flags |= VF_EXPORT;
     }
 
+  v->flags &= ~(unsigned)VF_NOVALUE;
+  if ((v->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0)
+    {
+      char *cv = var_attr_value(v->flags, value);
+      int r = 0;
+
+      if (v->arr != NULL)
+        {
+          if (v->arr->assoc)
+            {
+              arr_set_key(v->arr, "0", cv);
+            }
+          else
+            {
+              arr_set(v->arr, 0, cv);
+            }
+        }
+      else
+        {
+          free(v->value);
+          v->value = vs_xstrdup(cv);
+        }
+
+      free(cv);
+      return r;
+    }
+
   if (v->arr != NULL)
     {
-      arr_set(v->arr, 0, value);       /* a=x on an array sets a[0] */
+      if (v->arr->assoc)
+        {
+          arr_set_key(v->arr, "0", value);    /* a=x on an array sets a[0] */
+        }
+      else
+        {
+          arr_set(v->arr, 0, value);
+        }
+
       return 0;
     }
 
@@ -413,6 +456,7 @@ void func_unset(const char *name)
           *pf = f->next;
           arena_release(f->arena);
           free(f->name);
+          free(f->src);
           free(f);
           return;
         }
@@ -426,6 +470,7 @@ void func_define(const char *name, struct node_s *body, struct arena_s *arena)
   func_unset(name);
   f = vs_xmalloc(sizeof(*f));
   f->name = vs_xstrdup(name);
+  f->src = vs_xstrdup(g_sh.cur_src != NULL ? g_sh.cur_src : "");
   f->body = body;
   f->arena = arena;
   arena_retain(arena);
@@ -440,7 +485,9 @@ void shell_init(const char *arg0)
   vs_plat_state_create();
   vs_mode_set(VS_PROFILE_BASH);
   vs_shopt_defaults();
+  special_init();
   g_sh.arg0 = arg0;
+  g_sh.cur_src = arg0;
   g_sh.pid = getpid();
   g_sh.cmdsub_status = -1;
   g_sh.self = "vaporshell";
@@ -670,6 +717,14 @@ const char *var_elem_get(const char *name, long idx)
 
   if (v->arr != NULL)
     {
+      if (v->arr->assoc)
+        {
+          char k[24];
+
+          snprintf(k, sizeof(k), "%ld", idx);
+          return arr_get_key(v->arr, k);
+        }
+
       return arr_get(v->arr, idx);
     }
 
@@ -693,7 +748,27 @@ int var_elem_set(const char *name, long idx, const char *val)
       return -1;
     }
 
-  arr_set(a, idx, val);
+  v = var_lookup(name);
+  v->flags &= ~(unsigned)VF_NOVALUE;
+  {
+    char *cv = (v->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0
+               ? var_attr_value(v->flags, val) : vs_xstrdup(val);
+
+    if (a->assoc)
+      {
+        char k[24];
+
+        snprintf(k, sizeof(k), "%ld", idx);
+        arr_set_key(a, k, cv);
+      }
+    else
+      {
+        arr_set(a, idx, cv);
+      }
+
+    free(cv);
+  }
+
   if (g_sh.opt_a)
     {
       var_lookup(name)->flags |= VF_EXPORT;
@@ -749,10 +824,185 @@ int var_array_replace(const char *name, struct arr_s *arr)
   v->value = NULL;
   arr_free(v->arr);
   v->arr = arr;
+  v->flags &= ~(unsigned)VF_NOVALUE;
   if (g_sh.opt_a)
     {
       v->flags |= VF_EXPORT;
     }
 
   return 0;
+}
+
+
+/* ---- Attributes and associative arrays ------------------------------------------- */
+
+char *var_attr_value(unsigned flags, const char *value)
+{
+  char *r;
+  size_t i;
+
+  if ((flags & VF_INTEGER) != 0)
+    {
+      long n = 0;
+      char buf[32];
+
+      if (value[0] != '\0' && arith_eval(value, &n) != 0)
+        {
+          n = 0;                       /* the error was printed; the value is 0 */
+        }
+
+      snprintf(buf, sizeof(buf), "%ld", n);
+      r = vs_xstrdup(buf);
+    }
+  else
+    {
+      r = vs_xstrdup(value);
+    }
+
+  for (i = 0; r[i] != '\0'; i++)
+    {
+      if ((flags & VF_LOWER) != 0)
+        {
+          r[i] = (char)tolower((unsigned char)r[i]);
+        }
+      else if ((flags & VF_UPPER) != 0)
+        {
+          r[i] = (char)toupper((unsigned char)r[i]);
+        }
+    }
+
+  return r;
+}
+
+bool var_is_assoc(const char *name)
+{
+  struct var_s *v = var_lookup(name);
+
+  return v != NULL && v->arr != NULL && v->arr->assoc;
+}
+
+/* The associative array behind 'name'; with create, a missing variable
+ * becomes one. An indexed array cannot be converted, as in bash.
+ */
+
+struct arr_s *var_assoc(const char *name, bool create)
+{
+  struct var_s *v = var_lookup(name);
+
+  if (v != NULL && v->arr != NULL)
+    {
+      if (v->arr->assoc)
+        {
+          return v->arr;
+        }
+
+      if (create)
+        {
+          vs_err("%s: cannot convert indexed to associative array", name);
+        }
+
+      return NULL;
+    }
+
+  if (!create)
+    {
+      return NULL;
+    }
+
+  if (v == NULL)
+    {
+      v = var_create(name);
+    }
+  else if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return NULL;
+    }
+
+  v->arr = arr_new_assoc();
+  if (v->value != NULL)
+    {
+      arr_set_key(v->arr, "0", v->value);      /* the scalar becomes element "0" */
+      free(v->value);
+      v->value = NULL;
+    }
+
+  return v->arr;
+}
+
+const char *var_ref_get(const char *name, const struct subref_s *r)
+{
+  if (r->key != NULL)
+    {
+      struct var_s *v = var_lookup(name);
+
+      return (v != NULL && v->arr != NULL && v->arr->assoc)
+             ? arr_get_key(v->arr, r->key) : NULL;
+    }
+
+  return var_elem_get(name, r->idx);
+}
+
+int var_ref_set(const char *name, const struct subref_s *r, const char *val)
+{
+  struct var_s *v;
+  struct arr_s *a;
+  char *cv;
+
+  if (r->key == NULL)
+    {
+      return var_elem_set(name, r->idx, val);
+    }
+
+  v = var_lookup(name);
+  if (v != NULL && (v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  a = var_assoc(name, true);
+  if (a == NULL)
+    {
+      return -1;
+    }
+
+  v = var_lookup(name);
+  v->flags &= ~(unsigned)VF_NOVALUE;
+  cv = (v->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0
+       ? var_attr_value(v->flags, val) : vs_xstrdup(val);
+  arr_set_key(a, r->key, cv);
+  free(cv);
+  return 0;
+}
+
+int var_ref_unset(const char *name, const struct subref_s *r)
+{
+  struct var_s *v;
+
+  if (r->key == NULL)
+    {
+      return var_elem_unset(name, r->idx);
+    }
+
+  v = var_lookup(name);
+  if (v == NULL || v->arr == NULL || !v->arr->assoc)
+    {
+      return 0;
+    }
+
+  if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  arr_unset_key(v->arr, r->key);
+  return 0;
+}
+
+void subref_free(struct subref_s *r)
+{
+  free(r->key);
+  r->key = NULL;
 }

@@ -102,6 +102,7 @@ static struct func_s *clone_funcs(const struct func_s *f)
       struct func_s *c = vs_xmalloc(sizeof(*c));
 
       c->name = vs_xstrdup(f->name);
+      c->src = vs_xstrdup(f->src);
       c->body = f->body;
       c->arena = f->arena;
       arena_retain(c->arena);
@@ -121,6 +122,7 @@ static void free_funcs(struct func_s *f)
 
       arena_release(f->arena);
       free(f->name);
+      free(f->src);
       free(f);
       f = n;
     }

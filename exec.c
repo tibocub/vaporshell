@@ -375,6 +375,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
   int i;
   int nargs = argc - 1;
   int saved_loops;
+  struct frame_s frame;
 
   if (g_sh.func_depth >= MAX_FUNC_DEPTH)
     {
@@ -398,7 +399,9 @@ static int call_function(struct func_s *f, int argc, char **argv)
 
   saved_loops = g_sh.loop_depth;
   g_sh.loop_depth = 0;
+  frame_push(&frame, f->name, f->src, g_sh.lineno, true);
   status = exec_node(f->body);
+  frame_pop(&frame);
   g_sh.loop_depth = saved_loops;
   if (g_sh.unwind == UW_RETURN)
     {
@@ -555,9 +558,86 @@ static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
   free(tv);
 }
 
+/* declare, typeset, local, export and readonly take assignment-shaped arguments
+ * that are not ordinary words: the value is not split or globbed, and an
+ * array literal must reach the builtin unexpanded so its own quoting counts.
+ */
+
+static bool is_decl_command(const struct word_s *w)
+{
+  static const char *const names[] = { "declare", "typeset", "local", "export", "readonly", NULL };
+  int i;
+
+  if (!vs_feat(VF_BASH_SYNTAX) || w == NULL)
+    {
+      return false;
+    }
+
+  for (i = 0; names[i] != NULL; i++)
+    {
+      if (strcmp(w->text, names[i]) == 0 && func_find(names[i]) == NULL)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static int expand_decl_words(const struct word_s *w, struct fieldv_s *argv,
+                             unsigned long long *raw)
+{
+  struct word_s one;
+
+  one = *w;
+  one.next = NULL;
+  if (expand_words(&one, argv) != 0)
+    {
+      return -1;
+    }
+
+  for (w = w->next; w != NULL; w = w->next)
+    {
+      if (asg_is_word(w->text))
+        {
+          bool is_raw = false;
+          char *s = assign_decl_word(w->text, &is_raw);
+
+          if (s == NULL)
+            {
+              return -1;
+            }
+
+          fv_add(argv, s);
+          if (is_raw)
+            {
+              if (argv->n > 64)
+                {
+                  vs_err("too many arguments for an array assignment");
+                  return -1;
+                }
+
+              *raw |= 1ULL << (argv->n - 1);
+            }
+        }
+      else
+        {
+          one = *w;
+          one.next = NULL;
+          if (expand_words(&one, argv) != 0)
+            {
+              return -1;
+            }
+        }
+    }
+
+  return 0;
+}
+
 static int exec_simple(struct node_s *n)
 {
   struct fieldv_s argv;
+  unsigned long long rawmask = 0;
   struct tmpvar_s *tv = NULL;
   int ntv = 0;
   struct redir_saved_s sv;
@@ -580,7 +660,8 @@ static int exec_simple(struct node_s *n)
 
   fv_init(&argv);
 
-  if (expand_words(n->words, &argv) != 0)
+  if ((is_decl_command(n->words) ? expand_decl_words(n->words, &argv, &rawmask)
+                                 : expand_words(n->words, &argv)) != 0)
     {
       fv_free(&argv);
       return g_sh.unwind == UW_EXIT ? g_sh.last_status : 1;
@@ -680,7 +761,9 @@ static int exec_simple(struct node_s *n)
       (fn == NULL || (b->special && vs_feat(VF_SPECIAL_BEFORE_FUNC))))
     {
       keep_assign = b->special && vs_feat(VF_SPECIAL_ASSIGN_KEEP);
+      g_sh.decl_raw = rawmask;
       status = call_builtin(b, argv.n, argv.v);
+      g_sh.decl_raw = 0;
     }
   else if (fn != NULL)
     {
@@ -998,6 +1081,8 @@ static int run_stages(struct node_s *first, int nst)
     {
       int s = pids[i] > 0 ? wait_for(pids[i]) : 1;
 
+      ps_record(i, s);
+
       if (s != 0)
         {
           failed = s;
@@ -1097,6 +1182,8 @@ static int run_stages(struct node_s *first, int nst)
   for (i = 0; i < nst; i++)
     {
       int s = pids[i] > 0 ? wait_for(pids[i]) : 127;
+
+      ps_record(i, s);
 
       if (s != 0)
         {
@@ -1282,6 +1369,8 @@ static int run_stages_inproc(struct node_s *first, int nst)
   for (i = 0; i < nst; i++)
     {
       int s = pids[i] > 0 ? wait_for(pids[i]) : stat_of[i];
+
+      ps_record(i, s);
 
       if (s != 0)
         {
@@ -1492,14 +1581,42 @@ static int db_regex(const char *subject, const char *raw)
     }
 
   pat_free(&pat);
-  rc = regcomp(&rx, re.s != NULL ? re.s : "", REG_EXTENDED);
+  rc = regcomp(&rx, re.s != NULL ? re.s : "", REG_EXTENDED | (g_sh.so_nocasematch ? REG_ICASE : 0));
   sb_free(&re);
   if (rc != 0)
     {
       return 2;
     }
 
-  rc = regexec(&rx, subject, 0, NULL, 0);
+  {
+    /* BASH_REMATCH: the whole match and each group; a group that did not take
+     * part is an empty element. A failed match leaves it empty.
+     */
+
+    size_t ng = rx.re_nsub + 1;
+    regmatch_t *m = vs_xmalloc(ng * sizeof(*m));
+    struct arr_s *a = arr_new();
+
+    rc = regexec(&rx, subject, ng, m, 0);
+    if (rc == 0)
+      {
+        size_t g;
+
+        for (g = 0; g < ng; g++)
+          {
+            char *piece = m[g].rm_so >= 0
+                          ? vs_xstrndup(subject + m[g].rm_so, (size_t)(m[g].rm_eo - m[g].rm_so))
+                          : vs_xstrdup("");
+
+            arr_set(a, (long)g, piece);
+            free(piece);
+          }
+      }
+
+    var_array_replace("BASH_REMATCH", a);
+    free(m);
+  }
+
   regfree(&rx);
   return rc == 0 ? 0 : 1;
 }
@@ -2001,6 +2118,18 @@ int exec_node(struct node_s *n)
       case N_DB_NOT:
       case N_DB_TEST:
         break;                       /* only ever evaluated by db_eval() */
+    }
+
+  /* PIPESTATUS is the statuses of the last pipeline that ran: a real pipeline
+   * records its stages itself, a leaf command is a pipeline of one, and a
+   * compound command adds nothing (`while false; do :; done` leaves the 1 of
+   * its condition)
+   */
+
+  if (n->type == N_SIMPLE || n->type == N_SUBSHELL || n->type == N_DBRACKET ||
+      n->type == N_ARITH || n->type == N_FUNCDEF)
+    {
+      ps_single(status);
     }
 
   if (g_sh.unwind == UW_NONE)

@@ -168,35 +168,73 @@ static bool asg_split(const char *raw, struct asg_s *a)
   return true;
 }
 
-/* ---- name[i]=v ---------------------------------------------------------------- */
+/* ---- Storing an already-expanded value: name=v name+=v name[i]=v name[k]+=v -------- */
 
-static int assign_elem(const struct asg_s *a, const char *val)
+static long arith_of(const char *s)
 {
-  long idx;
+  long n = 0;
 
-  if (expand_subscript(a->sub, a->sub_len, a->name, &idx) != 0)
+  if (s != NULL && s[0] != '\0' && arith_eval(s, &n) != 0)
     {
-      return 1;
+      n = 0;                             /* the error was printed */
     }
 
-  if (a->append)
-    {
-      const char *cur = var_elem_get(a->name, idx);
+  return n;
+}
 
-      if (cur != NULL)
+/* What += stores: the old value and the new one joined, or, for an integer
+ * variable, their arithmetic sum.
+ */
+
+static char *appended(const char *name, const struct subref_s *r, const char *val)
+{
+  const char *cur = r != NULL ? var_ref_get(name, r) : var_get(name);
+  struct var_s *v = var_lookup(name);
+  char *both;
+
+  if (v != NULL && (v->flags & VF_INTEGER) != 0)
+    {
+      char buf[32];
+
+      snprintf(buf, sizeof(buf), "%ld", arith_of(cur) + arith_of(val));
+      return vs_xstrdup(buf);
+    }
+
+  if (cur == NULL)
+    {
+      return vs_xstrdup(val);
+    }
+
+  both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
+  strcpy(both, cur);
+  strcat(both, val);
+  return both;
+}
+
+static int apply_value(const struct asg_s *a, const char *val)
+{
+  struct subref_s r;
+  char *use = NULL;
+  int status;
+
+  if (a->has_sub)
+    {
+      if (expand_subref(a->sub, a->sub_len, a->name, &r) != 0)
         {
-          char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
-          int r;
-
-          strcpy(both, cur);
-          strcat(both, val);
-          r = var_elem_set(a->name, idx, both);
-          free(both);
-          return r != 0 ? 1 : 0;
+          return 1;
         }
+
+      use = a->append ? appended(a->name, &r, val) : NULL;
+      status = var_ref_set(a->name, &r, use != NULL ? use : val) != 0 ? 1 : 0;
+      subref_free(&r);
+      free(use);
+      return status;
     }
 
-  return var_elem_set(a->name, idx, val) != 0 ? 1 : 0;
+  use = a->append ? appended(a->name, NULL, val) : NULL;
+  status = var_set(a->name, use != NULL ? use : val) != 0 ? 1 : 0;
+  free(use);
+  return status;
 }
 
 /* ---- name=(...) ---------------------------------------------------------------- */
@@ -238,6 +276,16 @@ static char *literal_word(const char *s, size_t len, size_t *pos)
     }
 
   start = i;
+  if (s[i] == '[')
+    {
+      size_t close = asg_subscript_end(s, len, i);
+
+      if (close != (size_t)-1)
+        {
+          i = close + 1;                    /* [a b]=v : the key may contain spaces */
+        }
+    }
+
   while (i < len && s[i] != ' ' && s[i] != '\t' && s[i] != '\n')
     {
       size_t e;
@@ -300,13 +348,16 @@ static bool literal_subscript(const char *w, size_t *sub_len, bool *append,
   return false;
 }
 
-static int assign_compound(const struct asg_s *a)
+static int assign_compound(const struct asg_s *a, bool force_assoc)
 {
   size_t vlen = strlen(a->val);
   size_t len;
   size_t pos = 0;
   const char *inner = a->val + 1;
+  bool assoc = force_assoc || var_is_assoc(a->name);
   struct arr_s *na;
+  struct fieldv_s plain;               /* an associative literal of bare words: k1 v1 k2 v2 */
+  bool saw_sub = false;
   long next;
   char *w;
   int status = 0;
@@ -317,23 +368,37 @@ static int assign_compound(const struct asg_s *a)
       return 1;
     }
 
+  if (assoc && var_array(a->name, false) != NULL && !var_is_assoc(a->name))
+    {
+      vs_err("%s: cannot convert indexed to associative array", a->name);
+      return 1;
+    }
+
   len = vlen - 2;
   if (a->append)
     {
       struct arr_s *old = var_array(a->name, false);
 
-      na = old != NULL ? arr_clone(old) : arr_new();
+      na = old != NULL ? arr_clone(old) : (assoc ? arr_new_assoc() : arr_new());
       if (old == NULL && var_get(a->name) != NULL)
         {
-          arr_set(na, 0, var_get(a->name));       /* a+=(x) on a scalar keeps its value */
+          if (assoc)
+            {
+              arr_set_key(na, "0", var_get(a->name));
+            }
+          else
+            {
+              arr_set(na, 0, var_get(a->name));    /* a+=(x) on a scalar keeps its value */
+            }
         }
     }
   else
     {
-      na = arr_new();
+      na = assoc ? arr_new_assoc() : arr_new();
     }
 
-  next = a->append ? arr_max_index(na) + 1 : 0;
+  next = (a->append && !assoc) ? arr_max_index(na) + 1 : 0;
+  fv_init(&plain);
 
   while (status == 0 && (w = literal_word(inner, len, &pos)) != NULL)
     {
@@ -343,33 +408,67 @@ static int assign_compound(const struct asg_s *a)
 
       if (literal_subscript(w, &sub_len, &app, &val_off))
         {
-          long idx;
           char *val = expand_assign_str(w + val_off);
           char *sub = vs_xstrndup(w + 1, sub_len);
 
-          if (val == NULL || expand_subscript(sub, sub_len, NULL, &idx) != 0)
+          saw_sub = true;
+          if (val == NULL)
             {
               status = 1;
             }
-          else
+          else if (assoc)
             {
-              const char *cur = app ? arr_get(na, idx) : NULL;
+              char *key = expand_word_str(sub);
+              const char *cur = (app && key != NULL) ? arr_get_key(na, key) : NULL;
 
-              if (cur != NULL)
+              if (key == NULL)
+                {
+                  status = 1;
+                }
+              else if (cur != NULL)
                 {
                   char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
 
                   strcpy(both, cur);
                   strcat(both, val);
-                  arr_set(na, idx, both);
+                  arr_set_key(na, key, both);
                   free(both);
                 }
               else
                 {
-                  arr_set(na, idx, val);
+                  arr_set_key(na, key, val);
                 }
 
-              next = idx + 1;
+              free(key);
+            }
+          else
+            {
+              long idx;
+
+              if (expand_subscript(sub, sub_len, NULL, &idx) != 0)
+                {
+                  status = 1;
+                }
+              else
+                {
+                  const char *cur = app ? arr_get(na, idx) : NULL;
+
+                  if (cur != NULL)
+                    {
+                      char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
+
+                      strcpy(both, cur);
+                      strcat(both, val);
+                      arr_set(na, idx, both);
+                      free(both);
+                    }
+                  else
+                    {
+                      arr_set(na, idx, val);
+                    }
+
+                  next = idx + 1;
+                }
             }
 
           free(val);
@@ -388,6 +487,13 @@ static int assign_compound(const struct asg_s *a)
             {
               status = 1;
             }
+          else if (assoc)
+            {
+              for (k = 0; k < f.n; k++)
+                {
+                  fv_add(&plain, vs_xstrdup(f.v[k]));
+                }
+            }
           else
             {
               for (k = 0; k < f.n; k++)
@@ -400,6 +506,44 @@ static int assign_compound(const struct asg_s *a)
         }
 
       free(w);
+    }
+
+  if (status == 0 && assoc && plain.n > 0)
+    {
+      int k;
+
+      if (saw_sub)
+        {
+          vs_err("%s: %s: must use subscript when assigning associative array",
+                 a->name, plain.v[0]);
+          status = 1;
+        }
+      else
+        {
+          for (k = 0; k < plain.n; k += 2)
+            {
+              arr_set_key(na, plain.v[k], k + 1 < plain.n ? plain.v[k + 1] : "");
+            }
+        }
+    }
+
+  fv_free(&plain);
+  if (status == 0)
+    {
+      struct var_s *pv = var_lookup(a->name);
+
+      if (pv != NULL && (pv->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0)
+        {
+          size_t k;
+
+          for (k = 0; k < na->n; k++)
+            {
+              char *cv = var_attr_value(pv->flags, na->e[k].val);
+
+              free(na->e[k].val);
+              na->e[k].val = cv;
+            }
+        }
     }
 
   if (status == 0 && var_array_replace(a->name, na) != 0)
@@ -431,38 +575,37 @@ int assign_apply(const char *raw)
 
   if (a.compound)
     {
-      status = assign_compound(&a);
+      status = assign_compound(&a, false);
     }
   else
     {
       char *val = expand_assign_str(a.val);
 
-      if (val == NULL)
-        {
-          status = 1;
-        }
-      else if (a.has_sub)
-        {
-          status = assign_elem(&a, val);
-        }
-      else if (a.append && var_get(a.name) != NULL)
-        {
-          const char *cur = var_get(a.name);
-          char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
-
-          strcpy(both, cur);
-          strcat(both, val);
-          status = var_set(a.name, both) != 0 ? 1 : 0;
-          free(both);
-        }
-      else
-        {
-          status = var_set(a.name, val) != 0 ? 1 : 0;
-        }
-
+      status = val == NULL ? 1 : apply_value(&a, val);
       free(val);
     }
 
+  free(a.name);
+  return status;
+}
+
+/* The declaration builtins' arguments: 'arg' is either an array literal that
+ * was left unexpanded (is_raw), or `target=value` whose value is already
+ * expanded and must not be expanded again.
+ */
+
+int assign_apply_decl(const char *arg, bool is_raw, bool force_assoc)
+{
+  struct asg_s a;
+  int status;
+
+  if (!asg_split(arg, &a))
+    {
+      vs_err("%s: not an assignment", arg);
+      return 1;
+    }
+
+  status = (is_raw && a.compound) ? assign_compound(&a, force_assoc) : apply_value(&a, a.val);
   free(a.name);
   return status;
 }
@@ -533,7 +676,6 @@ bool asg_ref_isset(const char *text)
   const char *sub;
   size_t sublen;
   bool set;
-  long idx;
 
   if (!split_ref(text, &name, &sub, &sublen))
     {
@@ -548,16 +690,18 @@ bool asg_ref_isset(const char *text)
     }
   else
     {
-      set = expand_subscript(sub, sublen, name, &idx) == 0 &&
-            var_elem_get(name, idx) != NULL;
+      struct subref_s r;
+
+      set = expand_subref(sub, sublen, name, &r) == 0 && var_ref_get(name, &r) != NULL;
+      subref_free(&r);
     }
 
   free(name);
   return set;
 }
 
-/* unset name[sub]: 0, or 1 after an error message. name[@] empties the
- * array but keeps it, as bash does.
+/* unset name[sub]: 0, or 1 after an error message. name[@] empties an indexed
+ * array but keeps it; on an associative array @ is just a key, as in bash.
  */
 
 int asg_unset_ref(const char *text, bool *handled)
@@ -565,7 +709,6 @@ int asg_unset_ref(const char *text, bool *handled)
   char *name;
   const char *sub;
   size_t sublen;
-  long idx;
   int status = 0;
 
   *handled = split_ref(text, &name, &sub, &sublen);
@@ -574,7 +717,7 @@ int asg_unset_ref(const char *text, bool *handled)
       return 0;
     }
 
-  if (all_elements(sub, sublen))
+  if (all_elements(sub, sublen) && !var_is_assoc(name))
     {
       struct arr_s *a = var_array(name, false);
 
@@ -587,20 +730,101 @@ int asg_unset_ref(const char *text, bool *handled)
           status = var_unset(name) != 0 ? 1 : 0;
         }
     }
-  else if (expand_subscript(sub, sublen, name, &idx) != 0)
-    {
-      status = 1;
-    }
-  else if (!var_is_array(name) && var_get(name) != NULL && idx != 0)
-    {
-      vs_err("unset: %s: not an array variable", name);
-      status = 1;
-    }
   else
     {
-      status = var_elem_unset(name, idx) != 0 ? 1 : 0;
+      struct subref_s r;
+
+      if (expand_subref(sub, sublen, name, &r) != 0)
+        {
+          status = 1;
+        }
+      else if (r.key == NULL && !var_is_array(name) && var_get(name) != NULL && r.idx != 0)
+        {
+          vs_err("unset: %s: not an array variable", name);
+          status = 1;
+        }
+      else
+        {
+          status = var_ref_unset(name, &r) != 0 ? 1 : 0;
+        }
+
+      subref_free(&r);
     }
 
   free(name);
   return status;
+}
+
+/* The variable a declaration builtin's argument names: `x`, `x=v`, `x+=v`,
+ * `x[i]=v`. Returns a malloc'd name, or NULL if it is not a valid identifier.
+ * *is_asg says whether there was an assignment.
+ */
+
+char *asg_target_name(const char *arg, bool *is_asg)
+{
+  struct asg_pos_s p;
+
+  if (asg_scan(arg, &p))
+    {
+      *is_asg = true;
+      return vs_xstrndup(arg, p.name_len);
+    }
+
+  *is_asg = false;
+  if (name_start_ch(arg[0]))
+    {
+      size_t i = 0;
+
+      while (name_ch(arg[i]))
+        {
+          i++;
+        }
+
+      if (arg[i] == '\0')
+        {
+          return vs_xstrdup(arg);
+        }
+    }
+
+  return NULL;
+}
+
+/* An assignment-shaped argument of a declaration builtin. An array literal is
+ * returned as written (*is_raw): the builtin expands its elements itself. Any
+ * other is `target=value` with the value expanded but not split or globbed,
+ * so `declare v=$x` keeps x's spaces; the target keeps its raw subscript, which
+ * is expanded once, later.
+ */
+
+char *assign_decl_word(const char *raw, bool *is_raw)
+{
+  struct asg_s a;
+  char *val;
+  char *out;
+  size_t plen;
+
+  if (!asg_split(raw, &a))
+    {
+      return NULL;
+    }
+
+  free(a.name);
+  *is_raw = a.compound;
+  if (a.compound)
+    {
+      return vs_xstrdup(raw);
+    }
+
+  val = expand_assign_str(a.val);
+  if (val == NULL)
+    {
+      return NULL;
+    }
+
+  plen = (size_t)(a.val - raw);
+  out = vs_xmalloc(plen + strlen(val) + 1);
+  memcpy(out, raw, plen);
+  strcpy(out + plen, val);
+  free(val);
+  return out;
 }

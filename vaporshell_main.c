@@ -167,6 +167,7 @@ static int shell_main(int argc, char *argv[])
         }
 
       pos_set(argv + i, argc - i);
+      g_sh.cur_src = g_sh.arg0;             /* -c: bash reports $0 as the source */
       status = run_string(command, strlen(command));
       return finish(status);
     }
@@ -174,6 +175,9 @@ static int shell_main(int argc, char *argv[])
   if (i < argc)
     {
       g_sh.arg0 = argv[i];
+      g_sh.cur_src = argv[i];
+      g_sh.cur_script = argv[i];
+      g_sh.script_main = true;             /* FUNCNAME ends with "main" for a script */
       pos_set(argv + i + 1, argc - i - 1);
       status = run_file(argv[i]);
       return finish(status);

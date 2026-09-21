@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **371 of 392**.
+Probes matching bash in bash mode: **403 of 417**.
 
 
 ## How this is measured
@@ -251,7 +251,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `herestring` | ok |  |
 | `herestring_expansion` | ok |  |
 
-### Compound commands, functions, pipelines  (42/45)
+### Compound commands, functions, pipelines  (44/45)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -273,7 +273,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `group` | ok |  |
 | `pipeline_status` | ok |  |
 | `pipefail` | ok | bash set -o pipefail |
-| `pipestatus` | **differs** | bash PIPESTATUS array |
+| `pipestatus` | ok | bash PIPESTATUS array |
 | `function_basic` | ok |  |
 | `function_return` | ok |  |
 | `function_recursion` | ok |  |
@@ -281,7 +281,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `function_positional_scope` | ok |  |
 | `function_unset` | ok |  |
 | `conditional_dbracket` | ok | bash [[ ]] |
-| `conditional_dbracket_re` | **differs** | bash [[ =~ ]] |
+| `conditional_dbracket_re` | ok | bash [[ =~ ]] |
 | `conditional_arith` | ok | bash (( )) |
 | `select_loop` | **differs** | bash select |
 | `time_keyword` | ok | bash time |
@@ -510,15 +510,15 @@ Each table lists probes for one area; the count is probes matching bash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (14/16)
+### Variables  (24/24)
 
 | probe | bash mode | note |
 |---|---|---|
 | `bashvar_version` | ok | bash BASH_VERSION |
-| `bashvar_versinfo` | **differs** | bash BASH_VERSINFO |
+| `bashvar_versinfo` | ok | bash BASH_VERSINFO |
 | `bashvar_random` | ok | bash RANDOM |
 | `bashvar_seconds` | ok | bash SECONDS |
-| `bashvar_funcname` | **differs** | bash FUNCNAME |
+| `bashvar_funcname` | ok | bash FUNCNAME |
 | `bashvar_bash_source` | ok | bash BASH_SOURCE |
 | `bashvar_uid` | ok | bash UID EUID |
 | `bashvar_ppid` | ok |  |
@@ -530,8 +530,16 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bashvar_ps4` | ok |  |
 | `bashvar_ifs_default` | ok |  |
 | `bashvar_path_default` | ok |  |
+| `pipestatus_pipeline` | ok |  |
+| `pipestatus_compound_and_negation` | ok |  |
+| `pipestatus_function_and_subshell` | ok |  |
+| `bash_rematch_groups` | ok |  |
+| `bash_rematch_cleared` | ok |  |
+| `funcname_stack` | ok |  |
+| `bash_source_top_level` | ok |  |
+| `bash_versinfo` | ok |  |
 
-### Arrays  (22/22)
+### Arrays  (28/28)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -557,14 +565,20 @@ Each table lists probes for one area; the count is probes matching bash.
 | `array_scoping` | ok |  |
 | `array_set_listing` | ok |  |
 | `array_literal_multiline` | ok |  |
+| `assoc_basics` | ok |  |
+| `assoc_pairs_literal` | ok |  |
+| `assoc_keys_with_spaces` | ok |  |
+| `assoc_arithmetic` | ok |  |
+| `assoc_unset_and_test` | ok |  |
+| `assoc_convert` | ok |  |
 
-### Bash builtins  (13/24)
+### Bash builtins  (27/35)
 
 | probe | bash mode | note |
 |---|---|---|
-| `bi_declare` | **differs** | bash declare |
-| `bi_declare_p` | **differs** | bash declare -p |
-| `bi_typeset` | **differs** | bash typeset |
+| `bi_declare` | ok | bash declare |
+| `bi_declare_p` | ok | bash declare -p |
+| `bi_typeset` | ok | bash typeset |
 | `bi_let` | ok | bash let |
 | `bi_mapfile` | **differs** | bash mapfile |
 | `bi_shopt` | ok | bash shopt |
@@ -586,6 +600,17 @@ Each table lists probes for one area; the count is probes matching bash.
 | `shopt_list` | ok |  |
 | `shopt_invalid` | ok |  |
 | `pushd_popd_dirs` | ok |  |
+| `decl_print_scalars` | ok |  |
+| `decl_print_arrays` | ok |  |
+| `decl_attribute_order` | ok |  |
+| `decl_integer` | ok |  |
+| `decl_case_attributes` | ok |  |
+| `decl_scope` | ok |  |
+| `decl_no_word_splitting` | ok |  |
+| `decl_attribute_removal` | ok |  |
+| `decl_array_literals_in_builtins` | ok |  |
+| `decl_errors` | ok |  |
+| `decl_typeset` | ok |  |
 
 ### Syntax and misc  (23/23)
 
@@ -621,11 +646,11 @@ Each table lists probes for one area; the count is probes matching bash.
 Every builtin `compgen -b` reports in the reference bash, and whether
 vaporshell (bash mode) has it as a builtin.
 
-bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 43 of them.
+bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 45 of them.
 
-**Missing (18):** `bg` `bind` `caller` `compgen` `complete` `compopt` `declare` `disown` `enable` `fc` `fg` `history` `jobs` `logout` `mapfile` `readarray` `suspend` `typeset`
+**Missing (16):** `bg` `bind` `caller` `compgen` `complete` `compopt` `disown` `enable` `fc` `fg` `history` `jobs` `logout` `mapfile` `readarray` `suspend`
 
-**Provided (43):** `.` `:` `[` `alias` `break` `builtin` `cd` `command` `continue` `dirs` `echo` `eval` `exec` `exit` `export` `false` `getopts` `hash` `help` `kill` `let` `local` `popd` `printf` `pushd` `pwd` `read` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `ulimit` `umask` `unalias` `unset` `wait`
+**Provided (45):** `.` `:` `[` `alias` `break` `builtin` `cd` `command` `continue` `declare` `dirs` `echo` `eval` `exec` `exit` `export` `false` `getopts` `hash` `help` `kill` `let` `local` `popd` `printf` `pushd` `pwd` `read` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
 
 
 ## Known deliberate differences
@@ -658,20 +683,42 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 43 of the
   the shell goes on, where bash aborts the rest of a `-c` command list and, for
   a *bad substitution*, exits a script. `${@/pat/rep}` and other per-element
   operators on `$@` are rejected rather than applied to each parameter.
-- **Arrays**: indexed arrays are implemented: literals (multi-line, with
-  comments, `[i]=v` elements), `a[i]=v`, `+=`, negative and arithmetic
-  subscripts (also inside `$(( ))`), `$a` meaning `${a[0]}`, every
-  `${a[...]}` form including `[@]`/`[*]`, `${#a[@]}`, `${!a[@]}`, index-based
-  slices, defaults, per-element `#` `%` `/` `^` `,` `@Q`, `unset a[i]`,
-  `[[ -v a[i] ]]`, and `set` listing them. Not yet: associative arrays
-  (`declare -A`), `declare`/`typeset -a`, array literals as arguments of
-  `local`/`export`/`readonly` (they need declaration-builtin handling, so
-  `local a=(x y)` currently sets the *string* `(x y)`), `mapfile`, `read -a`,
-  `PIPESTATUS`, `BASH_REMATCH`, `FUNCNAME`, `BASH_SOURCE`, `BASH_VERSINFO`.
+- **Arrays**: indexed and associative arrays are implemented: literals
+  (multi-line, with comments, `[i]=v` elements, and bash 5's `(k1 v1 k2 v2)`
+  pairs for associative ones), `a[i]=v`, `+=`, negative and arithmetic
+  subscripts (also inside `$(( ))`; in an associative array `u[foo]` is the
+  literal key `foo`), `$a` meaning `${a[0]}` (key `"0"` for an associative
+  one), every `${a[...]}` form including `[@]`/`[*]`, `${#a[@]}`, `${!a[@]}`,
+  index-based slices, defaults, per-element `#` `%` `/` `^` `,` `@Q`,
+  `unset a[i]`, `[[ -v a[i] ]]`, and `set`/`declare -p` listing them.
+  Associative arrays keep **insertion order**; bash's is its hash order, which
+  no script may rely on. Not yet: `mapfile`/`readarray` and `read -a`.
   `a[1]=x cmd` (an element assignment in front of a command) is an error here.
   Arrays are not exported to child processes, as in bash. A bad subscript in
   an expansion or in arithmetic prints a message and reads as empty/0, as in
   bash; in an assignment it is an error.
+- **Declaration builtins**: `declare`/`typeset`, `local`, `export` and
+  `readonly` share one implementation in bash mode (POSIX mode keeps dash's
+  simpler ones). Their assignment-shaped arguments are not ordinary words: the
+  value is not word-split, and an array literal is passed through unexpanded so
+  `declare -a a=("$x" y)` keeps its quoting. Attributes `-a -A -i -l -u -r -x`
+  (and `+i +l +u +x`), `-g`, `-p` (with bash's fixed attribute-letter order
+  and its rules for declared-but-unassigned arrays), and `-F` work; `export -n`
+  too. `declare -i` evaluates assignments and `+=` arithmetically, `-l`/`-u`
+  change case, also for every element of a literal. Not supported, with an
+  error rather than silence: `-n` (namerefs) and `-f` (printing a function's
+  body). `declare` with no arguments lists variables in `set` format but not
+  functions.
+- **Special variables**: `PIPESTATUS` (recorded by every simple command,
+  `[[`, `((`, subshell and pipeline; a compound command adds nothing, so
+  `while false; do :; done` leaves the `1` of its condition), `BASH_REMATCH`
+  (set by `[[ =~ ]]`, where an unmatched optional group is an empty element and a
+  failed match empties it), `FUNCNAME`, `BASH_SOURCE`, `BASH_LINENO` (one entry
+  per function or `source` frame, plus `main` for a script but not for `-c`),
+  and the read-only `BASH_VERSINFO`. They are computed when first read.
+  `BASH_VERSINFO[5]` is a placeholder machine type.
+- **A readonly variable's assignment error** fails that command and the shell
+  goes on; bash also abandons the rest of the line (`-c`) or the script.
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
   operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
   mode to the parameters joined into one string, without slices or replacement.

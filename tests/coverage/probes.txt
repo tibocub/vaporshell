@@ -951,3 +951,78 @@ set -- foo.txt bar.txt; echo ${@%.txt}; echo "${*#*.}"
 
 ## scalar_plus_equals | syntax
 x=a; x+=b; x+=c; echo $x; y+=z; echo $y
+
+## decl_print_scalars | bashbuiltin
+s=v; declare -p s; export x=1; declare -p x; readonly r=2; declare -p r; declare -i n=3+4; declare -p n; declare u; declare -p u
+
+## decl_print_arrays | bashbuiltin
+declare -a a=(1 "b c"); declare -p a; declare -a e; declare -p e; declare -A ea; declare -p ea; f=(); declare -p f
+
+## decl_attribute_order | bashbuiltin
+declare -aix z=(1 2); declare -p z; declare -lr lo=ABC; declare -p lo; declare -u up=abc; declare -p up
+
+## decl_integer | bashbuiltin
+declare -i i=2; i+=3; echo $i; i=4*5; echo $i; i=abc; echo $i; declare -i k=1; k+=1+1; echo $k
+
+## decl_case_attributes | bashbuiltin
+declare -u U=abc; U+=def; echo $U; declare -l L=ABC; L=XyZ; echo $L
+
+## decl_scope | bashbuiltin
+f() { declare v1=in; local v2=in; declare -g v3=in; }; f; echo "[$v1][$v2][$v3]"
+
+## decl_no_word_splitting | bashbuiltin
+w="1 2"; declare sp=$w; echo "[$sp]"; declare -a sq=($w); echo ${#sq[@]}; export ex=$w; echo "[$ex]"
+
+## decl_attribute_removal | bashbuiltin
+declare -x ex=1; declare +x ex; declare -p ex; declare -i ii=5; declare +i ii; declare -p ii
+
+## decl_array_literals_in_builtins | bashbuiltin
+export ea=(1 2); declare -p ea; readonly ra=(1 2); declare -p ra; f() { local a=(p q); a+=(r); echo ${a[@]}; }; f
+
+## decl_errors | bashbuiltin
+declare -p nope; echo rc=$?; declare 1x=2; echo rc=$?; declare -a ia=(1 2); declare -A ia; echo rc=$?
+
+## decl_typeset | bashbuiltin
+typeset -i t=1+1; declare -p t; typeset -a ta=(x); declare -p ta
+
+## assoc_basics | array
+declare -A m=([a]=1 [b]=2); echo ${m[a]} ${m[b]} ${#m[@]}; m[c]=3; m[a]+=x; echo ${m[a]} ${m[c]} ${m[nokey]:-none}
+
+## assoc_pairs_literal | array
+declare -A m=(a 1 b 2); echo ${m[a]} ${m[b]} ${#m[@]}
+
+## assoc_keys_with_spaces | array
+declare -A o=([a b]=1 ["c d"]=2 [e]=); echo ${#o[@]}; echo "${o[a b]}|${o[c d]}|[${o[e]}]"
+
+## assoc_arithmetic | array
+declare -A t=([a]=1); (( t[a] += 5 )); echo ${t[a]}; echo $(( t[a] * 2 )); declare -A u=([foo]=1); foo=zz; echo $(( u[foo] ))
+
+## assoc_unset_and_test | array
+declare -A w=([a]=1 [b]=2); unset "w[a]"; echo ${!w[@]}; [[ -v w[b] ]] && echo v-b; [[ -v w[zz] ]] || echo no-zz
+
+## assoc_convert | array
+x=scalar; declare -A x; declare -p x; declare -a ia=(1); declare -A ia; echo rc=$?
+
+## pipestatus_pipeline | bashvar
+true | false | true; echo "${PIPESTATUS[*]} ${#PIPESTATUS[@]}"; false; echo "${PIPESTATUS[@]}"
+
+## pipestatus_compound_and_negation | bashvar
+while false; do :; done; echo "${PIPESTATUS[@]}"; ! false; echo "${PIPESTATUS[@]}"; { false; true; } | true; echo "${PIPESTATUS[@]}"
+
+## pipestatus_function_and_subshell | bashvar
+f() { return 4; }; f; echo "${PIPESTATUS[@]}"; ( exit 3 ); echo "${PIPESTATUS[@]}"; x=1; echo "${PIPESTATUS[@]}"
+
+## bash_rematch_groups | bashvar
+[[ abc123 =~ ([a-z]+)([0-9]+) ]]; echo "${#BASH_REMATCH[@]} ${BASH_REMATCH[0]} ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"; [[ ab =~ (x)?(b) ]]; echo "${#BASH_REMATCH[@]} [${BASH_REMATCH[1]}] [${BASH_REMATCH[2]}]"
+
+## bash_rematch_cleared | bashvar
+[[ ab =~ (a) ]]; [[ zzz =~ (q) ]]; echo "[${BASH_REMATCH[@]}] ${#BASH_REMATCH[@]}"
+
+## funcname_stack | bashvar
+g() { echo "${FUNCNAME[@]} | ${#FUNCNAME[@]}"; h; }; h() { echo "${FUNCNAME[@]} | ${BASH_LINENO[@]}"; }; g; echo "[${FUNCNAME[@]}]"
+
+## bash_source_top_level | bashvar
+echo "[${BASH_SOURCE[@]}][${BASH_LINENO[@]}][${FUNCNAME[@]}]"
+
+## bash_versinfo | bashvar
+echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]} ${BASH_VERSINFO[2]} ${BASH_VERSINFO[3]} ${BASH_VERSINFO[4]} ${#BASH_VERSINFO[@]}"; (( BASH_VERSINFO[0] >= 4 )) && echo modern

@@ -112,10 +112,21 @@ int bi_shopt(int argc, char **argv);
 
 /* assign.c: assignment words. asg_is_word() only recognises them; */
 bool asg_is_word(const char *text);
+
+/* declare.c: the declaration builtins in bash mode */
+
+int bi_declare(int argc, char **argv);
+int bi_local_decl(int argc, char **argv);
+int bi_export_decl(int argc, char **argv);
+int bi_readonly_decl(int argc, char **argv);
+void vs_print_array_body(const struct arr_s *a);      /* builtins.c: ([0]="x" ...) */
 bool asg_ref_isset(const char *text);                /* -v name / name[i] / name[@] */
 int asg_unset_ref(const char *text, bool *handled);  /* unset name[i]; handled=false if not that form */
 size_t asg_subscript_end(const char *s, size_t len, size_t open);   /* the ] for a [ */
-int assign_apply(const char *raw);          /* name=v, name+=v, name[i]=v, name=(...) */
+int assign_apply(const char *raw);
+char *asg_target_name(const char *arg, bool *is_asg);   /* declaration builtins */
+char *assign_decl_word(const char *raw, bool *is_raw);
+int assign_apply_decl(const char *arg, bool is_raw, bool force_assoc);   /* declaration builtins */          /* name=v, name+=v, name[i]=v, name=(...) */
 bool assign_scalar_parts(const char *raw, char **name, const char **value, bool *append);
 int bi_pushd(int argc, char **argv);
 int bi_popd(int argc, char **argv);

@@ -122,6 +122,8 @@ struct lv_s
   char name[128];
   bool elem;
   bool bad;              /* a negative subscript out of range: reads 0, stores nothing */
+  bool assoc;            /* an associative array: the subscript is the literal key text */
+  char key[128];
   long idx;
 };
 
@@ -162,7 +164,36 @@ static bool read_lvalue(struct ar_s *a, struct lv_s *lv)
   lv->name[n] = '\0';
   lv->elem = false;
   lv->bad = false;
+  lv->assoc = false;
+  lv->key[0] = '\0';
   lv->idx = 0;
+  if (*a->p == '[' && vs_feat(VF_BASH_SYNTAX) && var_is_assoc(lv->name))
+    {
+      /* an associative array: `u[foo]` names the key foo, not the variable foo */
+
+      const char *end = skip_subscript(a->p);
+      size_t klen;
+
+      if (end == NULL)
+        {
+          ar_fail(a, "bad array subscript");
+          return false;
+        }
+
+      klen = (size_t)(end - a->p) - 2;
+      if (klen >= sizeof(lv->key))
+        {
+          klen = sizeof(lv->key) - 1;
+        }
+
+      memcpy(lv->key, a->p + 1, klen);
+      lv->key[klen] = '\0';
+      lv->assoc = true;
+      lv->elem = true;
+      a->p = end;
+      return true;
+    }
+
   if (*a->p == '[' && vs_feat(VF_BASH_SYNTAX))
     {
       long idx;
@@ -210,6 +241,15 @@ static long lv_value(struct ar_s *a, const struct lv_s *lv)
       return var_value(a, lv->name);
     }
 
+  if (lv->assoc)
+    {
+      struct subref_s r;
+
+      r.idx = 0;
+      r.key = (char *)lv->key;
+      return str_value(a, var_ref_get(lv->name, &r));
+    }
+
   return str_value(a, var_elem_get(lv->name, lv->idx));
 }
 
@@ -223,6 +263,21 @@ static bool lv_store(struct ar_s *a, const struct lv_s *lv, long v)
     }
 
   snprintf(buf, sizeof(buf), "%ld", v);
+  if (lv->assoc)
+    {
+      struct subref_s r;
+
+      r.idx = 0;
+      r.key = (char *)lv->key;
+      if (var_ref_set(lv->name, &r, buf) != 0)
+        {
+          a->err = true;
+          return false;
+        }
+
+      return true;
+    }
+
   if ((lv->elem ? var_elem_set(lv->name, lv->idx, buf) : var_set(lv->name, buf)) != 0)
     {
       a->err = true;
