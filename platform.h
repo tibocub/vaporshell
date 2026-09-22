@@ -71,6 +71,23 @@ bool vs_plat_export_all(void);
 int vs_plat_collate(const char *a, const char *b);
 void vs_plat_locale_update(void);
 
+/* Characters. In a multibyte locale (UTF-8 on a host) a character is one to
+ * several bytes; on NuttX, which has no locales, a character is always one byte
+ * and vs_plat_multibyte() is false. The rest of the shell reaches these only
+ * through mb.c.
+ *
+ * vs_plat_mbdecode(): the character at s, of which n bytes are available. It
+ * returns its length in bytes, 0 if the bytes so far begin a longer character,
+ * or (size_t)-1 if they are not a character at all; *wc is its code point.
+ */
+
+bool vs_plat_multibyte(void);
+size_t vs_plat_mbdecode(const char *s, size_t n, long *wc);
+size_t vs_plat_mbencode(long wc, char *out);                  /* 0 if it has no encoding */
+bool vs_plat_wc_isclass(long wc, const char *name);           /* "alpha", "upper", ... */
+long vs_plat_wc_toupper(long wc);
+long vs_plat_wc_tolower(long wc);
+
 /* Locate 'name' for execution. Returns a malloc()'d path, or NULL with
  * *err = ENOENT (not found) or EACCES (found, not executable). NuttX
  * resolves builtin apps by bare name itself, so it returns the name.

@@ -423,19 +423,23 @@ static void trim_and_add(struct xctx_s *x, const char *value, char op,
   char *wcopy = vs_xstrndup(word, wn);
   struct pat_s pat = expand_pattern(wcopy);
   size_t vl = strlen(value);
+  size_t nch;
+  size_t *bd = vs_mb_bounds(value, vl, &nch);     /* NULL: a byte is a character */
   size_t k;
   size_t cut = 0;
   bool found = false;
   char *tmp;
+
+#define BND(k) (bd != NULL ? bd[k] : (k))
 
   free(wcopy);
   tmp = vs_xmalloc(vl + 1);
 
   if (op == '#')
     {
-      for (k = 0; k <= vl && !found; k++)
+      for (k = 0; k <= nch && !found; k++)
         {
-          size_t len = longest ? vl - k : k;
+          size_t len = longest ? BND(nch - k) : BND(k);
 
           memcpy(tmp, value, len);
           tmp[len] = '\0';
@@ -450,9 +454,9 @@ static void trim_and_add(struct xctx_s *x, const char *value, char op,
     }
   else
     {
-      for (k = 0; k <= vl && !found; k++)
+      for (k = 0; k <= nch && !found; k++)
         {
-          size_t start = longest ? k : vl - k;
+          size_t start = longest ? BND(k) : BND(nch - k);
 
           if (pat_match(pat.s, pat.q, pat.len, value + start))
             {
@@ -470,6 +474,8 @@ static void trim_and_add(struct xctx_s *x, const char *value, char op,
       x_add_value(x, tmp, dq);
     }
 
+#undef BND
+  free(bd);
   free(tmp);
   pat_free(&pat);
 }
@@ -692,7 +698,7 @@ static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
     char buf[32];
     const char *val;
     const char *str = get_param(name, nlen, &val, buf, sizeof(buf)) ? val : "";
-    long slen = (long)strlen(str);
+    long slen = (long)vs_mb_count(str);        /* characters, not bytes */
     long end;
 
     if (off < 0)
@@ -729,9 +735,12 @@ static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
       }
 
     {
-      char *piece = vs_xstrndup(str + off, (size_t)(end - off));
+      size_t sbytes = strlen(str);
+      size_t b0 = vs_mb_skip(str, sbytes, (size_t)off);
+      size_t b1 = vs_mb_skip(str, sbytes, (size_t)end);
+      char *piece = vs_xstrndup(str + b0, b1 - b0);
 
-      x->present = true;
+      x->present = x->present || dq;       /* unquoted, x_add_value marks it (leading blanks are not a field) */
       x_add_value(x, piece, dq);
       free(piece);
     }
@@ -783,44 +792,59 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
   size_t vl = strlen(val);
   char *piece = vs_xmalloc(vl + 1);
   struct sbuf_s out;
-  size_t i = 0;
+  size_t nch;
+  size_t *bd = vs_mb_bounds(val, vl, &nch);   /* NULL: a byte is a character */
+  size_t ci = 0;                               /* the character we are at */
   bool allow_empty = at_start || at_end;
   bool literal;
   bool bounded;
+  size_t patchars;
+
+#define BND(k) (bd != NULL ? bd[k] : (k))
 
   rep_shape(pat, &literal, &bounded);
+  patchars = vs_mb_count_n(pat->s, pat->len);
   sb_init(&out);
-  while (i <= vl)
+  while (ci <= nch)
     {
-      size_t hit = (size_t)-1;
-      size_t j;
+      size_t i = BND(ci);
+      size_t hit = (size_t)-1;                /* the character the match ends at */
+      size_t hb;
 
-      if (!(at_start && i != 0) && literal)
+      if (!(at_start && ci != 0) && literal)
         {
           if (i + pat->len <= vl && memcmp(val + i, pat->s, pat->len) == 0 &&
-              (!at_end || i + pat->len == vl))
+              (!at_end || i + pat->len == vl) &&
+              (bd == NULL || (ci + patchars <= nch && bd[ci + patchars] == i + pat->len)))
             {
-              hit = i + pat->len;
+              hit = ci + patchars;
             }
         }
-      else if (!(at_start && i != 0))
+      else if (!(at_start && ci != 0))
         {
-          size_t jmax = bounded && vl - i > 4 * pat->len ? i + 4 * pat->len : vl;
+          /* a pattern without * or ( matches at most one character per pattern
+           * byte, so nothing longer need be tried
+           */
 
-          for (j = jmax; ; j--)
+          size_t jc;
+          size_t cmax = bounded && nch - ci > pat->len ? ci + pat->len : nch;
+
+          for (jc = cmax; ; jc--)
             {
+              size_t j = BND(jc);
+
               if ((j > i || allow_empty) && (!at_end || j == vl))
                 {
                   memcpy(piece, val + i, j - i);
                   piece[j - i] = '\0';
                   if (pat_match(pat->s, pat->q, pat->len, piece))
                     {
-                      hit = j;
+                      hit = jc;
                       break;
                     }
                 }
 
-              if (j == i)
+              if (jc == ci)
                 {
                   break;
                 }
@@ -829,15 +853,16 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
 
       if (hit == (size_t)-1)
         {
-          if (i < vl)
+          if (ci < nch)
             {
-              sb_addc(&out, val[i]);
+              sb_addn(&out, val + i, BND(ci + 1) - i);
             }
 
-          i++;
+          ci++;
           continue;
         }
 
+      hb = BND(hit);
       {
         size_t r;
 
@@ -845,7 +870,7 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
           {
             if (g_sh.so_patsub && rep->s[r] == '&' && !(rep->q != NULL && rep->q[r]))
               {
-                sb_addn(&out, val + i, hit - i);
+                sb_addn(&out, val + i, hb - i);
               }
             else
               {
@@ -856,26 +881,28 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
 
       if (!all)
         {
-          sb_adds(&out, val + hit);
-          i = vl + 1;
+          sb_adds(&out, val + hb);
+          ci = nch + 1;
           break;
         }
 
-      if (hit == i)
+      if (hit == ci)
         {
-          if (i < vl)
+          if (ci < nch)
             {
-              sb_addc(&out, val[i]);
+              sb_addn(&out, val + i, BND(ci + 1) - i);
             }
 
-          i++;
+          ci++;
         }
       else
         {
-          i = hit;
+          ci = hit;
         }
     }
 
+#undef BND
+  free(bd);
   free(piece);
   return out.s != NULL ? sb_take(&out) : vs_xstrdup("");
 }
@@ -983,7 +1010,7 @@ static void ext_replace_op(struct xctx_s *x, const char *name, size_t nlen,
 
   pat_free(&pat);
   pat_free(&rep);
-  x->present = true;
+  x->present = x->present || dq;       /* unquoted, x_add_value marks it (leading blanks are not a field) */
   x_add_value(x, result, dq);
   free(result);
 }
@@ -1004,31 +1031,40 @@ static void ext_case(struct xctx_s *x, const char *name, size_t nlen,
   char *praw = vs_xstrndup(spec + k, sn - k);
   struct pat_s pat = expand_pattern(praw);
   struct sbuf_s out;
-  size_t i;
+  size_t i = 0;
+  size_t nb = strlen(str);
 
   free(praw);
   sb_init(&out);
-  for (i = 0; str[i] != '\0'; i++)
+  while (i < nb)
     {
-      char c = str[i];
+      size_t cl = vs_mb_len(str + i);
+      char one[16];
+      char conv[16];
+
+      if (cl > 8)
+        {
+          cl = 8;
+        }
 
       if (all || i == 0)
         {
-          char one[2];
-
-          one[0] = c;
-          one[1] = '\0';
+          memcpy(one, str + i, cl);
+          one[cl] = '\0';
           if (pat.len == 0 || pat_match(pat.s, pat.q, pat.len, one))
             {
-              c = upper ? (char)toupper((unsigned char)c) : (char)tolower((unsigned char)c);
+              sb_addn(&out, conv, vs_mb_case(str + i, cl, upper, conv));
+              i += cl;
+              continue;
             }
         }
 
-      sb_addc(&out, c);
+      sb_addn(&out, str + i, cl);
+      i += cl;
     }
 
   pat_free(&pat);
-  x->present = true;
+  x->present = x->present || dq;       /* unquoted, x_add_value marks it (leading blanks are not a field) */
   x_add_value(x, out.s != NULL ? out.s : "", dq);
   sb_free(&out);
 }
@@ -1237,7 +1273,7 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
         return;
     }
 
-  x->present = true;
+  x->present = x->present || dq;       /* unquoted, x_add_value marks it (leading blanks are not a field) */
   x_add_value(x, r, dq);
   free(r);
 }
@@ -1309,6 +1345,20 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
 
       memcpy(nm, in, nl);
       nm[nl] = '\0';
+
+      {
+        /* ${!r} of a nameref is the name it refers to, not a second lookup */
+
+        const char *rt = g_sh.have_namerefs ? var_nameref_target(nm) : NULL;
+
+        if (rt != NULL)
+          {
+            x->present = true;
+            x_add_value(x, rt, dq);
+            return;
+          }
+      }
+
       if (!get_param(nm, nl, &val, buf, sizeof(buf)))
         {
           vs_err("%s: invalid indirect expansion", nm);
@@ -1991,7 +2041,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
   if (length)
     {
       snprintf(buf, sizeof(buf), "%lu",
-               (unsigned long)(isset ? strlen(val) : 0));
+               (unsigned long)(isset ? vs_mb_count(val) : 0));
       x_add_value(x, buf, dq);
       return;
     }

@@ -32,6 +32,25 @@ tally_fail()
     return 0
 }
 
+# tally_failed FILE: how many failed tests the tally holds so far.
+tally_failed()
+{
+    awk -F'\t' '$1 == "G" { f += $4 } END { print f + 0 }' "$1"
+}
+
+# tally_guard FILE LABEL STATUS FAILED_BEFORE: a step that exits non-zero has
+# normally recorded the tests that failed. If it did not (the count is what it
+# was before the step), it died before it could -- a crashed runner, a missing
+# tool -- and the summary would read "0 failed" with the step simply absent. Record
+# it as a failed group instead, so it shows in the totals and in the FAILED list.
+tally_guard()
+{
+    [ "$3" -ne 0 ] || return 0
+    [ "$(tally_failed "$1")" -eq "$4" ] || return 0
+    printf 'G\t%s (exit %s: did not report its results)\t0\t1\t0\n' "$2" "$3" >> "$1"
+    printf 'F\t%s\texited %s without reporting a failing test\n' "$2" "$3" >> "$1"
+}
+
 # tally_report FILE [table]: the failed tests, optionally a per-group table,
 # and the TOTAL line. Returns non-zero if anything failed.
 tally_report()

@@ -108,7 +108,7 @@ def run_native(shell, script_path, timeout=10):
             # en_US.UTF-8, where "a.txt" sorts before "B.txt") could not agree.
             result = subprocess.run(
                 [shell, str(script_path)],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True, text=True, errors="replace", timeout=timeout,
                 cwd=tmpdir, env=neutral_locale_env(),
             )
         return result.stdout, result.stderr, result.returncode
@@ -281,6 +281,18 @@ def compute(test_path, nuttx_dir, ref, vs_opts):
     return r
 
 
+def compute_or_fail(test_path, nuttx_dir, ref, vs_opts):
+    """compute(), but a crash in the runner is a failed test, not a missing one: a suite
+    that dies must not vanish from the totals and leave them looking clean."""
+    try:
+        return compute(test_path, nuttx_dir, ref, vs_opts)
+    except Exception as e:  # noqa: BLE001 -- whatever it was, the test did not pass
+        msg = f"(the runner crashed on this test: {e!r})\n"
+        return {"path": Path(test_path), "ref": ref, "opts": vs_opts, "verdict": "fail",
+                "ref_out": "", "ref_err": "", "ref_rc": "?", "other": "?", "other_out": "",
+                "other_err": "", "other_rc": "?", "vs_out": msg}
+
+
 def show_verbose(r):
     print(f"\n{'=' * 70}")
     print(f"TEST: {r['path']}")
@@ -326,7 +338,7 @@ def run_group(label, tests, nuttx_dir, ref, vs_opts, args, tally):
     """Runs a list of tests, printing results in order; returns (pass, fail, skip)."""
     counts = {"pass": 0, "fail": 0, "skip": 0, "none": 0}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        for r in pool.map(lambda t: compute(t, nuttx_dir, ref, vs_opts), tests):
+        for r in pool.map(lambda t: compute_or_fail(t, nuttx_dir, ref, vs_opts), tests):
             (show_brief if args.brief else show_verbose)(r)
             counts[r["verdict"]] += 1
             if r["verdict"] == "fail" and tally:

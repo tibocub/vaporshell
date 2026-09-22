@@ -45,6 +45,8 @@ struct dopts_s
   bool nl;             /* +l */
   bool nu;             /* +u */
   bool nx;             /* +x, or export -n */
+  bool n;              /* -n: a nameref */
+  bool nn;             /* +n: no longer one */
   bool any;            /* some attribute option was given */
 };
 
@@ -73,6 +75,7 @@ static void flag_letters(const struct var_s *v, char *out)
     }
 
   if ((v->flags & VF_INTEGER) != 0) *t++ = 'i';
+  if ((v->flags & VF_NAMEREF) != 0) *t++ = 'n';
   if ((v->flags & VF_READONLY) != 0) *t++ = 'r';
   if ((v->flags & VF_EXPORT) != 0) *t++ = 'x';
   if ((v->flags & VF_LOWER) != 0) *t++ = 'l';
@@ -153,6 +156,11 @@ static void list_vars(const struct dopts_s *o, enum decl_kind_e kind)
           keep = keep && (v->flags & VF_INTEGER) != 0;
         }
 
+      if (o->n)
+        {
+          keep = keep && (v->flags & VF_NAMEREF) != 0;
+        }
+
       /* nothing that is only a computed or unset placeholder */
 
       if (keep && (v->value != NULL || v->arr != NULL || (v->flags & (VF_EXPORT | VF_READONLY)) != 0 ||
@@ -172,6 +180,63 @@ static void list_vars(const struct dopts_s *o, enum decl_kind_e kind)
 }
 
 /* ---- Applying -------------------------------------------------------------------- */
+
+/* declare -n name[=target]: make `name` refer to another variable. With no
+ * target, an existing value names it; with neither, the first assignment will.
+ */
+
+static int decl_nameref(const char *word, const char *name, const char *arg, bool is_asg,
+                        const struct dopts_s *o)
+{
+  struct var_s *v = var_lookup_raw(name);
+  const char *target = NULL;
+
+  if (is_asg)
+    {
+      target = strchr(arg, '=') + 1;
+    }
+  else if (v != NULL && v->value != NULL && v->value[0] != '\0')
+    {
+      target = v->value;                  /* `x=y; declare -n x` refers to y */
+    }
+
+  if (v != NULL && v->arr != NULL)
+    {
+      vs_err("%s: %s: reference variable cannot be an array", word, name);
+      return 1;
+    }
+
+  if (v != NULL && (v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return 1;
+    }
+
+  if (target != NULL && target[0] != '\0')
+    {
+      char *copy = vs_xstrdup(target);      /* target may point into the value it replaces */
+      int st = var_nameref_set(name, copy);
+
+      free(copy);
+      if (st != 0)
+        {
+          return 1;
+        }
+    }
+  else
+    {
+      v = var_create_raw(name);
+      v->flags |= VF_NAMEREF;
+      g_sh.have_namerefs = true;
+    }
+
+  if (o->r)
+    {
+      var_lookup_raw(name)->flags |= VF_READONLY;
+    }
+
+  return 0;
+}
 
 static int decl_one(enum decl_kind_e kind, const struct dopts_s *o, const char *arg, bool raw)
 {
@@ -193,6 +258,24 @@ static int decl_one(enum decl_kind_e kind, const struct dopts_s *o, const char *
   if (local && g_sh.func_depth > 0)
     {
       var_local_declare(name, NULL, vs_feat(VF_LOCAL_INHERITS));
+    }
+
+  if (o->n)
+    {
+      int st = decl_nameref(word, name, arg, is_asg, o);
+
+      free(name);
+      return st;
+    }
+
+  if (o->nn)
+    {
+      struct var_s *rv = var_lookup_raw(name);
+
+      if (rv != NULL)
+        {
+          rv->flags &= ~(unsigned)VF_NAMEREF;       /* its value, the old target's name, stays */
+        }
     }
 
   var_set_flags(name, 0);                     /* creates it if need be */
@@ -268,7 +351,7 @@ static int print_named(const char *word, char *const *names, int n)
 
   for (i = 0; i < n; i++)
     {
-      struct var_s *v = var_lookup(names[i]);
+      struct var_s *v = var_lookup_raw(names[i]);     /* a nameref shows as itself */
 
       if (v == NULL)
         {
@@ -384,10 +467,21 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
                   {
                     o.nx = true;                   /* export -n: no longer exported */
                   }
+                else if (kind == DK_DECLARE || kind == DK_LOCAL)
+                  {
+                    if (minus)
+                      {
+                        o.n = true;
+                      }
+                    else
+                      {
+                        o.nn = true;
+                      }
+                  }
                 else
                   {
-                    vs_err("%s: -n: namerefs are not supported", word);
-                    return 1;
+                    vs_err("%s: -%c: invalid option", word, *c);
+                    return 2;
                   }
 
                 break;

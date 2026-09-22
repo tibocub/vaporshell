@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <wchar.h>
+#include <wctype.h>
 
 #include "vaporshell.h"
 #include "platform.h"
@@ -106,17 +108,18 @@ int vs_plat_collate(const char *a, const char *b)
   return r != 0 ? r : strcmp(a, b);      /* a total order even if the locale ties */
 }
 
-/* Same precedence as the C library's own: LC_ALL, then LC_COLLATE, then LANG.
- * With none of them set the collation is the C locale, as in bash.
+/* The C library's own precedence: LC_ALL, then the category's variable, then
+ * LANG. A locale that is not installed leaves the category as it was (bash
+ * does the same); with nothing set it is the C locale.
  */
 
-void vs_plat_locale_update(void)
+static const char *locale_choice(const char *category_var)
 {
   const char *v = var_get("LC_ALL");
 
   if (v == NULL || v[0] == '\0')
     {
-      v = var_get("LC_COLLATE");
+      v = var_get(category_var);
     }
 
   if (v == NULL || v[0] == '\0')
@@ -124,11 +127,69 @@ void vs_plat_locale_update(void)
       v = var_get("LANG");
     }
 
-  /* A locale that is not installed leaves the collation as it was (bash does
-   * the same); with nothing set it is the C locale.
-   */
+  return (v != NULL && v[0] != '\0') ? v : "C";
+}
 
-  setlocale(LC_COLLATE, (v != NULL && v[0] != '\0') ? v : "C");
+void vs_plat_locale_update(void)
+{
+  setlocale(LC_COLLATE, locale_choice("LC_COLLATE"));
+  setlocale(LC_CTYPE, locale_choice("LC_CTYPE"));       /* what a character is */
+}
+
+/* ---- Characters ------------------------------------------------------------- */
+
+bool vs_plat_multibyte(void)
+{
+  return MB_CUR_MAX > 1;
+}
+
+size_t vs_plat_mbdecode(const char *s, size_t n, long *wc)
+{
+  mbstate_t st;
+  wchar_t w = 0;
+  size_t r;
+
+  memset(&st, 0, sizeof(st));
+  r = mbrtowc(&w, s, n, &st);
+  if (r == (size_t)-2)
+    {
+      return 0;
+    }
+
+  if (r == (size_t)-1)
+    {
+      return (size_t)-1;
+    }
+
+  *wc = (long)w;
+  return r == 0 ? 1 : r;                /* a NUL character is one byte */
+}
+
+size_t vs_plat_mbencode(long wc, char *out)
+{
+  mbstate_t st;
+  size_t r;
+
+  memset(&st, 0, sizeof(st));
+  r = wcrtomb(out, (wchar_t)wc, &st);
+  return r == (size_t)-1 ? 0 : r;
+}
+
+bool vs_plat_wc_isclass(long wc, const char *name)
+{
+  wctype_t t = wctype(name);
+
+  return t != 0 && iswctype((wint_t)wc, t) != 0;
+}
+
+long vs_plat_wc_toupper(long wc)
+{
+  return (long)towupper((wint_t)wc);
+}
+
+long vs_plat_wc_tolower(long wc)
+{
+  return (long)towlower((wint_t)wc);
 }
 
 bool vs_plat_export_all(void)

@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **418 of 430**.
+Probes matching bash in bash mode: **436 of 448**.
 
 
 ## How this is measured
@@ -57,10 +57,10 @@ When bash publishes a new release:
 
 ## Release log
 
-| bash             | how measured                                             | observed change vs previous                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-|------------------|----------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 5.2.21           | Ubuntu package; used for the first `docs/modes.md` table | baseline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 5.3.0(1)-release | built from `bash-5.3.tar.gz`; probes + all suites        | (1) `bash --posix` accepts function names that are not identifiers (`foo-bar()`); 5.2.21 rejected them. Matches NEWS item *tt*. (2) `$LINENO` inside a multi-line `eval "..."`: 5.2.21 counts from the line the eval command *ends* on (16, 17 in `tests/modes/bash/lineno.sh`), 5.3.0 from the line it *starts* on (15, 16); vaporshell follows 5.3.0. Found because the suite failed against 5.2.21; CHANGES for 5.3-alpha has a nearby entry about `LINENO` and subshells, but that it is this fix is not verified. No other change in the 12 mode-behaviour probes re-measured, and none in the other suites (all pass on both). |
+| bash | how measured | observed change vs previous |
+|---|---|---|
+| 5.2.21 | Ubuntu package; used for the first `docs/modes.md` table | baseline |
+| 5.3.0(1)-release | built from `bash-5.3.tar.gz`; probes + all suites | (1) `bash --posix` accepts function names that are not identifiers (`foo-bar()`); 5.2.21 rejected them. Matches NEWS item *tt*. (2) `$LINENO` inside a multi-line `eval "..."`: 5.2.21 counts from the line the eval command *ends* on (16, 17 in `tests/modes/bash/lineno.sh`), 5.3.0 from the line it *starts* on (15, 16); vaporshell follows 5.3.0. Found because the suite failed against 5.2.21; CHANGES for 5.3-alpha has a nearby entry about `LINENO` and subshells, but that it is this fix is not verified. No other change in the 12 mode-behaviour probes re-measured, and none in the other suites (all pass on both). |
 
 ### bash 5.3 NEWS, item by item
 
@@ -69,40 +69,40 @@ is absent; "n/a" means it belongs to something not built (readline, job
 control, associative arrays, coprocesses); "verified" means a probe or
 test compares it with bash 5.3.
 
-| NEWS                           | change                                                               | vaporshell                                                                                                                                                             |
-|--------------------------------|----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| a                              | binary-file check looks at the first two lines when line 1 is `#!`   | not implemented                                                                                                                                                        |
-| b, f, o, u, aa, bb, cc, dd, jj | readline / programmable completion behaviour                         | n/a (line editor and completion not built)                                                                                                                             |
-| c, ss                          | better error text for unterminated compound commands / EOF           | not implemented (stderr wording is not compared)                                                                                                                       |
-| d, ii, qq, rr, mm, nn, oo      | job list and notification behaviour, `wait -n`                       | n/a (no job control); `wait` itself works                                                                                                                              |
-| g, ee                          | `[[` regex errors; `test` parenthesised sub-expressions with >4 args | `[[` n/a; the `test` case checked once, same result                                                                                                                    |
-| h                              | `umask` gained features for full POSIX conformance                   | symbolic modes and `-S` implemented and verified against dash and bash; the exact 5.3 additions were not itemised                                                      |
-| i                              | `type -a -P`                                                         | not implemented (`type -t` is)                                                                                                                                         |
-| j                              | `trap -P`                                                            | not implemented                                                                                                                                                        |
-| k                              | `command` before a declaration builtin keeps assignment parsing      | n/a (`declare` not built)                                                                                                                                              |
-| l                              | `printf` `%q`/`%Q` alternate form                                    | `%q` implemented and verified; `%Q` and the `#` form not implemented                                                                                                   |
-| m                              | `printf` `%ls`/`%lc` wide strings                                    | not implemented                                                                                                                                                        |
-| n                              | `patsub_replacement` default                                         | n/a (`${x/pat/rep}` not built)                                                                                                                                         |
-| p                              | NULL `$PATH` equals `.`                                              | not verified                                                                                                                                                           |
-| p (2)                          | loadable builtins `kv`, `strptime`                                   | n/a (no loadable builtins; the native plugin system is planned)                                                                                                        |
-| q                              | `GLOBSORT`                                                           | not implemented (assignment is accepted, has no effect)                                                                                                                |
-| r                              | `compgen -V`                                                         | n/a                                                                                                                                                                    |
-| s                              | `${ command; }` / `${                                                | command;}`                                                                                                                                                             | not implemented |
-| t                              | `array_expand_once`                                                  | n/a (`shopt array_expand_once` is an error to set; indexed arrays exist, associative ones do not yet)                                                                  |
-| v                              | `TIMEFORMAT` precision                                               | n/a (`time` keyword not built)                                                                                                                                         |
-| w                              | `BASH_MONOSECONDS`                                                   | not implemented                                                                                                                                                        |
-| x                              | `BASH_TRAPSIG`                                                       | not implemented                                                                                                                                                        |
-| y                              | `checkwinsize` in subshells                                          | n/a                                                                                                                                                                    |
-| z                              | posix-mode `test` `<` `>` use the locale                             | not implemented (byte comparison)                                                                                                                                      |
-| ff                             | coprocs on by default                                                | n/a (`coproc` not built)                                                                                                                                               |
-| gg                             | `bind -p NAME`                                                       | n/a                                                                                                                                                                    |
-| hh                             | `$BASH` when invoked as `su`                                         | n/a                                                                                                                                                                    |
-| kk                             | `source -p PATH`                                                     | not implemented                                                                                                                                                        |
-| pp                             | `bash_source_fullpath`                                               | n/a (`BASH_SOURCE` not built)                                                                                                                                          |
-| tt                             | posix mode accepts non-identifier function names                     | **deliberately different**: vaporshell's POSIX mode follows dash, which rejects them (`tests/modes/posix/function_names_strict.sh`); bash mode accepts them (verified) |
-| uu                             | `exit` in a trap uses `$?` from before the trap (POSIX interp 1602)  | trivial case matches bash; the subshell distinction was not tested                                                                                                     |
-| vv                             | `fltexpr` loadable builtin                                           | n/a                                                                                                                                                                    |
-| ww                             | build system                                                         | n/a                                                                                                                                                                    |
+| NEWS | change | vaporshell |
+|---|---|---|
+| a | binary-file check looks at the first two lines when line 1 is `#!` | not implemented |
+| b, f, o, u, aa, bb, cc, dd, jj | readline / programmable completion behaviour | n/a (line editor and completion not built) |
+| c, ss | better error text for unterminated compound commands / EOF | not implemented (stderr wording is not compared) |
+| d, ii, qq, rr, mm, nn, oo | job list and notification behaviour, `wait -n` | n/a (no job control); `wait` itself works |
+| g, ee | `[[` regex errors; `test` parenthesised sub-expressions with >4 args | `[[` n/a; the `test` case checked once, same result |
+| h | `umask` gained features for full POSIX conformance | symbolic modes and `-S` implemented and verified against dash and bash; the exact 5.3 additions were not itemised |
+| i | `type -a -P` | not implemented (`type -t` is) |
+| j | `trap -P` | not implemented |
+| k | `command` before a declaration builtin keeps assignment parsing | n/a (`declare` not built) |
+| l | `printf` `%q`/`%Q` alternate form | `%q` implemented and verified; `%Q` and the `#` form not implemented |
+| m | `printf` `%ls`/`%lc` wide strings | not implemented |
+| n | `patsub_replacement` default | n/a (`${x/pat/rep}` not built) |
+| p | NULL `$PATH` equals `.` | not verified |
+| p (2) | loadable builtins `kv`, `strptime` | n/a (no loadable builtins; the native plugin system is planned) |
+| q | `GLOBSORT` | not implemented (assignment is accepted, has no effect) |
+| r | `compgen -V` | n/a |
+| s | `${ command; }` / `${|command;}` | not implemented |
+| t | `array_expand_once` | n/a (`shopt array_expand_once` is an error to set; indexed arrays exist, associative ones do not yet) |
+| v | `TIMEFORMAT` precision | n/a (`time` keyword not built) |
+| w | `BASH_MONOSECONDS` | not implemented |
+| x | `BASH_TRAPSIG` | not implemented |
+| y | `checkwinsize` in subshells | n/a |
+| z | posix-mode `test` `<` `>` use the locale | not implemented (byte comparison) |
+| ff | coprocs on by default | n/a (`coproc` not built) |
+| gg | `bind -p NAME` | n/a |
+| hh | `$BASH` when invoked as `su` | n/a |
+| kk | `source -p PATH` | not implemented |
+| pp | `bash_source_fullpath` | n/a (`BASH_SOURCE` not built) |
+| tt | posix mode accepts non-identifier function names | **deliberately different**: vaporshell's POSIX mode follows dash, which rejects them (`tests/modes/posix/function_names_strict.sh`); bash mode accepts them (verified) |
+| uu | `exit` in a trap uses `$?` from before the trap (POSIX interp 1602) | trivial case matches bash; the subshell distinction was not tested |
+| vv | `fltexpr` loadable builtin | n/a |
+| ww | build system | n/a |
 
 ## Coverage by area
 
@@ -110,553 +110,571 @@ Each table lists probes for one area; the count is probes matching bash.
 
 ### Quoting  (9/9)
 
-| probe                        | bash mode | note                    |
-|------------------------------|-----------|-------------------------|
-| `quote_single`               | ok        |                         |
-| `quote_double`               | ok        |                         |
-| `quote_backslash_newline`    | ok        |                         |
-| `quote_dquote_nested_cmdsub` | ok        |                         |
-| `quote_ansi_c`               | ok        | bash $'...' strings     |
-| `quote_locale`               | ok        | bash $"..." translation |
-| `ansi_c_quote`               | ok        |                         |
-| `ansi_c_control`             | ok        |                         |
-| `locale_dq`                  | ok        |                         |
+| probe | bash mode | note |
+|---|---|---|
+| `quote_single` | ok |  |
+| `quote_double` | ok |  |
+| `quote_backslash_newline` | ok |  |
+| `quote_dquote_nested_cmdsub` | ok |  |
+| `quote_ansi_c` | ok | bash $'...' strings |
+| `quote_locale` | ok | bash $"..." translation |
+| `ansi_c_quote` | ok |  |
+| `ansi_c_control` | ok |  |
+| `locale_dq` | ok |  |
 
-### Parameter expansion  (31/31)
+### Parameter expansion  (35/35)
 
-| probe                        | bash mode | note                                                                         |
-|------------------------------|-----------|------------------------------------------------------------------------------|
-| `param_default`              | ok        |                                                                              |
-| `param_default_empty`        | ok        |                                                                              |
-| `param_error`                | ok        |                                                                              |
-| `param_length`               | ok        |                                                                              |
-| `param_trim`                 | ok        |                                                                              |
-| `param_trim_glob`            | ok        |                                                                              |
-| `param_positional`           | ok        |                                                                              |
-| `param_at_star_quoting`      | ok        |                                                                              |
-| `param_ifs_star`             | ok        |                                                                              |
-| `param_shift`                | ok        |                                                                              |
-| `param_special_status`       | ok        |                                                                              |
-| `param_special_pid`          | ok        |                                                                              |
-| `param_special_bang`         | ok        |                                                                              |
-| `param_special_dash`         | ok        |                                                                              |
-| `param_special_zero`         | ok        |                                                                              |
-| `param_substring`            | ok        | bash ${x:off:len}                                                            |
-| `param_replace`              | ok        | bash ${x/pat/rep}                                                            |
-| `param_case`                 | ok        | bash ${x^^} ${x,,}                                                           |
-| `param_indirect`             | ok        | bash ${!x}                                                                   |
-| `param_prefix_names`         | ok        | bash ${!prefix*}                                                             |
-| `param_transform`            | ok        | bash ${x@Q}                                                                  |
-| `param_substring`            | ok        |                                                                              |
-| `param_substring_positional` | ok        |                                                                              |
-| `param_replace`              | ok        |                                                                              |
-| `param_replace_amp`          | ok        |                                                                              |
-| `param_case`                 | ok        |                                                                              |
-| `param_transform`            | ok        |                                                                              |
-| `param_indirect`             | ok        |                                                                              |
-| `param_prefix_names`         | ok        |                                                                              |
-| `param_positional_braced`    | ok        |                                                                              |
-| `param_positional_trim`      | ok        | dash and bash differ here: dash trims the joined string, bash each parameter |
+| probe | bash mode | note |
+|---|---|---|
+| `param_default` | ok |  |
+| `param_default_empty` | ok |  |
+| `param_error` | ok |  |
+| `param_length` | ok |  |
+| `param_trim` | ok |  |
+| `param_trim_glob` | ok |  |
+| `param_positional` | ok |  |
+| `param_at_star_quoting` | ok |  |
+| `param_ifs_star` | ok |  |
+| `param_shift` | ok |  |
+| `param_special_status` | ok |  |
+| `param_special_pid` | ok |  |
+| `param_special_bang` | ok |  |
+| `param_special_dash` | ok |  |
+| `param_special_zero` | ok |  |
+| `param_substring` | ok | bash ${x:off:len} |
+| `param_replace` | ok | bash ${x/pat/rep} |
+| `param_case` | ok | bash ${x^^} ${x,,} |
+| `param_indirect` | ok | bash ${!x} |
+| `param_prefix_names` | ok | bash ${!prefix*} |
+| `param_transform` | ok | bash ${x@Q} |
+| `param_substring` | ok |  |
+| `param_substring_positional` | ok |  |
+| `param_replace` | ok |  |
+| `param_replace_amp` | ok |  |
+| `param_case` | ok |  |
+| `param_transform` | ok |  |
+| `param_indirect` | ok |  |
+| `param_prefix_names` | ok |  |
+| `param_positional_braced` | ok |  |
+| `param_positional_trim` | ok | dash and bash differ here: dash trims the joined string, bash each parameter |
+| `mb_length_and_substring` | ok |  |
+| `mb_case_conversion` | ok |  |
+| `mb_invalid_bytes` | ok |  |
+| `param_ext_leading_blanks_split` | ok |  |
 
 ### Other expansions  (25/26)
 
-| probe                   | bash mode   | note                  |
-|-------------------------|-------------|-----------------------|
-| `tilde_home`            | ok          |                       |
-| `tilde_assign`          | ok          |                       |
-| `tilde_quoted`          | ok          |                       |
-| `cmdsub_basic`          | ok          |                       |
-| `cmdsub_nested`         | ok          |                       |
-| `cmdsub_trailing_nl`    | ok          |                       |
-| `cmdsub_status`         | ok          |                       |
-| `cmdsub_subshell_scope` | ok          |                       |
-| `arith_basic`           | ok          |                       |
-| `arith_ops`             | ok          |                       |
-| `arith_assign`          | ok          |                       |
-| `arith_ternary`         | ok          |                       |
-| `arith_var_names`       | ok          |                       |
-| `arith_hex_octal`       | ok          |                       |
-| `arith_div_zero`        | ok          |                       |
-| `arith_power`           | ok          | bash ** operator      |
-| `arith_comma`           | ok          |                       |
-| `arith_base`            | ok          | bash base#number      |
-| `brace_expansion`       | ok          | bash {a,b} and {1..3} |
-| `brace_seq_step`        | ok          | bash {1..10..3}       |
-| `procsub`               | **differs** | bash <(cmd)           |
-| `brace_list`            | ok          |                       |
-| `brace_sequence`        | ok          |                       |
-| `brace_padding`         | ok          |                       |
-| `brace_literal`         | ok          |                       |
-| `brace_quoted`          | ok          |                       |
+| probe | bash mode | note |
+|---|---|---|
+| `tilde_home` | ok |  |
+| `tilde_assign` | ok |  |
+| `tilde_quoted` | ok |  |
+| `cmdsub_basic` | ok |  |
+| `cmdsub_nested` | ok |  |
+| `cmdsub_trailing_nl` | ok |  |
+| `cmdsub_status` | ok |  |
+| `cmdsub_subshell_scope` | ok |  |
+| `arith_basic` | ok |  |
+| `arith_ops` | ok |  |
+| `arith_assign` | ok |  |
+| `arith_ternary` | ok |  |
+| `arith_var_names` | ok |  |
+| `arith_hex_octal` | ok |  |
+| `arith_div_zero` | ok |  |
+| `arith_power` | ok | bash ** operator |
+| `arith_comma` | ok |  |
+| `arith_base` | ok | bash base#number |
+| `brace_expansion` | ok | bash {a,b} and {1..3} |
+| `brace_seq_step` | ok | bash {1..10..3} |
+| `procsub` | **differs** | bash <(cmd) |
+| `brace_list` | ok |  |
+| `brace_sequence` | ok |  |
+| `brace_padding` | ok |  |
+| `brace_literal` | ok |  |
+| `brace_quoted` | ok |  |
 
 ### Field splitting  (5/5)
 
-| probe                      | bash mode | note |
-|----------------------------|-----------|------|
-| `split_default_ifs`        | ok        |      |
-| `split_custom_ifs`         | ok        |      |
-| `split_empty_ifs`          | ok        |      |
-| `split_quoted`             | ok        |      |
-| `split_ifs_whitespace_mix` | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `split_default_ifs` | ok |  |
+| `split_custom_ifs` | ok |  |
+| `split_empty_ifs` | ok |  |
+| `split_quoted` | ok |  |
+| `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (21/21)
+### Pathname expansion  (25/25)
 
-| probe                        | bash mode | note                                                           |
-|------------------------------|-----------|----------------------------------------------------------------|
-| `glob_star`                  | ok        |                                                                |
-| `glob_question_class`        | ok        |                                                                |
-| `glob_nomatch`               | ok        |                                                                |
-| `glob_hidden`                | ok        |                                                                |
-| `glob_dirs`                  | ok        |                                                                |
-| `glob_noglob`                | ok        |                                                                |
-| `glob_quoted`                | ok        |                                                                |
-| `glob_class_names`           | ok        |                                                                |
-| `glob_extglob`               | ok        | bash shopt -s extglob patterns                                 |
-| `glob_globstar`              | ok        | bash ** recursive                                              |
-| `glob_nullglob`              | ok        | bash shopt -s nullglob                                         |
-| `nullglob`                   | ok        |                                                                |
-| `dotglob`                    | ok        |                                                                |
-| `nocaseglob`                 | ok        |                                                                |
-| `nocasematch`                | ok        |                                                                |
-| `globstar`                   | ok        |                                                                |
-| `extglob`                    | ok        |                                                                |
-| `extglob_case_and_path`      | ok        |                                                                |
-| `extglob_always_in_dbracket` | ok        |                                                                |
-| `glob_collation`             | ok        | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG) |
-| `glob_collation_assign`      | ok        |                                                                |
+| probe | bash mode | note |
+|---|---|---|
+| `glob_star` | ok |  |
+| `glob_question_class` | ok |  |
+| `glob_nomatch` | ok |  |
+| `glob_hidden` | ok |  |
+| `glob_dirs` | ok |  |
+| `glob_noglob` | ok |  |
+| `glob_quoted` | ok |  |
+| `glob_class_names` | ok |  |
+| `glob_extglob` | ok | bash shopt -s extglob patterns |
+| `glob_globstar` | ok | bash ** recursive |
+| `glob_nullglob` | ok | bash shopt -s nullglob |
+| `nullglob` | ok |  |
+| `dotglob` | ok |  |
+| `nocaseglob` | ok |  |
+| `nocasematch` | ok |  |
+| `globstar` | ok |  |
+| `extglob` | ok |  |
+| `extglob_case_and_path` | ok |  |
+| `extglob_always_in_dbracket` | ok |  |
+| `glob_collation` | ok | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG) |
+| `glob_collation_assign` | ok |  |
+| `mb_pattern_question_mark` | ok | dash counts bytes even in UTF-8; the standard and bash --posix count characters |
+| `mb_pattern_question_mark_bash` | ok |  |
+| `mb_pattern_brackets` | ok |  |
+| `mb_nocasematch` | ok |  |
 
 ### Redirection  (21/21)
 
-| probe                   | bash mode | note         |
-|-------------------------|-----------|--------------|
-| `redir_out_append`      | ok        |              |
-| `redir_in`              | ok        |              |
-| `redir_dup_out`         | ok        |              |
-| `redir_close`           | ok        |              |
-| `redir_fd_read`         | ok        |              |
-| `redir_readwrite`       | ok        |              |
-| `redir_noclobber`       | ok        |              |
-| `redir_heredoc`         | ok        |              |
-| `redir_heredoc_quoted`  | ok        |              |
-| `redir_heredoc_dash`    | ok        |              |
-| `redir_heredoc_multi`   | ok        |              |
-| `redir_here_string`     | ok        | bash <<<     |
-| `redir_amp_out`         | ok        | bash &>file  |
-| `redir_amp_append`      | ok        | bash &>>file |
-| `redir_order`           | ok        |              |
-| `redir_error_status`    | ok        |              |
-| `redir_on_compound`     | ok        |              |
-| `redir_on_loop`         | ok        |              |
-| `redir_persistent_exec` | ok        |              |
-| `herestring`            | ok        |              |
-| `herestring_expansion`  | ok        |              |
+| probe | bash mode | note |
+|---|---|---|
+| `redir_out_append` | ok |  |
+| `redir_in` | ok |  |
+| `redir_dup_out` | ok |  |
+| `redir_close` | ok |  |
+| `redir_fd_read` | ok |  |
+| `redir_readwrite` | ok |  |
+| `redir_noclobber` | ok |  |
+| `redir_heredoc` | ok |  |
+| `redir_heredoc_quoted` | ok |  |
+| `redir_heredoc_dash` | ok |  |
+| `redir_heredoc_multi` | ok |  |
+| `redir_here_string` | ok | bash <<< |
+| `redir_amp_out` | ok | bash &>file |
+| `redir_amp_append` | ok | bash &>>file |
+| `redir_order` | ok |  |
+| `redir_error_status` | ok |  |
+| `redir_on_compound` | ok |  |
+| `redir_on_loop` | ok |  |
+| `redir_persistent_exec` | ok |  |
+| `herestring` | ok |  |
+| `herestring_expansion` | ok |  |
 
 ### Compound commands, functions, pipelines  (44/45)
 
-| probe                       | bash mode   | note                   |
-|-----------------------------|-------------|------------------------|
-| `if_elif`                   | ok          |                        |
-| `if_status`                 | ok          |                        |
-| `while_loop`                | ok          |                        |
-| `until_loop`                | ok          |                        |
-| `for_list`                  | ok          |                        |
-| `for_no_in`                 | ok          |                        |
-| `for_break_n`               | ok          |                        |
-| `for_continue_n`            | ok          |                        |
-| `for_arith`                 | ok          | bash (( ; ; ))         |
-| `case_patterns`             | ok          |                        |
-| `case_fallthrough`          | ok          | bash ;& and ;;&        |
-| `case_quoted_pattern`       | ok          |                        |
-| `and_or`                    | ok          |                        |
-| `negation`                  | ok          |                        |
-| `subshell`                  | ok          |                        |
-| `group`                     | ok          |                        |
-| `pipeline_status`           | ok          |                        |
-| `pipefail`                  | ok          | bash set -o pipefail   |
-| `pipestatus`                | ok          | bash PIPESTATUS array  |
-| `function_basic`            | ok          |                        |
-| `function_return`           | ok          |                        |
-| `function_recursion`        | ok          |                        |
-| `function_keyword`          | ok          | bash function f { }    |
-| `function_positional_scope` | ok          |                        |
-| `function_unset`            | ok          |                        |
-| `conditional_dbracket`      | ok          | bash [[ ]]             |
-| `conditional_dbracket_re`   | ok          | bash [[ =~ ]]          |
-| `conditional_arith`         | ok          | bash (( ))             |
-| `select_loop`               | **differs** | bash select            |
-| `time_keyword`              | ok          | bash time              |
-| `coproc`                    | ok          | bash coproc            |
-| `dbracket_string`           | ok          |                        |
-| `dbracket_pattern`          | ok          |                        |
-| `dbracket_unary`            | ok          |                        |
-| `dbracket_logic`            | ok          |                        |
-| `dbracket_arith_operands`   | ok          |                        |
-| `dbracket_regex`            | ok          | needs regcomp on NuttX |
-| `dbracket_lone_unary_error` | ok          |                        |
-| `arith_command`             | ok          |                        |
-| `arith_for`                 | ok          |                        |
-| `arith_for_empty_parts`     | ok          |                        |
-| `function_keyword`          | ok          |                        |
-| `case_fallthrough`          | ok          |                        |
-| `case_continue_testing`     | ok          |                        |
-| `time_keyword`              | ok          |                        |
+| probe | bash mode | note |
+|---|---|---|
+| `if_elif` | ok |  |
+| `if_status` | ok |  |
+| `while_loop` | ok |  |
+| `until_loop` | ok |  |
+| `for_list` | ok |  |
+| `for_no_in` | ok |  |
+| `for_break_n` | ok |  |
+| `for_continue_n` | ok |  |
+| `for_arith` | ok | bash (( ; ; )) |
+| `case_patterns` | ok |  |
+| `case_fallthrough` | ok | bash ;& and ;;& |
+| `case_quoted_pattern` | ok |  |
+| `and_or` | ok |  |
+| `negation` | ok |  |
+| `subshell` | ok |  |
+| `group` | ok |  |
+| `pipeline_status` | ok |  |
+| `pipefail` | ok | bash set -o pipefail |
+| `pipestatus` | ok | bash PIPESTATUS array |
+| `function_basic` | ok |  |
+| `function_return` | ok |  |
+| `function_recursion` | ok |  |
+| `function_keyword` | ok | bash function f { } |
+| `function_positional_scope` | ok |  |
+| `function_unset` | ok |  |
+| `conditional_dbracket` | ok | bash [[ ]] |
+| `conditional_dbracket_re` | ok | bash [[ =~ ]] |
+| `conditional_arith` | ok | bash (( )) |
+| `select_loop` | **differs** | bash select |
+| `time_keyword` | ok | bash time |
+| `coproc` | ok | bash coproc |
+| `dbracket_string` | ok |  |
+| `dbracket_pattern` | ok |  |
+| `dbracket_unary` | ok |  |
+| `dbracket_logic` | ok |  |
+| `dbracket_arith_operands` | ok |  |
+| `dbracket_regex` | ok | needs regcomp on NuttX |
+| `dbracket_lone_unary_error` | ok |  |
+| `arith_command` | ok |  |
+| `arith_for` | ok |  |
+| `arith_for_empty_parts` | ok |  |
+| `function_keyword` | ok |  |
+| `case_fallthrough` | ok |  |
+| `case_continue_testing` | ok |  |
+| `time_keyword` | ok |  |
 
 ### `test` / `[`  (12/12)
 
-| probe                | bash mode | note                                                         |
-|----------------------|-----------|--------------------------------------------------------------|
-| `test_string`        | ok        |                                                              |
-| `test_numeric`       | ok        |                                                              |
-| `test_file`          | ok        |                                                              |
-| `test_file_perm`     | ok        |                                                              |
-| `test_link`          | ok        |                                                              |
-| `test_compare_files` | ok        | explicit timestamps: a sleep-based version flakes under load |
-| `test_not_and_or`    | ok        |                                                              |
-| `test_parens`        | ok        |                                                              |
-| `test_unary_edge`    | ok        |                                                              |
-| `test_double_equals` | ok        | bash [ a == a ]                                              |
-| `test_regex_bracket` | ok        | bash [ -v var ]                                              |
-| `test_stat_ext`      | ok        | bash [ -N file ] [ -O file ]                                 |
+| probe | bash mode | note |
+|---|---|---|
+| `test_string` | ok |  |
+| `test_numeric` | ok |  |
+| `test_file` | ok |  |
+| `test_file_perm` | ok |  |
+| `test_link` | ok |  |
+| `test_compare_files` | ok | explicit timestamps: a sleep-based version flakes under load |
+| `test_not_and_or` | ok |  |
+| `test_parens` | ok |  |
+| `test_unary_edge` | ok |  |
+| `test_double_equals` | ok | bash [ a == a ] |
+| `test_regex_bracket` | ok | bash [ -v var ] |
+| `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
 ### POSIX builtins  (57/60)
 
-| probe                      | bash mode   | note                                                                           |
-|----------------------------|-------------|--------------------------------------------------------------------------------|
-| `special_true_false`       | ok          |                                                                                |
-| `special_colon`            | ok          |                                                                                |
-| `special_eval`             | ok          |                                                                                |
-| `special_eval_args`        | ok          |                                                                                |
-| `special_exec_redirect`    | ok          |                                                                                |
-| `special_exit`             | ok          |                                                                                |
-| `special_exit_trap`        | ok          |                                                                                |
-| `special_export`           | ok          |                                                                                |
-| `special_export_list`      | ok          |                                                                                |
-| `special_readonly`         | ok          |                                                                                |
-| `special_unset`            | ok          |                                                                                |
-| `special_set_positional`   | ok          |                                                                                |
-| `special_set_options`      | ok          |                                                                                |
-| `special_set_e`            | ok          |                                                                                |
-| `special_set_x`            | ok          |                                                                                |
-| `special_set_o`            | ok          |                                                                                |
-| `special_set_o_pipefail`   | ok          | bash pipefail; dash lacks it                                                   |
-| `special_shift_error`      | ok          |                                                                                |
-| `special_break_outside`    | ok          |                                                                                |
-| `special_return_outside`   | ok          |                                                                                |
-| `special_trap_exit`        | ok          |                                                                                |
-| `special_trap_list`        | ok          |                                                                                |
-| `special_trap_in_subshell` | ok          | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
-| `special_trap_reset`       | ok          |                                                                                |
-| `special_trap_ignore`      | ok          |                                                                                |
-| `special_trap_signal`      | ok          |                                                                                |
-| `special_trap_err`         | ok          | bash trap ERR                                                                  |
-| `special_trap_debug`       | ok          | bash trap DEBUG                                                                |
-| `special_trap_return`      | ok          | bash trap RETURN                                                               |
-| `special_dot`              | ok          |                                                                                |
-| `special_dot_args`         | ok          | . with arguments                                                               |
-| `special_dot_path`         | ok          |                                                                                |
-| `special_source`           | ok          | bash source                                                                    |
-| `special_readonly_list`    | ok          |                                                                                |
-| `special_times`            | ok          |                                                                                |
-| `special_wait`             | ok          |                                                                                |
-| `special_wait_status`      | ok          |                                                                                |
-| `special_umask`            | ok          |                                                                                |
-| `special_umask_symbolic`   | ok          |                                                                                |
-| `special_command_v`        | ok          |                                                                                |
-| `special_command_bypass`   | ok          |                                                                                |
-| `special_command_p`        | ok          |                                                                                |
-| `special_type`             | ok          |                                                                                |
-| `special_type_missing`     | ok          |                                                                                |
-| `special_type_t`           | ok          | bash type -t                                                                   |
-| `special_read_basic`       | ok          |                                                                                |
-| `special_read_r`           | ok          |                                                                                |
-| `special_read_eof`         | ok          |                                                                                |
-| `special_read_ifs`         | ok          |                                                                                |
-| `special_read_prompt`      | ok          | bash read -p                                                                   |
-| `special_read_n`           | ok          | bash read -n                                                                   |
-| `special_read_array`       | ok          | bash read -a                                                                   |
-| `special_read_delim`       | ok          | bash read -d                                                                   |
-| `special_read_timeout`     | ok          | bash read -t                                                                   |
-| `special_kill_l`           | ok          |                                                                                |
-| `special_kill_self`        | ok          |                                                                                |
-| `special_fg_bg`            | **differs** |                                                                                |
-| `special_jobs`             | **differs** |                                                                                |
-| `special_fc`               | **differs** |                                                                                |
-| `special_newgrp`           | ok          |                                                                                |
+| probe | bash mode | note |
+|---|---|---|
+| `special_true_false` | ok |  |
+| `special_colon` | ok |  |
+| `special_eval` | ok |  |
+| `special_eval_args` | ok |  |
+| `special_exec_redirect` | ok |  |
+| `special_exit` | ok |  |
+| `special_exit_trap` | ok |  |
+| `special_export` | ok |  |
+| `special_export_list` | ok |  |
+| `special_readonly` | ok |  |
+| `special_unset` | ok |  |
+| `special_set_positional` | ok |  |
+| `special_set_options` | ok |  |
+| `special_set_e` | ok |  |
+| `special_set_x` | ok |  |
+| `special_set_o` | ok |  |
+| `special_set_o_pipefail` | ok | bash pipefail; dash lacks it |
+| `special_shift_error` | ok |  |
+| `special_break_outside` | ok |  |
+| `special_return_outside` | ok |  |
+| `special_trap_exit` | ok |  |
+| `special_trap_list` | ok |  |
+| `special_trap_in_subshell` | ok | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
+| `special_trap_reset` | ok |  |
+| `special_trap_ignore` | ok |  |
+| `special_trap_signal` | ok |  |
+| `special_trap_err` | ok | bash trap ERR |
+| `special_trap_debug` | ok | bash trap DEBUG |
+| `special_trap_return` | ok | bash trap RETURN |
+| `special_dot` | ok |  |
+| `special_dot_args` | ok | . with arguments |
+| `special_dot_path` | ok |  |
+| `special_source` | ok | bash source |
+| `special_readonly_list` | ok |  |
+| `special_times` | ok |  |
+| `special_wait` | ok |  |
+| `special_wait_status` | ok |  |
+| `special_umask` | ok |  |
+| `special_umask_symbolic` | ok |  |
+| `special_command_v` | ok |  |
+| `special_command_bypass` | ok |  |
+| `special_command_p` | ok |  |
+| `special_type` | ok |  |
+| `special_type_missing` | ok |  |
+| `special_type_t` | ok | bash type -t |
+| `special_read_basic` | ok |  |
+| `special_read_r` | ok |  |
+| `special_read_eof` | ok |  |
+| `special_read_ifs` | ok |  |
+| `special_read_prompt` | ok | bash read -p |
+| `special_read_n` | ok | bash read -n |
+| `special_read_array` | ok | bash read -a |
+| `special_read_delim` | ok | bash read -d |
+| `special_read_timeout` | ok | bash read -t |
+| `special_kill_l` | ok |  |
+| `special_kill_self` | ok |  |
+| `special_fg_bg` | **differs** |  |
+| `special_jobs` | **differs** |  |
+| `special_fc` | **differs** |  |
+| `special_newgrp` | ok |  |
 
 ### echo  (14/14)
 
-| probe              | bash mode | note |
-|--------------------|-----------|------|
-| `echo_-n`          | ok        |      |
-| `echo_-e`          | ok        |      |
-| `echo_-E`          | ok        |      |
-| `echo_default_esc` | ok        |      |
-| `echo_-ne`         | ok        |      |
-| `echo_-en_(x)`     | ok        |      |
-| `echo_\c`          | ok        |      |
-| `echo_\0nnn`       | ok        |      |
-| `echo_\nnn`        | ok        |      |
-| `echo_\xHH`        | ok        |      |
-| `echo_\e`          | ok        |      |
-| `echo_--_x`        | ok        |      |
-| `echo_-z`          | ok        |      |
-| `echo_no_args`     | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `echo_-n` | ok |  |
+| `echo_-e` | ok |  |
+| `echo_-E` | ok |  |
+| `echo_default_esc` | ok |  |
+| `echo_-ne` | ok |  |
+| `echo_-en_(x)` | ok |  |
+| `echo_\c` | ok |  |
+| `echo_\0nnn` | ok |  |
+| `echo_\nnn` | ok |  |
+| `echo_\xHH` | ok |  |
+| `echo_\e` | ok |  |
+| `echo_--_x` | ok |  |
+| `echo_-z` | ok |  |
+| `echo_no_args` | ok |  |
 
 ### printf  (22/22)
 
-| probe              | bash mode | note |
-|--------------------|-----------|------|
-| `printf_%s_%d`     | ok        |      |
-| `printf_reuse_fmt` | ok        |      |
-| `printf_no_args`   | ok        |      |
-| `printf_widths`    | ok        |      |
-| `printf_%x_%o_%X`  | ok        |      |
-| `printf_%c`        | ok        |      |
-| `printf_%b`        | ok        |      |
-| `printf_\ddd_fmt`  | ok        |      |
-| `printf_%%`        | ok        |      |
-| `printf_%d_bad`    | ok        |      |
-| `printf_%d_0x1f`   | ok        |      |
-| `printf_%d_quote`  | ok        |      |
-| `printf_%f`        | ok        |      |
-| `printf_%*d`       | ok        |      |
-| `printf_-v`        | ok        |      |
-| `printf_%q`        | ok        |      |
-| `printf_no_fmt`    | ok        |      |
-| `printf_%s_short`  | ok        |      |
-| `printf_%i`        | ok        |      |
-| `printf_%u_neg`    | ok        |      |
-| `printf_newline`   | ok        |      |
-| `printf_%e`        | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `printf_%s_%d` | ok |  |
+| `printf_reuse_fmt` | ok |  |
+| `printf_no_args` | ok |  |
+| `printf_widths` | ok |  |
+| `printf_%x_%o_%X` | ok |  |
+| `printf_%c` | ok |  |
+| `printf_%b` | ok |  |
+| `printf_\ddd_fmt` | ok |  |
+| `printf_%%` | ok |  |
+| `printf_%d_bad` | ok |  |
+| `printf_%d_0x1f` | ok |  |
+| `printf_%d_quote` | ok |  |
+| `printf_%f` | ok |  |
+| `printf_%*d` | ok |  |
+| `printf_-v` | ok |  |
+| `printf_%q` | ok |  |
+| `printf_no_fmt` | ok |  |
+| `printf_%s_short` | ok |  |
+| `printf_%i` | ok |  |
+| `printf_%u_neg` | ok |  |
+| `printf_newline` | ok |  |
+| `printf_%e` | ok |  |
 
 ### getopts  (7/7)
 
-| probe              | bash mode | note |
-|--------------------|-----------|------|
-| `getopts_basic`    | ok        |      |
-| `getopts_cluster`  | ok        |      |
-| `getopts_attached` | ok        |      |
-| `getopts_bad`      | ok        |      |
-| `getopts_silent`   | ok        |      |
-| `getopts_missing`  | ok        |      |
-| `getopts_--`       | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `getopts_basic` | ok |  |
+| `getopts_cluster` | ok |  |
+| `getopts_attached` | ok |  |
+| `getopts_bad` | ok |  |
+| `getopts_silent` | ok |  |
+| `getopts_missing` | ok |  |
+| `getopts_--` | ok |  |
 
 ### local  (3/3)
 
-| probe           | bash mode | note |
-|-----------------|-----------|------|
-| `local`         | ok        |      |
-| `local_unset`   | ok        |      |
-| `local_dynamic` | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `local` | ok |  |
+| `local_unset` | ok |  |
+| `local_dynamic` | ok |  |
 
 ### hash  (4/4)
 
-| probe         | bash mode | note |
-|---------------|-----------|------|
-| `hash_empty`  | ok        |      |
-| `hash_ls`     | ok        |      |
-| `hash_nosuch` | ok        |      |
-| `hash_-r`     | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `hash_empty` | ok |  |
+| `hash_ls` | ok |  |
+| `hash_nosuch` | ok |  |
+| `hash_-r` | ok |  |
 
 ### alias  (5/5)
 
-| probe               | bash mode | note |
-|---------------------|-----------|------|
-| `alias_print`       | ok        |      |
-| `alias_one`         | ok        |      |
-| `alias_expand_eval` | ok        |      |
-| `unalias`           | ok        |      |
-| `alias_noninter`    | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `alias_print` | ok |  |
+| `alias_one` | ok |  |
+| `alias_expand_eval` | ok |  |
+| `unalias` | ok |  |
+| `alias_noninter` | ok |  |
 
 ### times  (1/1)
 
-| probe       | bash mode | note |
-|-------------|-----------|------|
-| `times_fmt` | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `times_fmt` | ok |  |
 
 ### ulimit  (2/2)
 
-| probe        | bash mode | note |
-|--------------|-----------|------|
-| `ulimit_-n`  | ok        |      |
-| `ulimit_-Sn` | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `ulimit_-n` | ok |  |
+| `ulimit_-Sn` | ok |  |
 
 ### LINENO  (2/2)
 
-| probe         | bash mode | note                      |
-|---------------|-----------|---------------------------|
-| `LINENO`      | ok        | dash 0.5.12 has no LINENO |
-| `LINENO_func` | ok        | dash 0.5.12 has no LINENO |
+| probe | bash mode | note |
+|---|---|---|
+| `LINENO` | ok | dash 0.5.12 has no LINENO |
+| `LINENO_func` | ok | dash 0.5.12 has no LINENO |
 
 ### Shell options  (17/17)
 
-| probe                    | bash mode | note              |
-|--------------------------|-----------|-------------------|
-| `opt_posix_flag`         | ok        | bash set -o posix |
-| `opt_noglob`             | ok        |                   |
-| `opt_allexport`          | ok        |                   |
-| `opt_nounset_positional` | ok        |                   |
-| `opt_verbose`            | ok        |                   |
-| `opt_noexec`             | ok        |                   |
-| `opt_errexit_conditions` | ok        |                   |
-| `opt_errexit_subshell`   | ok        |                   |
-| `opt_errexit_function`   | ok        |                   |
-| `opt_dash_c_args`        | ok        |                   |
-| `opt_interactive_flag`   | ok        |                   |
-| `trap_err`               | ok        |                   |
-| `trap_err_contexts`      | ok        |                   |
-| `trap_debug`             | ok        |                   |
-| `trap_return_function`   | ok        |                   |
-| `trap_return_source`     | ok        |                   |
-| `trap_case_insensitive`  | ok        |                   |
+| probe | bash mode | note |
+|---|---|---|
+| `opt_posix_flag` | ok | bash set -o posix |
+| `opt_noglob` | ok |  |
+| `opt_allexport` | ok |  |
+| `opt_nounset_positional` | ok |  |
+| `opt_verbose` | ok |  |
+| `opt_noexec` | ok |  |
+| `opt_errexit_conditions` | ok |  |
+| `opt_errexit_subshell` | ok |  |
+| `opt_errexit_function` | ok |  |
+| `opt_dash_c_args` | ok |  |
+| `opt_interactive_flag` | ok |  |
+| `trap_err` | ok |  |
+| `trap_err_contexts` | ok |  |
+| `trap_debug` | ok |  |
+| `trap_return_function` | ok |  |
+| `trap_return_source` | ok |  |
+| `trap_case_insensitive` | ok |  |
 
 ### Variables  (24/24)
 
-| probe                              | bash mode | note               |
-|------------------------------------|-----------|--------------------|
-| `bashvar_version`                  | ok        | bash BASH_VERSION  |
-| `bashvar_versinfo`                 | ok        | bash BASH_VERSINFO |
-| `bashvar_random`                   | ok        | bash RANDOM        |
-| `bashvar_seconds`                  | ok        | bash SECONDS       |
-| `bashvar_funcname`                 | ok        | bash FUNCNAME      |
-| `bashvar_bash_source`              | ok        | bash BASH_SOURCE   |
-| `bashvar_uid`                      | ok        | bash UID EUID      |
-| `bashvar_ppid`                     | ok        |                    |
-| `bashvar_hostname`                 | ok        | bash HOSTNAME      |
-| `bashvar_ostype`                   | ok        | bash OSTYPE        |
-| `bashvar_lastarg`                  | ok        | $_                 |
-| `bashvar_pwd_oldpwd`               | ok        |                    |
-| `bashvar_optind`                   | ok        |                    |
-| `bashvar_ps4`                      | ok        |                    |
-| `bashvar_ifs_default`              | ok        |                    |
-| `bashvar_path_default`             | ok        |                    |
-| `pipestatus_pipeline`              | ok        |                    |
-| `pipestatus_compound_and_negation` | ok        |                    |
-| `pipestatus_function_and_subshell` | ok        |                    |
-| `bash_rematch_groups`              | ok        |                    |
-| `bash_rematch_cleared`             | ok        |                    |
-| `funcname_stack`                   | ok        |                    |
-| `bash_source_top_level`            | ok        |                    |
-| `bash_versinfo`                    | ok        |                    |
+| probe | bash mode | note |
+|---|---|---|
+| `bashvar_version` | ok | bash BASH_VERSION |
+| `bashvar_versinfo` | ok | bash BASH_VERSINFO |
+| `bashvar_random` | ok | bash RANDOM |
+| `bashvar_seconds` | ok | bash SECONDS |
+| `bashvar_funcname` | ok | bash FUNCNAME |
+| `bashvar_bash_source` | ok | bash BASH_SOURCE |
+| `bashvar_uid` | ok | bash UID EUID |
+| `bashvar_ppid` | ok |  |
+| `bashvar_hostname` | ok | bash HOSTNAME |
+| `bashvar_ostype` | ok | bash OSTYPE |
+| `bashvar_lastarg` | ok | $_ |
+| `bashvar_pwd_oldpwd` | ok |  |
+| `bashvar_optind` | ok |  |
+| `bashvar_ps4` | ok |  |
+| `bashvar_ifs_default` | ok |  |
+| `bashvar_path_default` | ok |  |
+| `pipestatus_pipeline` | ok |  |
+| `pipestatus_compound_and_negation` | ok |  |
+| `pipestatus_function_and_subshell` | ok |  |
+| `bash_rematch_groups` | ok |  |
+| `bash_rematch_cleared` | ok |  |
+| `funcname_stack` | ok |  |
+| `bash_source_top_level` | ok |  |
+| `bash_versinfo` | ok |  |
 
 ### Arrays  (28/28)
 
-| probe                         | bash mode | note                |
-|-------------------------------|-----------|---------------------|
-| `array_index`                 | ok        | bash indexed arrays |
-| `array_append`                | ok        | bash +=             |
-| `array_assoc`                 | ok        | bash declare -A     |
-| `array_indices`               | ok        | bash ${!a[@]}       |
-| `array_slice`                 | ok        | bash ${a[@]:1:2}    |
-| `array_unset_elem`            | ok        | bash unset a[i]     |
-| `array_literal_forms`         | ok        |                     |
-| `array_expansion_forms`       | ok        |                     |
-| `array_counts_indices`        | ok        |                     |
-| `array_append_forms`          | ok        |                     |
-| `array_scalar_convert`        | ok        |                     |
-| `array_negative_index`        | ok        |                     |
-| `array_arith_index`           | ok        |                     |
-| `array_slices`                | ok        |                     |
-| `array_element_operators`     | ok        |                     |
-| `array_per_element_operators` | ok        |                     |
-| `array_defaults`              | ok        |                     |
-| `array_unset_forms`           | ok        |                     |
-| `array_test_v`                | ok        |                     |
-| `array_scoping`               | ok        |                     |
-| `array_set_listing`           | ok        |                     |
-| `array_literal_multiline`     | ok        |                     |
-| `assoc_basics`                | ok        |                     |
-| `assoc_pairs_literal`         | ok        |                     |
-| `assoc_keys_with_spaces`      | ok        |                     |
-| `assoc_arithmetic`            | ok        |                     |
-| `assoc_unset_and_test`        | ok        |                     |
-| `assoc_convert`               | ok        |                     |
+| probe | bash mode | note |
+|---|---|---|
+| `array_index` | ok | bash indexed arrays |
+| `array_append` | ok | bash += |
+| `array_assoc` | ok | bash declare -A |
+| `array_indices` | ok | bash ${!a[@]} |
+| `array_slice` | ok | bash ${a[@]:1:2} |
+| `array_unset_elem` | ok | bash unset a[i] |
+| `array_literal_forms` | ok |  |
+| `array_expansion_forms` | ok |  |
+| `array_counts_indices` | ok |  |
+| `array_append_forms` | ok |  |
+| `array_scalar_convert` | ok |  |
+| `array_negative_index` | ok |  |
+| `array_arith_index` | ok |  |
+| `array_slices` | ok |  |
+| `array_element_operators` | ok |  |
+| `array_per_element_operators` | ok |  |
+| `array_defaults` | ok |  |
+| `array_unset_forms` | ok |  |
+| `array_test_v` | ok |  |
+| `array_scoping` | ok |  |
+| `array_set_listing` | ok |  |
+| `array_literal_multiline` | ok |  |
+| `assoc_basics` | ok |  |
+| `assoc_pairs_literal` | ok |  |
+| `assoc_keys_with_spaces` | ok |  |
+| `assoc_arithmetic` | ok |  |
+| `assoc_unset_and_test` | ok |  |
+| `assoc_convert` | ok |  |
 
-### Bash builtins  (40/47)
+### Bash builtins  (50/57)
 
-| probe                                 | bash mode   | note                 |
-|---------------------------------------|-------------|----------------------|
-| `bi_declare`                          | ok          | bash declare         |
-| `bi_declare_p`                        | ok          | bash declare -p      |
-| `bi_typeset`                          | ok          | bash typeset         |
-| `bi_let`                              | ok          | bash let             |
-| `bi_mapfile`                          | ok          | bash mapfile         |
-| `bi_shopt`                            | ok          | bash shopt           |
-| `bi_pushd`                            | ok          | bash pushd popd dirs |
-| `bi_builtin`                          | ok          | bash builtin         |
-| `bi_enable`                           | **differs** | bash enable          |
-| `bi_caller`                           | ok          | bash caller          |
-| `bi_help`                             | ok          | bash help            |
-| `bi_history`                          | **differs** | bash history         |
-| `bi_compgen`                          | **differs** | bash compgen         |
-| `bi_complete`                         | **differs** | bash complete        |
-| `bi_disown`                           | **differs** | bash disown          |
-| `bi_printf_T`                         | **differs** | bash printf %(fmt)T  |
-| `bi_getopts_silent`                   | ok          |                      |
-| `bi_test_e_stat`                      | ok          |                      |
-| `bi_bind`                             | **differs** | bash bind            |
-| `bi_exec_c`                           | ok          | bash exec -c         |
-| `shopt_query`                         | ok          |                      |
-| `shopt_list`                          | ok          |                      |
-| `shopt_invalid`                       | ok          |                      |
-| `pushd_popd_dirs`                     | ok          |                      |
-| `decl_print_scalars`                  | ok          |                      |
-| `decl_print_arrays`                   | ok          |                      |
-| `decl_attribute_order`                | ok          |                      |
-| `decl_integer`                        | ok          |                      |
-| `decl_case_attributes`                | ok          |                      |
-| `decl_scope`                          | ok          |                      |
-| `decl_no_word_splitting`              | ok          |                      |
-| `decl_attribute_removal`              | ok          |                      |
-| `decl_array_literals_in_builtins`     | ok          |                      |
-| `decl_errors`                         | ok          |                      |
-| `decl_typeset`                        | ok          |                      |
-| `mapfile_basic`                       | ok          |                      |
-| `mapfile_limits`                      | ok          |                      |
-| `mapfile_origin`                      | ok          |                      |
-| `mapfile_delimiter`                   | ok          |                      |
-| `mapfile_callback`                    | ok          |                      |
-| `mapfile_errors`                      | ok          |                      |
-| `mapfile_consumes_only_what_it_takes` | ok          |                      |
-| `read_array_basic`                    | ok          |                      |
-| `read_array_ifs`                      | ok          |                      |
-| `read_array_backslash_and_eof`        | ok          |                      |
-| `read_reply_unsplit`                  | ok          |                      |
-| `printf_q_control_chars`              | ok          |                      |
+| probe | bash mode | note |
+|---|---|---|
+| `bi_declare` | ok | bash declare |
+| `bi_declare_p` | ok | bash declare -p |
+| `bi_typeset` | ok | bash typeset |
+| `bi_let` | ok | bash let |
+| `bi_mapfile` | ok | bash mapfile |
+| `bi_shopt` | ok | bash shopt |
+| `bi_pushd` | ok | bash pushd popd dirs |
+| `bi_builtin` | ok | bash builtin |
+| `bi_enable` | **differs** | bash enable |
+| `bi_caller` | ok | bash caller |
+| `bi_help` | ok | bash help |
+| `bi_history` | **differs** | bash history |
+| `bi_compgen` | **differs** | bash compgen |
+| `bi_complete` | **differs** | bash complete |
+| `bi_disown` | **differs** | bash disown |
+| `bi_printf_T` | **differs** | bash printf %(fmt)T |
+| `bi_getopts_silent` | ok |  |
+| `bi_test_e_stat` | ok |  |
+| `bi_bind` | **differs** | bash bind |
+| `bi_exec_c` | ok | bash exec -c |
+| `shopt_query` | ok |  |
+| `shopt_list` | ok |  |
+| `shopt_invalid` | ok |  |
+| `pushd_popd_dirs` | ok |  |
+| `decl_print_scalars` | ok |  |
+| `decl_print_arrays` | ok |  |
+| `decl_attribute_order` | ok |  |
+| `decl_integer` | ok |  |
+| `decl_case_attributes` | ok |  |
+| `decl_scope` | ok |  |
+| `decl_no_word_splitting` | ok |  |
+| `decl_attribute_removal` | ok |  |
+| `decl_array_literals_in_builtins` | ok |  |
+| `decl_errors` | ok |  |
+| `decl_typeset` | ok |  |
+| `mapfile_basic` | ok |  |
+| `mapfile_limits` | ok |  |
+| `mapfile_origin` | ok |  |
+| `mapfile_delimiter` | ok |  |
+| `mapfile_callback` | ok |  |
+| `mapfile_errors` | ok |  |
+| `mapfile_consumes_only_what_it_takes` | ok |  |
+| `read_array_basic` | ok |  |
+| `read_array_ifs` | ok |  |
+| `read_array_backslash_and_eof` | ok |  |
+| `read_reply_unsplit` | ok |  |
+| `printf_q_control_chars` | ok |  |
+| `mb_read_n` | ok |  |
+| `nameref_basic` | ok |  |
+| `nameref_unset` | ok |  |
+| `nameref_local_function` | ok |  |
+| `nameref_arrays` | ok |  |
+| `nameref_chain_and_element` | ok |  |
+| `nameref_no_target_yet` | ok |  |
+| `nameref_for_rebinds` | ok |  |
+| `nameref_errors` | ok |  |
+| `nameref_swap_idiom` | ok |  |
 
 ### Syntax and misc  (23/23)
 
-| probe                        | bash mode | note                                     |
-|------------------------------|-----------|------------------------------------------|
-| `misc_comment`               | ok        |                                          |
-| `misc_semicolons`            | ok        |                                          |
-| `misc_multiline_string`      | ok        |                                          |
-| `misc_line_cont_cmd`         | ok        |                                          |
-| `misc_empty_cmd`             | ok        |                                          |
-| `misc_syntax_error_status`   | ok        |                                          |
-| `misc_unterminated_quote`    | ok        |                                          |
-| `misc_assignment_only`       | ok        |                                          |
-| `misc_assign_env_prefix`     | ok        |                                          |
-| `misc_command_not_found`     | ok        |                                          |
-| `misc_not_executable`        | ok        |                                          |
-| `misc_shebang_script`        | ok        |                                          |
-| `misc_noshebang_script`      | ok        |                                          |
-| `misc_bang_history`          | ok        | bash history expansion is off in scripts |
-| `misc_dollar_paren_paren`    | ok        |                                          |
-| `misc_backtick_nested`       | ok        |                                          |
-| `misc_func_name_dash`        | ok        | bash allows hyphens; dash rejects        |
-| `misc_reserved_as_arg`       | ok        |                                          |
-| `misc_case_word_split`       | ok        |                                          |
-| `misc_arith_in_dollar_quote` | ok        |                                          |
-| `misc_amp_background`        | ok        |                                          |
-| `misc_time_p`                | ok        | bash time -p                             |
-| `scalar_plus_equals`         | ok        |                                          |
+| probe | bash mode | note |
+|---|---|---|
+| `misc_comment` | ok |  |
+| `misc_semicolons` | ok |  |
+| `misc_multiline_string` | ok |  |
+| `misc_line_cont_cmd` | ok |  |
+| `misc_empty_cmd` | ok |  |
+| `misc_syntax_error_status` | ok |  |
+| `misc_unterminated_quote` | ok |  |
+| `misc_assignment_only` | ok |  |
+| `misc_assign_env_prefix` | ok |  |
+| `misc_command_not_found` | ok |  |
+| `misc_not_executable` | ok |  |
+| `misc_shebang_script` | ok |  |
+| `misc_noshebang_script` | ok |  |
+| `misc_bang_history` | ok | bash history expansion is off in scripts |
+| `misc_dollar_paren_paren` | ok |  |
+| `misc_backtick_nested` | ok |  |
+| `misc_func_name_dash` | ok | bash allows hyphens; dash rejects |
+| `misc_reserved_as_arg` | ok |  |
+| `misc_case_word_split` | ok |  |
+| `misc_arith_in_dollar_quote` | ok |  |
+| `misc_amp_background` | ok |  |
+| `misc_time_p` | ok | bash time -p |
+| `scalar_plus_equals` | ok |  |
 
 ### posix  (1/1)
 
-| probe                       | bash mode | note |
-|-----------------------------|-----------|------|
-| `read_ifs_mixed_delimiters` | ok        |      |
+| probe | bash mode | note |
+|---|---|---|
+| `read_ifs_mixed_delimiters` | ok |  |
 
 
 ## Builtins against bash's own list
@@ -723,9 +741,14 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
   (and `+i +l +u +x`), `-g`, `-p` (with bash's fixed attribute-letter order
   and its rules for declared-but-unassigned arrays), and `-F` work; `export -n`
   too. `declare -i` evaluates assignments and `+=` arithmetically, `-l`/`-u`
-  change case, also for every element of a literal. Not supported, with an
-  error rather than silence: `-n` (namerefs) and `-f` (printing a function's
-  body). `declare` with no arguments lists variables in `set` format but not
+  change case, also for every element of a literal. Namerefs work (`declare -n`, `typeset -n`, `local -n`, `+n`, `unset -n`): every
+  access to a reference lands on its target through a chain of up to 8 (reads,
+  assignments, arrays, `read`, `printf -v`, `mapfile`, arithmetic), the target
+  may be an element (`declare -n e='a[1]'`), `${!r}` is the target's name, and a
+  `for` loop rebinds the reference. A circular chain warns and reads as unset;
+  assigning through one fails that command, where bash also abandons the rest of
+  the line. Not supported, with an error rather than silence: `-f` (printing a
+  function's body). `declare` with no arguments lists variables in `set` format but not
   functions.
 - **`mapfile`/`readarray` and `read -a`** fill indexed arrays. `mapfile` has
   `-d -n -O -s -t -u -C -c` (options may be bundled, `-tn 2`); the callback is
@@ -753,14 +776,16 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
   operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
   mode to the parameters joined into one string, without slices or replacement.
-- **Pattern matching is by byte, not by character.** In a UTF-8 locale bash's
-  `?` and `[...]` match one character (`é`); here they match one byte, so
-  `[[ é == ? ]]` is false and `${s//?/X}` writes two X's for `é`. Literal text
-  is unaffected. NuttX has no locales, so byte matching is already right there.
-- **Unquoted `${v:off}`, `${v/p/r}`, `${v^^}` and `${v,,}`** keep an empty first
-  field when the result starts with whitespace (`set -- ${v:1}` gives two
-  fields where bash gives one), and the unquoted alternative in `${v:+ a}` is
-  not split at all. The plain forms (`${v}`, `#`, `%`, `:-`) are right.
+- **Characters.** In a multibyte locale (UTF-8 on a host) `${#v}`, `${v:off:len}`,
+  `${v^^}`/`,,`, `declare -u`/`-l`, `read -n`, `?` and `[...]` in patterns
+  (globs, `case`, `[[ == ]]`, `${v#p}`, `${v/p/r}`), character classes such as
+  `[[:alpha:]]`, `nocasematch` and `=~` all work on characters, as in bash. A
+  byte that is not part of a valid character counts as one character. Bracket
+  ranges compare code points (bash's default `globasciiranges`). The locale is
+  chosen from `LC_ALL`, then `LC_CTYPE`, then `LANG`. **NuttX has no locales,
+  so there a character is a byte**, exactly as bash behaves in the `C`
+  locale. POSIX mode follows the standard and bash here, not dash, which
+  counts bytes even in UTF-8.
 - **Pipeline stages run the shell's builtins**, also on NuttX, where an installed
   program of the same name (the coreutils `printf`, say) is used only for
   `cmd &`. A stage that is not a plain command already ran in-process.

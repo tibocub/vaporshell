@@ -47,7 +47,7 @@ bool is_valid_name(const char *s, size_t len)
   return true;
 }
 
-struct var_s *var_lookup(const char *name)
+struct var_s *var_lookup_raw(const char *name)
 {
   struct var_s *v;
 
@@ -65,6 +65,110 @@ struct var_s *var_lookup(const char *name)
     }
 
   return NULL;
+}
+
+/* ---- Namerefs ----------------------------------------------------------------------
+ *
+ * A nameref's value is the name of another variable (`declare -n r=x`), or an
+ * element of one (`declare -n e='a[1]'`). Every access to `r` lands on x, chased
+ * through any chain of references; a chain that loops is reported and reads as
+ * unset. The functions below the public ones are the originals, renamed
+ * *_direct: they know nothing about references, and are handed the name that
+ * is left once the chain is followed.
+ */
+
+#define REF_DEPTH 8
+#define REF_HALF 128
+#define REF_BUF (2 * REF_HALF)
+
+/* Follows the chain from 'name'. Returns the name of the variable the access
+ * lands on (copied into buf if it is not 'name'), or NULL for a circular chain.
+ * *sub is the [subscript] text if the chain ends at an element, else NULL. A
+ * nameref that has no target yet is the end of its own chain.
+ */
+
+static const char *ref_follow(const char *name, char *buf, size_t n, const char **sub)
+{
+  int depth = 0;
+  size_t half = n / 2;
+
+  *sub = NULL;
+  if (!g_sh.have_namerefs)
+    {
+      return name;
+    }
+
+  for (; ; )
+    {
+      struct var_s *v = var_lookup_raw(name);
+      const char *t;
+      const char *br;
+
+      if (v == NULL || (v->flags & VF_NAMEREF) == 0 || v->value == NULL || v->value[0] == '\0')
+        {
+          return name;
+        }
+
+      if (++depth > REF_DEPTH)
+        {
+          vs_err("warning: %s: circular name reference", name);
+          return NULL;
+        }
+
+      t = v->value;
+      br = strchr(t, '[');
+      *sub = NULL;
+      if (br != NULL && t[strlen(t) - 1] == ']')
+        {
+          size_t bl = (size_t)(br - t);
+          size_t sl = strlen(br + 1) - 1;
+
+          if (bl >= half || sl >= half)
+            {
+              return NULL;
+            }
+
+          memcpy(buf + half, br + 1, sl);
+          buf[half + sl] = '\0';
+          *sub = buf + half;
+          memcpy(buf, t, bl);
+          buf[bl] = '\0';
+        }
+      else
+        {
+          size_t tl = strlen(t);
+
+          if (tl >= half)
+            {
+              return NULL;
+            }
+
+          memcpy(buf, t, tl + 1);
+        }
+
+      name = buf;
+    }
+}
+
+static const char *ref_name(const char *name, char *buf, size_t n)
+{
+  const char *sub;
+
+  return ref_follow(name, buf, n, &sub);
+}
+
+struct var_s *var_lookup(const char *name)
+{
+  if (g_sh.have_namerefs)
+    {
+      char buf[REF_BUF];
+      const char *sub;
+      const char *rn = ref_follow(name, buf, sizeof(buf), &sub);
+
+      return rn != NULL ? var_lookup_raw(rn) : NULL;
+    }
+
+  return var_lookup_raw(name);
 }
 
 /* Variables bash computes rather than stores. A stored variable of the same
@@ -120,7 +224,7 @@ static const char *bash_var(const char *name)
   return NULL;
 }
 
-const char *var_get(const char *name)
+static const char *var_get_direct(const char *name)
 {
   struct var_s *v;
 
@@ -150,6 +254,42 @@ const char *var_get(const char *name)
   return v != NULL ? v->value : NULL;
 }
 
+const char *var_get(const char *name)
+{
+  if (g_sh.have_namerefs)
+    {
+      char buf[REF_BUF];
+      const char *sub;
+      const char *rn = ref_follow(name, buf, sizeof(buf), &sub);
+
+      if (rn == NULL)
+        {
+          return NULL;
+        }
+
+      if (sub != NULL)
+        {
+          struct subref_s r;
+          const char *v = NULL;
+
+          if (expand_subref(sub, strlen(sub), rn, &r) == 0)
+            {
+              v = var_ref_get(rn, &r);
+              subref_free(&r);
+            }
+
+          return v;
+        }
+
+      if (rn != name)
+        {
+          return var_get_direct(rn);       /* rn is in buf, but the value is not */
+        }
+    }
+
+  return var_get_direct(name);
+}
+
 static struct var_s *var_create(const char *name)
 {
   struct var_s *v = vs_xmalloc(sizeof(*v));
@@ -167,11 +307,11 @@ static struct var_s *var_create(const char *name)
 
 bool var_is_locale_var(const char *n)
 {
-  return n[0] == 'L' && (strcmp(n, "LC_ALL") == 0 || strcmp(n, "LC_COLLATE") == 0 ||
+  return n[0] == 'L' && (strcmp(n, "LC_ALL") == 0 || strcmp(n, "LC_COLLATE") == 0 || strcmp(n, "LC_CTYPE") == 0 ||
                          strcmp(n, "LANG") == 0);
 }
 
-int var_set(const char *name, const char *value)
+static int var_set_direct(const char *name, const char *value)
 {
   struct var_s *v;
 
@@ -272,7 +412,53 @@ int var_set(const char *name, const char *value)
   return 0;
 }
 
-int var_set_flags(const char *name, unsigned flags)
+int var_set(const char *name, const char *value)
+{
+  if (g_sh.have_namerefs)
+    {
+      struct var_s *raw = var_lookup_raw(name);
+      char buf[REF_BUF];
+      const char *sub;
+      const char *rn;
+
+      /* a reference with no target yet: the first assignment names it */
+
+      if (raw != NULL && (raw->flags & VF_NAMEREF) != 0 &&
+          (raw->value == NULL || raw->value[0] == '\0'))
+        {
+          return var_nameref_set(name, value);
+        }
+
+      rn = ref_follow(name, buf, sizeof(buf), &sub);
+      if (rn == NULL)
+        {
+          return -1;
+        }
+
+      if (sub != NULL)
+        {
+          struct subref_s r;
+          int st = -1;
+
+          if (expand_subref(sub, strlen(sub), rn, &r) == 0)
+            {
+              st = var_ref_set(rn, &r, value);
+              subref_free(&r);
+            }
+
+          return st;
+        }
+
+      if (rn != name)
+        {
+          return var_set_direct(rn, value);
+        }
+    }
+
+  return var_set_direct(name, value);
+}
+
+static int var_set_flags_direct(const char *name, unsigned flags)
 {
   struct var_s *v = var_lookup(name);
 
@@ -285,7 +471,15 @@ int var_set_flags(const char *name, unsigned flags)
   return 0;
 }
 
-int var_unset(const char *name)
+int var_set_flags(const char *name, unsigned flags)
+{
+  char buf[REF_BUF];
+
+  name = ref_name(name, buf, sizeof(buf));
+  return name != NULL ? var_set_flags_direct(name, flags) : -1;
+}
+
+static int unset_exact(const char *name)
 {
   struct var_s **pv;
 
@@ -316,6 +510,47 @@ int var_unset(const char *name)
     }
 
   return 0;
+}
+
+/* unset -n: the reference itself, not what it names. */
+
+int var_unset_raw(const char *name)
+{
+  return unset_exact(name);
+}
+
+int var_unset(const char *name)
+{
+  char buf[REF_BUF];                   /* outlives the block: `name` may point into it */
+
+  if (g_sh.have_namerefs)
+    {
+      const char *sub;
+      const char *rn = ref_follow(name, buf, sizeof(buf), &sub);
+
+      if (rn == NULL)
+        {
+          return -1;
+        }
+
+      if (sub != NULL)
+        {
+          struct subref_s r;
+          int st = -1;
+
+          if (expand_subref(sub, strlen(sub), rn, &r) == 0)
+            {
+              st = var_ref_unset(rn, &r);
+              subref_free(&r);
+            }
+
+          return st;
+        }
+
+      name = rn;
+    }
+
+  return unset_exact(name);
 }
 
 /* Environment for a child: exported variables that have a value. */
@@ -577,7 +812,7 @@ void shell_fini(void)
 
 int var_local_declare(const char *name, const char *value, bool inherit)
 {
-  struct var_s *v = var_lookup(name);
+  struct var_s *v = var_lookup_raw(name);       /* the variable itself, not what it names */
   struct local_s *l;
 
   for (l = g_sh.locals; l != NULL; l = l->next)
@@ -601,6 +836,11 @@ int var_local_declare(const char *name, const char *value, bool inherit)
           v->arr = NULL;
         }
       l->flags = v != NULL ? v->flags : 0;
+      if (v != NULL && !inherit)
+        {
+          v->flags &= ~(unsigned)VF_NAMEREF;    /* a fresh local is not a reference */
+        }
+
       l->depth = g_sh.func_depth;
       l->next = g_sh.locals;
       g_sh.locals = l;
@@ -625,7 +865,7 @@ void var_locals_pop(int depth)
   while (g_sh.locals != NULL && g_sh.locals->depth >= depth)
     {
       struct local_s *l = g_sh.locals;
-      struct var_s *v = var_lookup(l->name);
+      struct var_s *v = var_lookup_raw(l->name);     /* the local itself, not what it may refer to */
 
       g_sh.locals = l->next;
       if (l->had || l->old_arr != NULL)
@@ -647,7 +887,7 @@ void var_locals_pop(int depth)
           if (v != NULL)
             {
               v->flags &= ~(unsigned)VF_READONLY;
-              var_unset(l->name);
+              var_unset_raw(l->name);
             }
         }
 
@@ -664,7 +904,7 @@ void var_locals_pop(int depth)
  * a missing variable is created empty.
  */
 
-struct arr_s *var_array(const char *name, bool create)
+static struct arr_s *var_array_direct(const char *name, bool create)
 {
   struct var_s *v = var_lookup(name);
 
@@ -697,6 +937,14 @@ struct arr_s *var_array(const char *name, bool create)
     }
 
   return v->arr;
+}
+
+struct arr_s *var_array(const char *name, bool create)
+{
+  char buf[REF_BUF];
+
+  name = ref_name(name, buf, sizeof(buf));
+  return name != NULL ? var_array_direct(name, create) : NULL;
 }
 
 bool var_is_array(const char *name)
@@ -806,7 +1054,7 @@ int var_elem_unset(const char *name, long idx)
 
 /* name=(...): the finished array replaces whatever the variable was. */
 
-int var_array_replace(const char *name, struct arr_s *arr)
+static int var_array_replace_direct(const char *name, struct arr_s *arr)
 {
   struct var_s *v = var_lookup(name);
 
@@ -832,6 +1080,20 @@ int var_array_replace(const char *name, struct arr_s *arr)
     }
 
   return 0;
+}
+
+int var_array_replace(const char *name, struct arr_s *arr)
+{
+  char buf[REF_BUF];
+
+  name = ref_name(name, buf, sizeof(buf));
+  if (name == NULL)
+    {
+      arr_free(arr);                   /* the array is ours to take, even if refused */
+      return -1;
+    }
+
+  return var_array_replace_direct(name, arr);
 }
 
 
@@ -860,16 +1122,29 @@ char *var_attr_value(unsigned flags, const char *value)
       r = vs_xstrdup(value);
     }
 
-  for (i = 0; r[i] != '\0'; i++)
+  if ((flags & (VF_LOWER | VF_UPPER)) != 0)
     {
-      if ((flags & VF_LOWER) != 0)
+      struct sbuf_s o;
+      size_t n = strlen(r);
+
+      sb_init(&o);
+      i = 0;
+      while (i < n)
         {
-          r[i] = (char)tolower((unsigned char)r[i]);
+          size_t cl = vs_mb_len(r + i);
+          char conv[16];
+
+          if (cl > 8)
+            {
+              cl = 8;
+            }
+
+          sb_addn(&o, conv, vs_mb_case(r + i, cl, (flags & VF_UPPER) != 0, conv));
+          i += cl;
         }
-      else if ((flags & VF_UPPER) != 0)
-        {
-          r[i] = (char)toupper((unsigned char)r[i]);
-        }
+
+      free(r);
+      r = o.s != NULL ? sb_take(&o) : vs_xstrdup("");
     }
 
   return r;
@@ -886,7 +1161,7 @@ bool var_is_assoc(const char *name)
  * becomes one. An indexed array cannot be converted, as in bash.
  */
 
-struct arr_s *var_assoc(const char *name, bool create)
+static struct arr_s *var_assoc_direct(const char *name, bool create)
 {
   struct var_s *v = var_lookup(name);
 
@@ -929,6 +1204,14 @@ struct arr_s *var_assoc(const char *name, bool create)
     }
 
   return v->arr;
+}
+
+struct arr_s *var_assoc(const char *name, bool create)
+{
+  char buf[REF_BUF];
+
+  name = ref_name(name, buf, sizeof(buf));
+  return name != NULL ? var_assoc_direct(name, create) : NULL;
 }
 
 const char *var_ref_get(const char *name, const struct subref_s *r)
@@ -1006,4 +1289,97 @@ void subref_free(struct subref_s *r)
 {
   free(r->key);
   r->key = NULL;
+}
+
+
+/* ---- Nameref helpers ------------------------------------------------------------- */
+
+struct var_s *var_create_raw(const char *name)
+{
+  struct var_s *v = var_lookup_raw(name);
+
+  return v != NULL ? v : var_create(name);
+}
+
+bool var_is_nameref(const char *name)
+{
+  struct var_s *v = var_lookup_raw(name);
+
+  return v != NULL && (v->flags & VF_NAMEREF) != 0;
+}
+
+const char *var_nameref_target(const char *name)
+{
+  struct var_s *v = var_lookup_raw(name);
+
+  return (v != NULL && (v->flags & VF_NAMEREF) != 0 && v->value != NULL && v->value[0] != '\0')
+         ? v->value : NULL;
+}
+
+/* A target is a name, or name[subscript]. */
+
+static bool ref_target_valid(const char *t, size_t *baselen)
+{
+  size_t n = strlen(t);
+  const char *br = strchr(t, '[');
+
+  if (br != NULL)
+    {
+      if (t[n - 1] != ']' || br == t)
+        {
+          return false;
+        }
+
+      n = (size_t)(br - t);
+    }
+
+  *baselen = n;
+  return is_valid_name(t, n);
+}
+
+/* Makes 'name' a reference to 'target'. */
+
+int var_nameref_set(const char *name, const char *target)
+{
+  size_t bl;
+  struct var_s *v;
+
+  if (!ref_target_valid(target, &bl))
+    {
+      vs_err("`%s': invalid variable name for name reference", target);
+      return -1;
+    }
+
+  if (bl == strlen(name) && strncmp(target, name, bl) == 0)
+    {
+      vs_err("%s: nameref variable self references not allowed", name);
+      return -1;
+    }
+
+  v = var_create_raw(name);
+  if ((v->flags & VF_READONLY) != 0)
+    {
+      vs_err("%s: readonly variable", name);
+      return -1;
+    }
+
+  free(v->value);
+  v->value = vs_xstrdup(target);
+  v->flags |= VF_NAMEREF;
+  g_sh.have_namerefs = true;
+  return 0;
+}
+
+/* The variable of a `for` loop is given each word in turn. If it is a nameref
+ * the reference is rebound to that word rather than assigned through.
+ */
+
+int var_for_bind(const char *name, const char *value)
+{
+  if (g_sh.have_namerefs && var_is_nameref(name))
+    {
+      return var_nameref_set(name, value);
+    }
+
+  return var_set(name, value);
 }

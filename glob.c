@@ -39,12 +39,21 @@ static bool class_match(const char *name, size_t n, int c)
   return false;
 }
 
+/* The character of the pattern at p[j] (plen bytes in all), and its length. */
+
+static long pat_char(const char *p, size_t plen, size_t j, size_t *len)
+{
+  return vs_mb_charn(p + j, plen - j, len);
+}
+
 /* p[pi] is '['. Returns 1 (c matches; *next is past the ']'), 0 (no
- * match), or -1 (no closing ']': the '[' is an ordinary character).
+ * match), or -1 (no closing ']': the '[' is an ordinary character). c is a
+ * character (a code point in a multibyte locale, else a byte); ranges compare
+ * code points, which is bash's default (globasciiranges).
  */
 
 static int match_bracket(const char *p, const char *pq, size_t plen,
-                         size_t pi, int c, size_t *next)
+                         size_t pi, long c, size_t *next)
 {
   size_t j = pi + 1;
   bool negate = false;
@@ -59,7 +68,8 @@ static int match_bracket(const char *p, const char *pq, size_t plen,
 
   for (; j < plen; first = false)
     {
-      unsigned char lo;
+      long lo;
+      size_t l1;
 
       if (p[j] == ']' && !first && !quoted_at(pq, j))
         {
@@ -78,7 +88,8 @@ static int match_bracket(const char *p, const char *pq, size_t plen,
 
           if (k + 1 < plen)
             {
-              if (class_match(p + j + 2, k - (j + 2), c))
+              if (vs_mb() ? vs_mb_isclass(c, p + j + 2, k - (j + 2))
+                          : class_match(p + j + 2, k - (j + 2), (int)c))
                 {
                   matched = true;
                 }
@@ -88,26 +99,27 @@ static int match_bracket(const char *p, const char *pq, size_t plen,
             }
         }
 
-      lo = (unsigned char)p[j];
-      if (j + 2 < plen && p[j + 1] == '-' && p[j + 2] != ']')
+      lo = pat_char(p, plen, j, &l1);
+      if (j + l1 + 1 < plen && p[j + l1] == '-' && p[j + l1 + 1] != ']')
         {
-          unsigned char hi = (unsigned char)p[j + 2];
+          size_t l2;
+          long hi = pat_char(p, plen, j + l1 + 1, &l2);
 
-          if ((unsigned char)c >= lo && (unsigned char)c <= hi)
+          if (c >= lo && c <= hi)
             {
               matched = true;
             }
 
-          j += 3;
+          j += l1 + 1 + l2;
         }
       else
         {
-          if ((unsigned char)c == lo)
+          if (c == lo)
             {
               matched = true;
             }
 
-          j++;
+          j += l1;
         }
     }
 
@@ -119,19 +131,41 @@ static bool chr_eq(char a, char b, bool ci)
   return a == b || (ci && tolower((unsigned char)a) == tolower((unsigned char)b));
 }
 
+/* Does the literal character at p[pi] equal the one at s? *pl and *sl are their
+ * lengths in bytes: one each, except in a multibyte locale, where the other case
+ * of `é` is `É`.
+ */
+
+static bool lit_eq(const char *p, size_t plen, size_t pi, const char *s, bool ci,
+                   size_t *pl, size_t *sl)
+{
+  long pc;
+  long sc;
+
+  if (!vs_mb())
+    {
+      *pl = 1;
+      *sl = 1;
+      return chr_eq(p[pi], *s, ci);
+    }
+
+  pc = pat_char(p, plen, pi, pl);
+  sc = vs_mb_char(s, sl);
+  return pc == sc || (ci && vs_mb_swapcase(pc) == sc);
+}
+
 /* One bracket expression against one character; with ci the other case of
  * the character is tried too.
  */
 
 static int bracket_ci(const char *p, const char *pq, size_t plen, size_t pi,
-                      unsigned char ch, size_t *next, bool ci)
+                      long ch, size_t *next, bool ci)
 {
   int r = match_bracket(p, pq, plen, pi, ch, next);
 
   if (r != 1 && ci)
     {
-      unsigned char alt = isupper(ch) ? (unsigned char)tolower(ch)
-                                      : (unsigned char)toupper(ch);
+      long alt = vs_mb_swapcase(ch);
 
       if (alt != ch)
         {
@@ -175,19 +209,21 @@ static bool basic_match(const char *p, const char *pq, size_t plen, const char *
           if (!q && c == '?')
             {
               pi++;
-              sp++;
+              sp += vs_mb_len(sp);          /* one character, not one byte */
               continue;
             }
 
           if (!q && c == '[')
             {
               size_t next;
-              int r = bracket_ci(p, pq, plen, pi, (unsigned char)*sp, &next, ci);
+              size_t cl;
+              long wc = vs_mb_char(sp, &cl);
+              int r = bracket_ci(p, pq, plen, pi, wc, &next, ci);
 
               if (r == 1)
                 {
                   pi = next;
-                  sp++;
+                  sp += cl;
                   continue;
                 }
 
@@ -198,18 +234,25 @@ static bool basic_match(const char *p, const char *pq, size_t plen, const char *
                   continue;
                 }
             }
-          else if (chr_eq(c, *sp, ci))
+          else
             {
-              pi++;
-              sp++;
-              continue;
+              size_t pl;
+              size_t sl;
+
+              if (lit_eq(p, plen, pi, sp, ci, &pl, &sl))
+                {
+                  pi += pl;
+                  sp += sl;
+                  continue;
+                }
             }
         }
 
       if (have_star)
         {
           pi = star_p + 1;
-          sp = ++star_s;
+          star_s += vs_mb_len(star_s);      /* the star takes one more character */
+          sp = star_s;
           continue;
         }
 
@@ -354,6 +397,13 @@ static bool alt_matches(const char *p, const char *pq, size_t a0, size_t a1,
   return r;
 }
 
+/* The length after k: k plus the character that starts there (1 at the end). */
+
+static size_t step(const char *s, size_t k, size_t len)
+{
+  return k + (k < len ? vs_mb_len(s + k) : 1);
+}
+
 static bool xm_repeat(const char *p, const char *pq, size_t alts[][2], int na,
                       size_t rest, size_t pe, const char *s, bool ci, bool need_one)
 {
@@ -368,7 +418,7 @@ static bool xm_repeat(const char *p, const char *pq, size_t alts[][2], int na,
 
   for (a = 0; a < na; a++)
     {
-      for (k = 1; k <= len; k++)
+      for (k = step(s, 0, len); k <= len; k = step(s, k, len))
         {
           if (alt_matches(p, pq, alts[a][0], alts[a][1], s, k, ci) &&
               xm_repeat(p, pq, alts, na, rest, pe, s + k, ci, false))
@@ -391,6 +441,8 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
                bool ci)
 {
   char c;
+  size_t pl = 1;
+  size_t sl = 1;
 
   if (pi == pe)
     {
@@ -430,7 +482,7 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
               case '@':
                 for (a = 0; a < na; a++)
                   {
-                    for (k = 0; k <= len; k++)
+                    for (k = 0; k <= len; k = step(s, k, len))
                       {
                         if (alt_matches(p, pq, alts[a][0], alts[a][1], s, k, ci) &&
                             xm(p, pq, rest, pe, s + k, ci))
@@ -443,7 +495,7 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
                 return false;
 
               default:                   /* !(...): anything that is not one of them */
-                for (k = 0; k <= len; k++)
+                for (k = 0; k <= len; k = step(s, k, len))
                   {
                     bool any = false;
 
@@ -468,7 +520,7 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
       size_t k;
       size_t len = strlen(s);
 
-      for (k = 0; k <= len; k++)
+      for (k = 0; k <= len; k = step(s, k, len))
         {
           if (xm(p, pq, pi + 1, pe, s + k, ci))
             {
@@ -486,17 +538,19 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
 
   if (!quoted_at(pq, pi) && c == '?')
     {
-      return xm(p, pq, pi + 1, pe, s + 1, ci);
+      return xm(p, pq, pi + 1, pe, s + vs_mb_len(s), ci);
     }
 
   if (!quoted_at(pq, pi) && c == '[')
     {
       size_t next;
-      int r = bracket_ci(p, pq, pe, pi, (unsigned char)*s, &next, ci);
+      size_t cl;
+      long wc = vs_mb_char(s, &cl);
+      int r = bracket_ci(p, pq, pe, pi, wc, &next, ci);
 
       if (r == 1)
         {
-          return xm(p, pq, next, pe, s + 1, ci);
+          return xm(p, pq, next, pe, s + cl, ci);
         }
 
       if (r != -1 || *s != '[')
@@ -504,12 +558,12 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
           return false;
         }
     }
-  else if (!chr_eq(c, *s, ci))
+  else if (!lit_eq(p, pe, pi, s, ci, &pl, &sl))
     {
       return false;
     }
 
-  return xm(p, pq, pi + 1, pe, s + 1, ci);
+  return xm(p, pq, pi + pl, pe, s + sl, ci);
 }
 
 bool pat_match_ci(const char *p, const char *pq, size_t plen, const char *str,

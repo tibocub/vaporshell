@@ -1065,3 +1065,57 @@ read <<< "  a b  "; echo "[$REPLY]"; read <<< 'a\ b'; echo "[$REPLY]"
 
 ## printf_q_control_chars | bashbuiltin
 printf '%q\n' $'a\nb' $'t\tb' $'\x01x' "a,b" "x~y" "~x" "#a" "a#b"
+
+## mb_length_and_substring | param
+s='aéb日本z'; echo ${#s}; echo "${s:1}" "${s:2:2}" "${s: -2}"; for ((i=0;i<${#s};i++)); do printf "[%s]" "${s:i:1}"; done; echo
+
+## mb_case_conversion | param
+x=éàü; echo "${x^^}" "${x^}"; y=ÉÀÜ; echo "${y,,}" "${y,}"; declare -u U; U=éa; echo "$U"
+
+## mb_pattern_question_mark | glob | dash counts bytes even in UTF-8; the standard and bash --posix count characters; posix-ref=bash
+case é in ?) echo one;; *) echo other;; esac; s='aéb'; echo "${s#?}" "${s%?}"
+
+## mb_pattern_question_mark_bash | glob
+[[ 日本 == ?? ]] && echo two; s='aéb'; echo "${s//?/X}" "${s/?/X}" "${s/%?/X}"
+
+## mb_pattern_brackets | glob
+[[ é == [à-ÿ] ]] && echo range; [[ é == [^a] ]] && echo neg; [[ É == [[:upper:]] ]] && echo upper; [[ 日 == [[:alpha:]] ]] && echo alpha
+
+## mb_invalid_bytes | param
+i=$'a\xffb\xc3'; echo ${#i}; [[ $i == ??? ]] && echo three || echo other
+
+## mb_nocasematch | glob
+shopt -s nocasematch; [[ É == é ]] && echo y || echo n; case É in é) echo y;; *) echo n;; esac
+
+## mb_read_n | bashbuiltin
+echo "éa日b" | { read -n 3 x; echo "[$x]"; }
+
+## param_ext_leading_blanks_split | param
+w="  Z  Y"; set -- ${w:1}; echo "$# [$1]"; set -- ${w/Q/}; echo "$# [$1]"; set -- ${w^^}; echo "$# [$1]"; set -- "${w:9}"; echo "$# [$1]"
+
+## nameref_basic | bashbuiltin
+declare -n r=x; x=1; echo "$r"; r=2; echo "$x"; declare -p r; echo "${!r}"
+
+## nameref_unset | bashbuiltin
+x=5; declare -n r=x; unset r; echo "[${x-gone}]"; x=5; declare -n r2=x; unset -n r2; echo "x=$x [${r2-nr}]"
+
+## nameref_local_function | bashbuiltin
+f() { local -n out=$1; out=result; }; f res; echo "$res"; g() { local -n arr=$1; arr+=(x y); }; lst=(a); g lst; echo "${lst[@]}"
+
+## nameref_arrays | bashbuiltin
+declare -n r=a; a=(1 2 3); echo "${r[1]} ${#r[@]}"; r[3]=4; r+=(5); echo "${a[@]}"; declare -A m=([k]=v); declare -n h=m; echo "${h[k]}"
+
+## nameref_chain_and_element | bashbuiltin
+declare -n a1=b1; declare -n b1=c1; c1=9; echo "$a1"; a=(p q r); declare -n e="a[1]"; e=Q; echo "${a[@]}"
+
+## nameref_no_target_yet | bashbuiltin
+declare -n nt; nt=tgt; tgt=7; echo "$nt"; declare -p nt; declare -n u=newvar; u=created; echo "$newvar"
+
+## nameref_for_rebinds | bashbuiltin
+declare -n it=one; one=1; two=2; for it in one two; do echo -n "$it "; done; echo; echo "one=$one two=$two"
+
+## nameref_errors | bashbuiltin
+declare -n bad=1x 2>/dev/null; echo "rc=$?"; declare -n self=self 2>/dev/null; echo "rc=$?"; a=(1); declare -n a 2>/dev/null; echo "rc=$?"
+
+## nameref_swap_idiom | bashbuiltin
+swap() { local -n p=$1 q=$2; local t=$p; p=$q; q=$t; }; a=1; b=2; swap a b; echo "$a $b"

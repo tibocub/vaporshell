@@ -62,6 +62,7 @@ void sb_free(struct sbuf_s *b);
 #define VF_LOWER    0x08            /* declare -l */
 #define VF_UPPER    0x10            /* declare -u */
 #define VF_NOVALUE  0x20            /* an array declared but not yet assigned: `declare -a a` */
+#define VF_NAMEREF  0x40            /* declare -n: 'value' is the name of the variable it stands for */
 
 /* An indexed array: only the elements that are set, sorted by index (array.c). */
 
@@ -160,8 +161,38 @@ void frame_pop(struct frame_s *f);
 void special_refresh(const char *name);
 void special_init(void);
 
+/* mb.c: characters. Where a locale has multibyte characters (UTF-8 on a host) a
+ * character is one to several bytes; everywhere else (NuttX, the C locale) it is
+ * a byte, and every function here reduces to plain byte counting. A byte that is
+ * not part of a valid character counts as one character, as in bash.
+ */
+
+bool vs_mb(void);                                     /* multibyte characters in effect? */
+size_t vs_mb_len(const char *s);                      /* bytes in the character at s (>= 1) */
+long vs_mb_char(const char *s, size_t *len);          /* its code point */
+long vs_mb_charn(const char *s, size_t n, size_t *len);  /* the same, n bytes available */
+size_t vs_mb_count(const char *s);                    /* characters in s */
+size_t vs_mb_count_n(const char *s, size_t n);        /* ... in its first n bytes */
+size_t vs_mb_skip(const char *s, size_t nbytes, size_t nchars);   /* byte offset after nchars */
+size_t *vs_mb_bounds(const char *s, size_t nbytes, size_t *nchars);  /* NULL: bytes are characters */
+size_t vs_mb_case(const char *s, size_t len, bool upper, char *out);  /* out: at least 16 bytes */
+long vs_mb_swapcase(long wc);
+bool vs_mb_isclass(long wc, const char *name, size_t n);
+
 bool is_valid_name(const char *s, size_t len);
-struct var_s *var_lookup(const char *name);
+struct var_s *var_lookup(const char *name);       /* follows namerefs */
+
+/* Namerefs (declare -n). The _raw functions see the reference itself, not what
+ * it names; everything else acts on the variable at the end of the chain.
+ */
+
+struct var_s *var_lookup_raw(const char *name);
+struct var_s *var_create_raw(const char *name);
+bool var_is_nameref(const char *name);
+const char *var_nameref_target(const char *name);       /* NULL if not a nameref (or no target yet) */
+int var_nameref_set(const char *name, const char *target);   /* makes 'name' refer to 'target' */
+int var_unset_raw(const char *name);                    /* unset -n */
+int var_for_bind(const char *name, const char *value);  /* a for loop's variable: rebinds a nameref */
 const char *var_get(const char *name);           /* NULL if unset */
 int var_set(const char *name, const char *value);   /* -1: readonly */
 bool var_is_locale_var(const char *name);          /* LC_ALL, LC_COLLATE, LANG */
@@ -330,6 +361,7 @@ struct shell_s
   const char *cur_src;        /* the file whose code is running ($0 for -c) */
   const char *cur_script;     /* the script file given on the command line, if any */
   bool script_main;           /* running a script file: FUNCNAME ends with "main" */
+  bool have_namerefs;         /* a nameref has existed: names must be followed (vars.c) */
   unsigned long long decl_raw;   /* bit i: argv[i] of the declaration builtin running is an array literal, unexpanded */
 
   int lineno;                 /* line of the command being run: $LINENO */

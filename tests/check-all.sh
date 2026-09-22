@@ -35,27 +35,39 @@ skipped=
 
 step() { printf '\n%s######## %s%s\n' "$C_BOLD" "$1" "$C_RESET"; }
 
+# Every step is run through the tally guard: see tally_guard in lib.sh.
 step "Linux: all suites"
-VS_PLATFORM=Linux sh "$HERE/run-suites.sh" "$VS" || rc=1
+before=$(tally_failed "$VS_TALLY")
+VS_PLATFORM=Linux sh "$HERE/run-suites.sh" "$VS"; st=$?
+[ "$st" -eq 0 ] || rc=1
+tally_guard "$VS_TALLY" "Linux: all suites" "$st" "$before"
 
 if [ -x "$VS_ASAN" ]; then
     step "Linux, ASan+UBSan: all suites"
+    before=$(tally_failed "$VS_TALLY")
     VS_PLATFORM="Linux ASan" VS_SKIP_INPROC="${VS_SKIP_INPROC_ASAN:-}" ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" \
-        sh "$HERE/run-suites.sh" "$VS_ASAN" || rc=1
+        sh "$HERE/run-suites.sh" "$VS_ASAN"; st=$?
+    [ "$st" -eq 0 ] || rc=1
+    tally_guard "$VS_TALLY" "Linux ASan: all suites" "$st" "$before"
 else
     skipped="$skipped\n  ASan build (pass its path as the second argument)"
 fi
 
 step "Linux: smoosh POSIX corpus"
-sh "$HERE/smoosh-check.sh" "$VS" || rc=1
+before=$(tally_failed "$VS_TALLY")
+sh "$HERE/smoosh-check.sh" "$VS"; st=$?
+[ "$st" -eq 0 ] || rc=1
+tally_guard "$VS_TALLY" "smoosh corpus" "$st" "$before"
 
 if [ -z "$SKIP_NUTTX" ]; then
     step "vaporOS / NuttX"
-    sh "$HERE/nuttx-check.sh" "$@"
-    case $? in
+    before=$(tally_failed "$VS_TALLY")
+    sh "$HERE/nuttx-check.sh" "$@"; st=$?
+    case $st in
         0) ;;
         3) skipped="$skipped\n  vaporOS/NuttX (no workspace found)" ;;
-        *) rc=1 ;;
+        *) rc=1
+           tally_guard "$VS_TALLY" "vaporOS / NuttX" "$st" "$before" ;;
     esac
 else
     skipped="$skipped\n  vaporOS/NuttX (SKIP_NUTTX=1)"

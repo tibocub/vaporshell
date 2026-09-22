@@ -165,9 +165,14 @@ vaporshell (bash mode) has it as a builtin.
   (and `+i +l +u +x`), `-g`, `-p` (with bash's fixed attribute-letter order
   and its rules for declared-but-unassigned arrays), and `-F` work; `export -n`
   too. `declare -i` evaluates assignments and `+=` arithmetically, `-l`/`-u`
-  change case, also for every element of a literal. Not supported, with an
-  error rather than silence: `-n` (namerefs) and `-f` (printing a function's
-  body). `declare` with no arguments lists variables in `set` format but not
+  change case, also for every element of a literal. Namerefs work (`declare -n`, `typeset -n`, `local -n`, `+n`, `unset -n`): every
+  access to a reference lands on its target through a chain of up to 8 (reads,
+  assignments, arrays, `read`, `printf -v`, `mapfile`, arithmetic), the target
+  may be an element (`declare -n e='a[1]'`), `${!r}` is the target's name, and a
+  `for` loop rebinds the reference. A circular chain warns and reads as unset;
+  assigning through one fails that command, where bash also abandons the rest of
+  the line. Not supported, with an error rather than silence: `-f` (printing a
+  function's body). `declare` with no arguments lists variables in `set` format but not
   functions.
 - **`mapfile`/`readarray` and `read -a`** fill indexed arrays. `mapfile` has
   `-d -n -O -s -t -u -C -c` (options may be bundled, `-tn 2`); the callback is
@@ -195,14 +200,16 @@ vaporshell (bash mode) has it as a builtin.
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
   operators to every parameter (`${@%.txt}`, `${@^^}`, `${@:2}`), dash and POSIX
   mode to the parameters joined into one string, without slices or replacement.
-- **Pattern matching is by byte, not by character.** In a UTF-8 locale bash's
-  `?` and `[...]` match one character (`é`); here they match one byte, so
-  `[[ é == ? ]]` is false and `${s//?/X}` writes two X's for `é`. Literal text
-  is unaffected. NuttX has no locales, so byte matching is already right there.
-- **Unquoted `${v:off}`, `${v/p/r}`, `${v^^}` and `${v,,}`** keep an empty first
-  field when the result starts with whitespace (`set -- ${v:1}` gives two
-  fields where bash gives one), and the unquoted alternative in `${v:+ a}` is
-  not split at all. The plain forms (`${v}`, `#`, `%`, `:-`) are right.
+- **Characters.** In a multibyte locale (UTF-8 on a host) `${#v}`, `${v:off:len}`,
+  `${v^^}`/`,,`, `declare -u`/`-l`, `read -n`, `?` and `[...]` in patterns
+  (globs, `case`, `[[ == ]]`, `${v#p}`, `${v/p/r}`), character classes such as
+  `[[:alpha:]]`, `nocasematch` and `=~` all work on characters, as in bash. A
+  byte that is not part of a valid character counts as one character. Bracket
+  ranges compare code points (bash's default `globasciiranges`). The locale is
+  chosen from `LC_ALL`, then `LC_CTYPE`, then `LANG`. **NuttX has no locales,
+  so there a character is a byte**, exactly as bash behaves in the `C`
+  locale. POSIX mode follows the standard and bash here, not dash, which
+  counts bytes even in UTF-8.
 - **Pipeline stages run the shell's builtins**, also on NuttX, where an installed
   program of the same name (the coreutils `printf`, say) is used only for
   `cmd &`. A stage that is not a plain command already ran in-process.

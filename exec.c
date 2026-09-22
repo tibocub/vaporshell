@@ -874,7 +874,7 @@ static int exec_for(struct node_s *n)
   for (i = 0; i < items.n; i++)
     {
       debug_hook();                    /* bash: once per iteration */
-      if (var_set(n->name, items.v[i]) != 0)
+      if (var_for_bind(n->name, items.v[i]) != 0)
         {
           status = 1;
           break;

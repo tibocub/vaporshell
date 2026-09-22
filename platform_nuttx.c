@@ -213,6 +213,43 @@ bool vs_plat_export_all(void)
   return false;
 }
 
+/* No locales, so a character is a byte (see mb.c). */
+
+bool vs_plat_multibyte(void)
+{
+  return false;
+}
+
+size_t vs_plat_mbdecode(const char *s, size_t n, long *wc)
+{
+  (void)n;
+  *wc = (unsigned char)s[0];
+  return 1;
+}
+
+size_t vs_plat_mbencode(long wc, char *out)
+{
+  out[0] = (char)wc;
+  return 1;
+}
+
+bool vs_plat_wc_isclass(long wc, const char *name)
+{
+  (void)wc;
+  (void)name;
+  return false;
+}
+
+long vs_plat_wc_toupper(long wc)
+{
+  return wc;
+}
+
+long vs_plat_wc_tolower(long wc)
+{
+  return wc;
+}
+
 bool vs_plat_external_fallback(const char *name)
 {
   return is_tbx_command(name);

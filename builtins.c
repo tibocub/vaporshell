@@ -529,6 +529,7 @@ static int bi_readonly(int argc, char **argv)
 static int bi_unset(int argc, char **argv)
 {
   bool funcs = false;
+  bool refs = false;
   int status = 0;
   int i = 1;
 
@@ -541,6 +542,12 @@ static int bi_unset(int argc, char **argv)
       else if (strcmp(argv[i], "-v") == 0)
         {
           funcs = false;
+          refs = false;
+        }
+      else if (strcmp(argv[i], "-n") == 0 && vs_feat(VF_BASH_SYNTAX))
+        {
+          funcs = false;
+          refs = true;                   /* the nameref itself, not what it names */
         }
       else if (strcmp(argv[i], "--") == 0)
         {
@@ -550,6 +557,7 @@ static int bi_unset(int argc, char **argv)
       else
         {
           vs_err("unset: %s: invalid option", argv[i]);
+          vs_special_error();            /* unset is a special builtin: dash ends the shell */
           return 2;
         }
     }
@@ -559,6 +567,13 @@ static int bi_unset(int argc, char **argv)
       if (funcs)
         {
           func_unset(argv[i]);
+        }
+      else if (refs)
+        {
+          if (var_unset_raw(argv[i]) != 0)
+            {
+              status = 1;
+            }
         }
       else
         {
@@ -1273,6 +1288,8 @@ static int bi_read(int argc, char **argv)
   struct fieldv_s fields;
   int badname = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
   bool whole = false;
+  size_t cstart = 0;                    /* where the character being read began */
+  long nchars = 0;
   int k;
 
   for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
@@ -1430,7 +1447,26 @@ static int bi_read(int argc, char **argv)
         }
 
       sb_addc(&line, c);
-      if (maxn > 0 && (long)line.len >= maxn)
+
+      /* -n counts characters: a multibyte one is complete only when its last
+       * byte has come
+       */
+
+      while (cstart < line.len)
+        {
+          long wc;
+          size_t r = vs_plat_multibyte() ? vs_plat_mbdecode(line.s + cstart, line.len - cstart, &wc) : 1;
+
+          if (r == 0)
+            {
+              break;                       /* the character is not all here yet */
+            }
+
+          cstart += r == (size_t)-1 ? 1 : r;
+          nchars++;
+        }
+
+      if (maxn > 0 && nchars >= maxn)
         {
           break;
         }
