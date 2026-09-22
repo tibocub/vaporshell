@@ -195,6 +195,26 @@ vaporshell (bash mode) has it as a builtin.
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **`select`** works: numbering, `PS3` (default `#? `), reading (a plain `read`,
+  so backslash line-continuation and the rest of `read`'s rules apply), a blank
+  line just redisplaying the menu, an invalid or out-of-range choice still
+  running the loop body with the variable empty and `REPLY` set to what was
+  typed, EOF ending the loop, and `break`/`continue`. The menu's column layout
+  matches bash's: as many columns as `$COLUMNS` (or the terminal, queried on a
+  host; on NuttX, which has no such query, `$COLUMNS` or 80) fits, except a
+  layout that would end up one row wide falls back to one item per line
+  instead, matching a bash quirk. After a valid, non-blank choice the menu
+  itself isn't reprinted, only the prompt — also matching bash.
+- **`printf %(fmt)T`** formats a Unix time with `strftime`: nested parentheses
+  in the format balance, an empty format is the locale's own time
+  representation, `-1` is now, `-2` the shell's start time, and it reuses like
+  every other conversion when more arguments remain.
+- **`$SECONDS`** now correctly starts near 0 and counts from the shell's
+  start, rather than returning the raw Unix epoch (a bug fixed in the same
+  pass, since `printf %(...)T`'s `-2` needed the same timestamp).
+- **`local`'s own errors** (an invalid name, an option POSIX mode doesn't
+  support) end the script there, as dash's do for this and other special
+  builtins; only that one command is affected in an interactive shell.
 - **A readonly variable's assignment error** fails that command and the shell
   goes on; bash also abandons the rest of the line (`-c`) or the script.
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
@@ -239,6 +259,12 @@ vaporshell (bash mode) has it as a builtin.
   `set -T`), and not once per pipeline stage in the parent as bash does.
 - **`time`** reports user and system time as zero on NuttX (only wall time is
   available there).
+- **`printf %(%c)T`** (the locale's full date-and-time representation) is
+  empty on NuttX: its C library's `strftime` doesn't implement that
+  conversion. Every other conversion letter works there.
+- **`TZ` is not honoured on NuttX**: it has no timezone database, so `printf
+  %(fmt)T` (and anything else built on `localtime`) always resolves to UTC
+  there, regardless of `TZ`. On a host, `TZ` works as in bash.
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists
   entries newest-first where bash's order is its hash order.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell

@@ -1270,7 +1270,7 @@ static int wait_readable(int fd, long ms)
  * fields by read_split() (readsplit.c).
  */
 
-static int bi_read(int argc, char **argv)
+int bi_read(int argc, char **argv)
 {
   int rfd = STDIN_FILENO;
   int delim = '\n';

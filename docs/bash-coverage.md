@@ -12,14 +12,14 @@ releases a new version.
 
 - bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
 - POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-21 by `tests/coverage/gen-docs.py`
+- generated: 2026-09-22 by `tests/coverage/gen-docs.py`
 
 
 The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **436 of 448**.
+Probes matching bash in bash mode: **448 of 458**.
 
 
 ## How this is measured
@@ -259,7 +259,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `herestring` | ok |  |
 | `herestring_expansion` | ok |  |
 
-### Compound commands, functions, pipelines  (44/45)
+### Compound commands, functions, pipelines  (45/45)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -291,7 +291,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `conditional_dbracket` | ok | bash [[ ]] |
 | `conditional_dbracket_re` | ok | bash [[ =~ ]] |
 | `conditional_arith` | ok | bash (( )) |
-| `select_loop` | **differs** | bash select |
+| `select_loop` | ok | bash select |
 | `time_keyword` | ok | bash time |
 | `coproc` | ok | bash coproc |
 | `dbracket_string` | ok |  |
@@ -518,7 +518,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (24/24)
+### Variables  (25/25)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -546,6 +546,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `funcname_stack` | ok |  |
 | `bash_source_top_level` | ok |  |
 | `bash_versinfo` | ok |  |
+| `SECONDS_starts_near_zero` | ok |  |
 
 ### Arrays  (28/28)
 
@@ -580,7 +581,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (50/57)
+### Bash builtins  (54/60)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -599,7 +600,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_compgen` | **differs** | bash compgen |
 | `bi_complete` | **differs** | bash complete |
 | `bi_disown` | **differs** | bash disown |
-| `bi_printf_T` | **differs** | bash printf %(fmt)T |
+| `bi_printf_T` | ok | bash printf %(fmt)T |
 | `bi_getopts_silent` | ok |  |
 | `bi_test_e_stat` | ok |  |
 | `bi_bind` | **differs** | bash bind |
@@ -641,6 +642,9 @@ Each table lists probes for one area; the count is probes matching bash.
 | `nameref_for_rebinds` | ok |  |
 | `nameref_errors` | ok |  |
 | `nameref_swap_idiom` | ok |  |
+| `printf_T_basic` | ok |  |
+| `printf_T_width_and_reuse` | ok |  |
+| `printf_T_nested_parens` | ok |  |
 
 ### Syntax and misc  (23/23)
 
@@ -669,6 +673,17 @@ Each table lists probes for one area; the count is probes matching bash.
 | `misc_amp_background` | ok |  |
 | `misc_time_p` | ok | bash time -p |
 | `scalar_plus_equals` | ok |  |
+
+### bashkeyword  (6/6)
+
+| probe | bash mode | note |
+|---|---|---|
+| `select_basic` | ok |  |
+| `select_invalid_and_blank` | ok |  |
+| `select_eof` | ok |  |
+| `select_no_in_clause` | ok |  |
+| `select_continue_and_ps3` | ok |  |
+| `select_column_layout` | ok |  |
 
 ### posix  (1/1)
 
@@ -771,6 +786,26 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **`select`** works: numbering, `PS3` (default `#? `), reading (a plain `read`,
+  so backslash line-continuation and the rest of `read`'s rules apply), a blank
+  line just redisplaying the menu, an invalid or out-of-range choice still
+  running the loop body with the variable empty and `REPLY` set to what was
+  typed, EOF ending the loop, and `break`/`continue`. The menu's column layout
+  matches bash's: as many columns as `$COLUMNS` (or the terminal, queried on a
+  host; on NuttX, which has no such query, `$COLUMNS` or 80) fits, except a
+  layout that would end up one row wide falls back to one item per line
+  instead, matching a bash quirk. After a valid, non-blank choice the menu
+  itself isn't reprinted, only the prompt — also matching bash.
+- **`printf %(fmt)T`** formats a Unix time with `strftime`: nested parentheses
+  in the format balance, an empty format is the locale's own time
+  representation, `-1` is now, `-2` the shell's start time, and it reuses like
+  every other conversion when more arguments remain.
+- **`$SECONDS`** now correctly starts near 0 and counts from the shell's
+  start, rather than returning the raw Unix epoch (a bug fixed in the same
+  pass, since `printf %(...)T`'s `-2` needed the same timestamp).
+- **`local`'s own errors** (an invalid name, an option POSIX mode doesn't
+  support) end the script there, as dash's do for this and other special
+  builtins; only that one command is affected in an interactive shell.
 - **A readonly variable's assignment error** fails that command and the shell
   goes on; bash also abandons the rest of the line (`-c`) or the script.
 - **`${@}` and `${*}`** follow each shell in its own mode: bash applies
@@ -815,6 +850,12 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
   `set -T`), and not once per pipeline stage in the parent as bash does.
 - **`time`** reports user and system time as zero on NuttX (only wall time is
   available there).
+- **`printf %(%c)T`** (the locale's full date-and-time representation) is
+  empty on NuttX: its C library's `strftime` doesn't implement that
+  conversion. Every other conversion letter works there.
+- **`TZ` is not honoured on NuttX**: it has no timezone database, so `printf
+  %(fmt)T` (and anything else built on `localtime`) always resolves to UTC
+  there, regardless of `TZ`. On a host, `TZ` works as in bash.
 - **`ulimit -a`** and **`hash -l`/`-t`** are not implemented; `hash` lists
   entries newest-first where bash's order is its hash order.
 - **`kill -l`** and **`set -o`** list only the signals and options vaporshell

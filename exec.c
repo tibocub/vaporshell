@@ -892,6 +892,103 @@ static int exec_for(struct node_s *n)
   return status;
 }
 
+/* select NAME [in WORDS]; do LIST; done (bash). PS3 (default "#? ") prompts
+ * for a line on stdin; a number 1..N runs LIST with NAME bound to that item,
+ * anything else with NAME empty, and the raw line always ends up in REPLY --
+ * except a blank line, which just shows the menu again without running LIST.
+ * EOF ends the loop (status 1); an empty item list does nothing (status 0).
+ */
+
+static int exec_select(struct node_s *n)
+{
+  struct fieldv_s items;
+  int status = 0;
+  int i;
+  bool show_menu = true;
+
+  fv_init(&items);
+  if (n->flag)
+    {
+      if (expand_words(n->words, &items) != 0)
+        {
+          fv_free(&items);
+          return 1;
+        }
+    }
+  else
+    {
+      for (i = 1; i <= g_sh.npos; i++)
+        {
+          fv_add(&items, vs_xstrdup(pos_get(i)));
+        }
+    }
+
+  if (items.n == 0)
+    {
+      fv_free(&items);
+      return 0;
+    }
+
+  g_sh.loop_depth++;
+  for (; ; )
+    {
+      const char *ps3 = var_get("PS3");
+      char rargv0[] = "read";
+      char *rargv[1];
+      int choice;
+      const char *reply;
+
+      if (show_menu)
+        {
+          vs_select_menu(items.v, items.n);
+        }
+
+      fputs(ps3 != NULL ? ps3 : "#? ", stderr);
+      fflush(stderr);
+
+      rargv[0] = rargv0;
+      if (bi_read(1, rargv) != 0)
+        {
+          putchar('\n');               /* bash: to stdout, not stderr */
+          status = 1;                  /* EOF (or a read error): the loop ends here */
+          break;
+        }
+
+      reply = var_get("REPLY");
+      reply = reply != NULL ? reply : "";
+      choice = vs_select_parse(reply, items.n);
+      if (choice == -1)
+        {
+          show_menu = true;            /* a blank line: just show the menu again */
+          continue;
+        }
+
+      if (var_for_bind(n->name, choice > 0 ? items.v[choice - 1] : "") != 0)
+        {
+          status = 1;
+          break;
+        }
+
+      status = exec_node(n->a);
+      if (loop_unwind())
+        {
+          break;
+        }
+
+      /* the next round shows the full menu again only if REPLY ended up
+       * empty (bash's KSH_COMPATIBLE_SELECT default); otherwise just the
+       * prompt, so picking in a row doesn't reprint the list each time
+       */
+
+      reply = var_get("REPLY");
+      show_menu = reply == NULL || reply[0] == '\0';
+    }
+
+  g_sh.loop_depth--;
+  fv_free(&items);
+  return status;
+}
+
 static int exec_case(struct node_s *n)
 {
   debug_hook();
@@ -2110,6 +2207,10 @@ int exec_node(struct node_s *n)
 
       case N_FOR:
         status = with_redirs(n, exec_for);
+        break;
+
+      case N_SELECT:
+        status = with_redirs(n, exec_select);
         break;
 
       case N_CASE:

@@ -308,7 +308,7 @@ static struct var_s *var_create(const char *name)
 bool var_is_locale_var(const char *n)
 {
   return n[0] == 'L' && (strcmp(n, "LC_ALL") == 0 || strcmp(n, "LC_COLLATE") == 0 || strcmp(n, "LC_CTYPE") == 0 ||
-                         strcmp(n, "LANG") == 0);
+                         strcmp(n, "LC_TIME") == 0 || strcmp(n, "LANG") == 0);
 }
 
 static int var_set_direct(const char *name, const char *value)
@@ -721,6 +721,7 @@ void shell_init(const char *arg0)
   vs_mode_set(VS_PROFILE_BASH);
   vs_shopt_defaults();
   special_init();
+  g_sh.seconds_base = time(NULL);       /* $SECONDS counts from shell start */
   g_sh.arg0 = arg0;
   g_sh.cur_src = arg0;
   g_sh.pid = getpid();

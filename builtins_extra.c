@@ -245,6 +245,7 @@ int bi_local(int argc, char **argv)
       if (!is_valid_name(argv[i], nlen))
         {
           vs_err("local: `%s': not a valid identifier", argv[i]);
+          vs_special_error();           /* local is a special builtin: dash ends the shell */
           status = 1;
           continue;
         }

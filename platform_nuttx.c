@@ -150,6 +150,11 @@ const char *vs_plat_fspath(const char *path, char *buf, size_t n)
   return buf;
 }
 
+int vs_plat_columns(void)
+{
+  return -1;                 /* no ioctl(TIOCGWINSZ) here; $COLUMNS is the only lever */
+}
+
 bool vs_plat_isatty(int fd)
 {
   return isatty(fd) != 0;

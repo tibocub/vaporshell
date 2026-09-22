@@ -408,7 +408,7 @@ static bool is_reserved_word(const char *w)
   static const char *const words[] =
   {
     "if", "then", "else", "elif", "fi", "do", "done", "case", "esac",
-    "while", "until", "for", "in", "{", "}", "!", "[[", "]]", "function", "time"
+    "while", "until", "for", "select", "in", "{", "}", "!", "[[", "]]", "function", "time"
   };
   size_t i;
 
@@ -1314,6 +1314,69 @@ static struct node_s *parse_for(struct parser_s *p)
   return n;
 }
 
+/* select NAME [in WORDS] ; do LIST done  -- same shape as `for`, minus the
+ * `for ((..))` arithmetic form, which `select` has no equivalent of.
+ */
+
+static struct node_s *parse_select(struct parser_s *p)
+{
+  struct node_s *n = new_node(p, N_SELECT);
+  struct token_s *t;
+
+  advance(p);
+  t = peek(p);
+
+  if (t->type != T_WORD || t->quoted || !is_valid_name(t->text, strlen(t->text)))
+    {
+      unexpected(p);
+      return NULL;
+    }
+
+  n->name = t->text;
+  advance(p);
+  skip_newlines(p);
+
+  if (is_kw(p, "in"))
+    {
+      struct word_s **tail = &n->words;
+
+      advance(p);
+      n->flag = true;
+      while (peek(p)->type == T_WORD)
+        {
+          *tail = new_word(p, peek(p)->text);
+          tail = &(*tail)->next;
+          advance(p);
+        }
+
+      if (peek(p)->type != T_SEMI && peek(p)->type != T_NEWLINE)
+        {
+          unexpected(p);
+          return NULL;
+        }
+
+      advance(p);
+    }
+  else if (peek(p)->type == T_SEMI)
+    {
+      advance(p);
+    }
+
+  skip_newlines(p);
+  if (!expect_kw(p, "do"))
+    {
+      return NULL;
+    }
+
+  n->a = nonempty(p, parse_list(p, true));
+  if (n->a == NULL || !expect_kw(p, "done"))
+    {
+      return NULL;
+    }
+
+  return n;
+}
+
 static struct node_s *parse_case(struct parser_s *p)
 {
   struct node_s *n = new_node(p, N_CASE);
@@ -1494,6 +1557,10 @@ static struct node_s *parse_command(struct parser_s *p)
       else if (strcmp(t->text, "for") == 0)
         {
           n = parse_for(p);
+        }
+      else if (strcmp(t->text, "select") == 0 && vs_feat(VF_BASH_SYNTAX))
+        {
+          n = parse_select(p);
         }
       else if (strcmp(t->text, "case") == 0)
         {

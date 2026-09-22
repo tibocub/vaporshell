@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <wchar.h>
@@ -41,6 +42,18 @@ const char *vs_plat_fspath(const char *path, char *buf, size_t n)
 bool vs_plat_isatty(int fd)
 {
   return isatty(fd) != 0;
+}
+
+int vs_plat_columns(void)
+{
+  struct winsize ws;
+
+  if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+    {
+      return ws.ws_col;
+    }
+
+  return -1;
 }
 
 long vs_plat_uid(void)
@@ -134,6 +147,7 @@ void vs_plat_locale_update(void)
 {
   setlocale(LC_COLLATE, locale_choice("LC_COLLATE"));
   setlocale(LC_CTYPE, locale_choice("LC_CTYPE"));       /* what a character is */
+  setlocale(LC_TIME, locale_choice("LC_TIME"));         /* strftime: printf %(...)T, date-ish formats */
 }
 
 /* ---- Characters ------------------------------------------------------------- */

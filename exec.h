@@ -118,6 +118,15 @@ bool asg_is_word(const char *text);
 
 int bi_declare(int argc, char **argv);
 int bi_mapfile(int argc, char **argv);            /* mapfile.c: mapfile, readarray */
+int bi_read(int argc, char **argv);                /* builtins.c: also used by select's read (exec.c) */
+
+/* select.c: the menu `select` prints, and parsing the user's choice from it.
+ * exec_select() (exec.c) drives the read/execute loop; this only lays the
+ * menu out and turns typed text into an index, the way bash's does.
+ */
+
+void vs_select_menu(char *const *items, int n);
+int vs_select_parse(const char *reply, int n);      /* 1..n: that choice; 0: invalid; -1: empty (redisplay) */
 int bi_local_decl(int argc, char **argv);
 int bi_export_decl(int argc, char **argv);
 int bi_readonly_decl(int argc, char **argv);

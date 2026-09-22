@@ -46,6 +46,13 @@ bool vs_plat_interactive(void);
 /* Identity, for bash's UID/EUID/HOSTNAME/OSTYPE. */
 
 bool vs_plat_isatty(int fd);
+
+/* The terminal's width in columns, or -1 if it cannot be found (no terminal,
+ * or the platform has no way to ask). Used only as a fallback: `select`'s
+ * menu checks $COLUMNS first, as bash does.
+ */
+
+int vs_plat_columns(void);
 long vs_plat_uid(void);
 long vs_plat_euid(void);
 int vs_plat_hostname(char *buf, size_t n);      /* 0 on success */

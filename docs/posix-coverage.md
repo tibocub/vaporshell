@@ -12,10 +12,10 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 
 - bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
 - POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-21 by `tests/coverage/gen-docs.py`
+- generated: 2026-09-22 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **445 of 448**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **456 of 458**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -480,7 +480,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (24/24)
+### Variables  (25/25)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -508,6 +508,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `funcname_stack` | ok |  |
 | `bash_source_top_level` | ok |  |
 | `bash_versinfo` | ok |  |
+| `SECONDS_starts_near_zero` | ok |  |
 
 ### Arrays  (28/28)
 
@@ -542,7 +543,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (56/57)
+### Bash builtins  (60/60)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -602,7 +603,10 @@ Each table lists probes for one area; the count is probes matching dash.
 | `nameref_no_target_yet` | ok |  |
 | `nameref_for_rebinds` | ok |  |
 | `nameref_errors` | ok |  |
-| `nameref_swap_idiom` | **differs** |  |
+| `nameref_swap_idiom` | ok |  |
+| `printf_T_basic` | ok |  |
+| `printf_T_width_and_reuse` | ok |  |
+| `printf_T_nested_parens` | ok |  |
 
 ### Syntax and misc  (23/23)
 
@@ -631,6 +635,17 @@ Each table lists probes for one area; the count is probes matching dash.
 | `misc_amp_background` | ok |  |
 | `misc_time_p` | ok | bash time -p |
 | `scalar_plus_equals` | ok |  |
+
+### bashkeyword  (6/6)
+
+| probe | POSIX mode | note |
+|---|---|---|
+| `select_basic` | ok |  |
+| `select_invalid_and_blank` | ok |  |
+| `select_eof` | ok |  |
+| `select_no_in_clause` | ok |  |
+| `select_continue_and_ps3` | ok |  |
+| `select_column_layout` | ok |  |
 
 ### posix  (1/1)
 

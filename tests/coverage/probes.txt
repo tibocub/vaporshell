@@ -1119,3 +1119,33 @@ declare -n bad=1x 2>/dev/null; echo "rc=$?"; declare -n self=self 2>/dev/null; e
 
 ## nameref_swap_idiom | bashbuiltin
 swap() { local -n p=$1 q=$2; local t=$p; p=$q; q=$t; }; a=1; b=2; swap a b; echo "$a $b"
+
+## select_basic | bashkeyword
+( printf '2\n' | select x in a b c; do echo "picked $x ($REPLY)"; break; done )
+
+## select_invalid_and_blank | bashkeyword
+( printf '9\n\n1\n' | select x in a b c; do echo "x=[$x] r=[$REPLY]"; break; done )
+
+## select_eof | bashkeyword
+( select x in a b; do echo unreachable; done < /dev/null; echo "x=[$x] rc=$?" )
+
+## select_no_in_clause | bashkeyword
+( set -- p q r; printf '3\n' | select x; do echo "$x"; break; done )
+
+## select_continue_and_ps3 | bashkeyword
+( PS3="pick> "; printf '1\n2\n' | select x in a b; do echo "n=$x"; [ "$x" = a ] && continue; break; done )
+
+## select_column_layout | bashkeyword
+( COLUMNS=40; printf '1\n' | select x in a b c d e f g h i; do break; done )
+
+## printf_T_basic | bashbuiltin
+printf "%(%Y-%m-%d)T\n" 1700000000; printf "[%()T]\n" 1700000000; printf "%(%%Y)T\n" 0
+
+## printf_T_width_and_reuse | bashbuiltin
+printf "[%10(%Y)T]\n" 0; printf "%(%Y)T\n" 0 1000000000 2000000000; printf "[%.5(%Y-%m-%d)T]\n" 0
+
+## printf_T_nested_parens | bashbuiltin
+printf "%((%Y))T\n" 0
+
+## SECONDS_starts_near_zero | bashvar
+s0=$SECONDS; sleep 1; s1=$SECONDS; (( s1 - s0 >= 1 && s1 - s0 <= 3 )) && echo ok

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "vaporshell.h"
 #include "expand.h"
@@ -415,6 +416,133 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                     spec[sl++] = *p++;
                   }
               }
+          }
+
+        if (*p == '(' && vs_feat(VF_PRINTF_EXT))
+          {
+            /* %(strftime-format)T: the format is everything up to the ')'
+             * that balances this '(' -- parentheses inside it nest, so
+             * "%((%Y))T" formats with "(%Y)". The value is an epoch time;
+             * -1 (or no argument at all) means now, -2 the shell's start.
+             */
+
+            const char *fs = ++p;
+            int depth = 1;
+            const char *a;
+            long long v;
+            time_t t;
+            struct tm tmv;
+            char tfmt[256];
+            char buf[256];
+            size_t flen;
+            size_t need;
+
+            while (*p != '\0' && depth > 0)
+              {
+                if (*p == '(')
+                  {
+                    depth++;
+                  }
+                else if (*p == ')')
+                  {
+                    depth--;
+                  }
+
+                if (depth > 0)
+                  {
+                    p++;
+                  }
+              }
+
+            if (depth != 0 || p[1] != 'T')
+              {
+                vs_err("printf: `%c': invalid time format specification",
+                       p[1] != '\0' ? p[1] : '\0');
+                pf->status = 1;
+                pf->stop = true;
+                return;
+              }
+
+            flen = (size_t)(p - fs);
+            if (flen >= sizeof(tfmt))
+              {
+                flen = sizeof(tfmt) - 1;
+              }
+
+            memcpy(tfmt, fs, flen);
+            tfmt[flen] = '\0';
+            if (flen == 0)
+              {
+                strcpy(tfmt, "%X");               /* bash's default: the locale's own time format */
+              }
+
+            p += 2;                              /* the ')' and the 'T' */
+
+            a = pf_arg(pf);
+            if (a == NULL)
+              {
+                t = time(NULL);
+              }
+            else
+              {
+                v = pf_number(pf, a, false);
+                if (v == -1)
+                  {
+                    t = time(NULL);
+                  }
+                else if (v == -2)
+                  {
+                    t = g_sh.seconds_base;       /* the shell's start time */
+                  }
+                else
+                  {
+                    t = (time_t)v;
+                  }
+              }
+
+            {
+              /* tzset()/localtime_r() read TZ from the real process
+               * environment, which `export` does not update immediately
+               * (variables only reach environ when a child is started) --
+               * so sync it here from the shell's own value first.
+               */
+
+              const char *tz = var_get("TZ");
+
+              if (tz != NULL)
+                {
+                  setenv("TZ", tz, 1);
+                }
+              else
+                {
+                  unsetenv("TZ");
+                }
+            }
+
+            tzset();
+            if (localtime_r(&t, &tmv) == NULL)
+              {
+                buf[0] = '\0';
+                need = 0;
+              }
+            else
+              {
+                need = strftime(buf, sizeof(buf), tfmt, &tmv);
+              }
+
+            spec[sl++] = 's';
+            spec[sl] = '\0';
+            {
+              char *out;
+              int wneed = snprintf(NULL, 0, spec, need > 0 ? buf : "");
+
+              out = vs_xmalloc((size_t)wneed + 1);
+              snprintf(out, (size_t)wneed + 1, spec, need > 0 ? buf : "");
+              sb_adds(&pf->out, out);
+              free(out);
+            }
+
+            continue;
           }
 
         conv = *p;
