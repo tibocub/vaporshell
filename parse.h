@@ -153,6 +153,7 @@ int ws_skip_backtick(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_braced(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_arith(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_cmdsub(const char *s, size_t len, size_t i, size_t *end);
+int ws_skip_procsub(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end);
 
 #endif

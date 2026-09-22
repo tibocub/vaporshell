@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **448 of 458**.
+Probes matching bash in bash mode: **453 of 462**.
 
 
 ## How this is measured
@@ -162,7 +162,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `mb_invalid_bytes` | ok |  |
 | `param_ext_leading_blanks_split` | ok |  |
 
-### Other expansions  (25/26)
+### Other expansions  (26/26)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -186,7 +186,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `arith_base` | ok | bash base#number |
 | `brace_expansion` | ok | bash {a,b} and {1..3} |
 | `brace_seq_step` | ok | bash {1..10..3} |
-| `procsub` | **differs** | bash <(cmd) |
+| `procsub` | ok | bash <(cmd) |
 | `brace_list` | ok |  |
 | `brace_sequence` | ok |  |
 | `brace_padding` | ok |  |
@@ -691,6 +691,15 @@ Each table lists probes for one area; the count is probes matching bash.
 |---|---|---|
 | `read_ifs_mixed_delimiters` | ok |  |
 
+### procsub  (4/4)
+
+| probe | bash mode | note |
+|---|---|---|
+| `procsub_input` | ok |  |
+| `procsub_no_expansion_in_dquotes` | ok |  |
+| `procsub_preserves_exact_bytes` | ok |  |
+| `procsub_multiple_in_one_command` | ok |  |
+
 
 ## Builtins against bash's own list
 
@@ -786,6 +795,17 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **Process substitution** (`<(cmd)` and `>(cmd)`) works, but not with bash's
+  true concurrency: this shell has no background-execution model to build
+  that on (NuttX has no fork at all, and even `$(...)` here runs to
+  completion before its result is used). `<(cmd)` runs `cmd` to completion
+  and its output becomes a real temporary file, whose path is what the
+  substitution expands to (a plain path, not bash's `/dev/fd/N`); `>(cmd)`
+  hands out an empty temp file, and `cmd` runs with that file as its input
+  once the command that used the path has finished — a moment later than
+  bash's concurrent version, which matters only if something depends on
+  `cmd` already running while the foreground command is still writing.
+  Not expanded inside double quotes, matching bash.
 - **`select`** works: numbering, `PS3` (default `#? `), reading (a plain `read`,
   so backslash line-continuation and the rest of `read`'s rules apply), a blank
   line just redisplaying the menu, an invalid or out-of-range choice still

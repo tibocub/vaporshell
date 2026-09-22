@@ -195,6 +195,17 @@ vaporshell (bash mode) has it as a builtin.
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **Process substitution** (`<(cmd)` and `>(cmd)`) works, but not with bash's
+  true concurrency: this shell has no background-execution model to build
+  that on (NuttX has no fork at all, and even `$(...)` here runs to
+  completion before its result is used). `<(cmd)` runs `cmd` to completion
+  and its output becomes a real temporary file, whose path is what the
+  substitution expands to (a plain path, not bash's `/dev/fd/N`); `>(cmd)`
+  hands out an empty temp file, and `cmd` runs with that file as its input
+  once the command that used the path has finished — a moment later than
+  bash's concurrent version, which matters only if something depends on
+  `cmd` already running while the foreground command is still writing.
+  Not expanded inside double quotes, matching bash.
 - **`select`** works: numbering, `PS3` (default `#? `), reading (a plain `read`,
   so backslash line-continuation and the rest of `read`'s rules apply), a blank
   line just redisplaying the menu, an invalid or out-of-range choice still

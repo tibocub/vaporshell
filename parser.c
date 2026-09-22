@@ -1889,3 +1889,12 @@ int ws_skip_cmdsub(const char *s, size_t len, size_t i, size_t *end)
   arena_release(arena);
   return r;
 }
+
+/* <(...) and >(...): 'i' is the index of the '<' or '>'; the command list
+ * inside is exactly like $(...)'s, so this is only an offset adjustment.
+ */
+
+int ws_skip_procsub(const char *s, size_t len, size_t i, size_t *end)
+{
+  return ws_skip_cmdsub(s, len, i + 2, end);
+}

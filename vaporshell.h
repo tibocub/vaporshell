@@ -179,6 +179,16 @@ size_t vs_mb_case(const char *s, size_t len, bool upper, char *out);  /* out: at
 long vs_mb_swapcase(long wc);
 bool vs_mb_isclass(long wc, const char *name, size_t n);
 
+/* procsub.c: <(cmd) and >(cmd). Each runs to completion and is materialized as
+ * a real file (bash's true concurrency needs a background reader/writer this
+ * shell has no equivalent of); an output one's consumer runs once the command
+ * that used the path is done. procsub_mark()/_drain() bracket that lifetime.
+ */
+
+char *procsub_new(const char *cmd, size_t cmdlen, bool is_output);
+size_t procsub_mark(void);
+void procsub_drain(size_t from);
+
 bool is_valid_name(const char *s, size_t len);
 struct var_s *var_lookup(const char *name);       /* follows namerefs */
 
@@ -362,6 +372,9 @@ struct shell_s
   const char *cur_script;     /* the script file given on the command line, if any */
   bool script_main;           /* running a script file: FUNCNAME ends with "main" */
   bool have_namerefs;         /* a nameref has existed: names must be followed (vars.c) */
+  struct procsub_s *procsub;  /* procsub.c: pending <(...)/>( ...) cleanup and deferred writers */
+  size_t procsub_n;
+  size_t procsub_cap;
   unsigned long long decl_raw;   /* bit i: argv[i] of the declaration builtin running is an array literal, unexpanded */
 
   int lineno;                 /* line of the command being run: $LINENO */

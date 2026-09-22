@@ -434,6 +434,33 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
                 }
             }
 
+          /* process substitution: <(...) and >(...) are a word of their
+           * own (or part of one -- "cat <(foo)bar" is one word), with a
+           * full command list inside, exactly like $(...). ws_skip_cmdsub
+           * already parses that; only the offset to it differs.
+           */
+
+          if ((c == '<' || c == '>') && lx->pos + 1 < lx->len &&
+              lx->buf[lx->pos + 1] == '(' && vs_feat(VF_BASH_SYNTAX))
+            {
+              size_t e;
+              int r2 = skip_construct(lx, ws_skip_procsub, lx->pos, &e, "`)'");
+
+              if (r2 == WS_OK)
+                {
+                  sb_addn(&w, lx->buf + lx->pos, e - lx->pos);
+                  lx->pos = e;
+                  continue;
+                }
+
+              if (r2 == WS_ERROR)
+                {
+                  sb_free(&w);
+                  tok->type = T_ERROR;
+                  return -1;
+                }
+            }
+
           break;
         }
 
@@ -612,6 +639,17 @@ static int lex_token_raw(struct lexer_s *lx, struct token_s *tok)
       size_t n = strlen(g_ops[i].text);
 
       if (g_ops[i].feature >= 0 && !vs_feat((enum vs_feature_e)g_ops[i].feature))
+        {
+          continue;
+        }
+
+      /* <(...) and >(...): a word (lex_word knows them), never the plain
+       * operator, even at word-start where nothing has been accumulated yet.
+       */
+
+      if ((g_ops[i].type == T_LESS || g_ops[i].type == T_GREAT) &&
+          lx->pos + 1 < lx->len && lx->buf[lx->pos + 1] == '(' &&
+          vs_feat(VF_BASH_SYNTAX))
         {
           continue;
         }

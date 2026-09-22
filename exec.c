@@ -2152,11 +2152,14 @@ static int exec_time(struct node_s *n)
 int exec_node(struct node_s *n)
 {
   int status = 0;
+  size_t procsub_at;
 
   if (g_sh.opt_n && !g_sh.interactive)
     {
       return 0;                    /* set -n: read, do not run */
     }
+
+  procsub_at = procsub_mark();
 
   switch (n->type)
     {
@@ -2262,6 +2265,7 @@ int exec_node(struct node_s *n)
       g_sh.last_status = status;
     }
 
+  procsub_drain(procsub_at);
   return status;
 }
 
@@ -2306,7 +2310,7 @@ static int run_string_child(const char *text, size_t len)
 
 /* ---- Command substitution ----------------------------------------------------------------------- */
 
-char *run_cmdsub(const char *text, size_t len)
+static char *run_cmdsub_impl(const char *text, size_t len, bool strip)
 {
   struct sbuf_s out;
   int fds[2];
@@ -2326,7 +2330,7 @@ char *run_cmdsub(const char *text, size_t len)
       out.s = r != NULL ? r : vs_xstrdup("");
       out.len = strlen(out.s);
       out.cap = out.len + 1;
-      goto strip;
+      goto maybe_strip;
     }
 
   if (!vs_plat_have_fork())
@@ -2348,7 +2352,7 @@ char *run_cmdsub(const char *text, size_t len)
       out.s = r;
       out.len = strlen(r);
       out.cap = out.len + 1;
-      goto strip;
+      goto maybe_strip;
     }
 
   if (pipe(fds) != 0)
@@ -2407,13 +2411,32 @@ char *run_cmdsub(const char *text, size_t len)
   close(fds[0]);
   g_sh.cmdsub_status = wait_for(pid);
 
-strip:
-  while (out.len > 0 && out.s[out.len - 1] == '\n')
+maybe_strip:
+  if (strip)
     {
-      out.s[--out.len] = '\0';
+      while (out.len > 0 && out.s[out.len - 1] == '\n')
+        {
+          out.s[--out.len] = '\0';
+        }
     }
 
   return sb_take(&out);
+}
+
+/* $(...) and `...`: bash strips trailing newlines from the captured output. */
+
+char *run_cmdsub(const char *text, size_t len)
+{
+  return run_cmdsub_impl(text, len, true);
+}
+
+/* <(...): the substituted command's output verbatim, newlines and all --
+ * it stands in for a real file, not a captured string.
+ */
+
+char *run_capture_raw(const char *text, size_t len)
+{
+  return run_cmdsub_impl(text, len, false);
 }
 
 /* ---- Driving the parser ---------------------------------------------------------------------------- */

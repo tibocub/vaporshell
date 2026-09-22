@@ -245,7 +245,8 @@ def run_vaporshell(nuttx_dir, script_path, vs_opts="", boot_timeout=8, cmd_timeo
 #   path-lookup   NuttX finds builtin apps regardless of $PATH
 NUTTX_LACKS = {"async", "wc-format", "env:HOME", "env:HOSTNAME", "float",
                "path-lookup", "regex",
-               "cmd:sed", "cmd:tr", "cmd:tail", "cmd:mktemp", "cmd:ln"}
+               "cmd:sed", "cmd:tr", "cmd:tail", "cmd:mktemp", "cmd:ln",
+               "cmd:diff", "cmd:paste"}
 
 
 def requirements(test_path):

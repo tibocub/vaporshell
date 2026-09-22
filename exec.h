@@ -23,6 +23,8 @@ int exec_node(struct node_s *n);
 
 int run_source(struct parser_s *p, bool recover);
 int run_string(const char *text, size_t len);
+char *run_cmdsub(const char *text, size_t len);
+char *run_capture_raw(const char *text, size_t len);   /* procsub.c: <(...), no newline stripping */
 int run_file(const char *path);
 
 /* Run an already-expanded command. skip_functions: as "command name". */

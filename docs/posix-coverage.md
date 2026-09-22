@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-22 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **456 of 458**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **460 of 462**. POSIX utilities not provided as builtins: **3**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -652,6 +652,15 @@ Each table lists probes for one area; the count is probes matching dash.
 | probe | POSIX mode | note |
 |---|---|---|
 | `read_ifs_mixed_delimiters` | ok |  |
+
+### procsub  (4/4)
+
+| probe | POSIX mode | note |
+|---|---|---|
+| `procsub_input` | ok |  |
+| `procsub_no_expansion_in_dquotes` | ok |  |
+| `procsub_preserves_exact_bytes` | ok |  |
+| `procsub_multiple_in_one_command` | ok |  |
 
 
 ## POSIX utilities as builtins

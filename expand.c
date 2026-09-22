@@ -2459,6 +2459,21 @@ static void x_cmdsub(struct xctx_s *x, const char *text, size_t n, bool dq)
   free(out);
 }
 
+static void x_procsub(struct xctx_s *x, const char *text, size_t n, bool is_output)
+{
+  char *path = procsub_new(text, n, is_output);
+
+  if (path == NULL)
+    {
+      x->error = true;
+      return;
+    }
+
+  x->present = true;
+  x_add_value(x, path, false);
+  free(path);
+}
+
 static void x_arith(struct xctx_s *x, const char *expr, size_t n, bool dq)
 {
   char *inner = operand_str(expr, n, false);
@@ -2789,6 +2804,23 @@ static void x_scan(struct xctx_s *x, const char *s, size_t len, bool dq,
         {
           x_dollar(x, s, len, &i, dq);
           continue;
+        }
+
+      /* <(...) and >(...): a real path standing in for the substituted
+       * command's output (or input); bash does not expand these inside
+       * double quotes, so plain word-splitting/quote-removal apply to dq
+       * text as usual and this is skipped there.
+       */
+
+      if ((c == '<' || c == '>') && !dq && i + 1 < len && s[i + 1] == '(' &&
+          vs_feat(VF_BASH_SYNTAX))
+        {
+          if (ws_skip_cmdsub(s, len, i + 2, &e) == WS_OK)
+            {
+              x_procsub(x, s + i + 2, e - 1 - (i + 2), c == '>');
+              i = e;
+              continue;
+            }
         }
 
       if (c == '`')

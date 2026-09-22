@@ -1149,3 +1149,15 @@ printf "%((%Y))T\n" 0
 
 ## SECONDS_starts_near_zero | bashvar
 s0=$SECONDS; sleep 1; s1=$SECONDS; (( s1 - s0 >= 1 && s1 - s0 <= 3 )) && echo ok
+
+## procsub_input | procsub
+diff <(echo a) <(echo a) && echo same; cat <(cat <(echo nested))
+
+## procsub_no_expansion_in_dquotes | procsub
+echo "<(echo x)"
+
+## procsub_preserves_exact_bytes | procsub
+cat <(printf "no newline"); echo "|end"; cat <(printf "a\nb\nc\n")
+
+## procsub_multiple_in_one_command | procsub
+paste <(echo a) <(echo b)
