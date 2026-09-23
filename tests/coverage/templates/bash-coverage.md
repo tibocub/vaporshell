@@ -195,6 +195,28 @@ vaporshell (bash mode) has it as a builtin.
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **`enable`** turns builtins on and off (`-n`, `-p`, `-a`, plain names); a
+  disabled builtin is invisible to command resolution everywhere in the
+  shell, so it falls through to an external program of the same name, as
+  in bash.
+- **`compgen`** generates a word list the way bash's tab completion would
+  build one internally: `-W`, `-f`, `-d`, `-A` (`variable`, `function`,
+  `builtin`, `alias`, `keyword`, `command`), `-v`, `-X`, `-P`/`-S`. Genuinely
+  useful outside interactive completion, since a script can call it
+  directly. Where a source's own order isn't alphabetical (`-f`/`-d`: whatever
+  order the directory returns; `-A command`: PATH order), this doesn't sort
+  it either, matching bash. Combining two sources in one call (`-W` together
+  with `-A`) follows a fixed internal order rather than the order given on
+  the command line, differing from bash there in a way not worth chasing for
+  such a rare combination.
+- **`complete`, `compopt` and `bind`** are accepted but, beyond `complete`'s
+  own spec registry (`-F`/`-W`/etc., `-p` to list, `-r` to remove — real,
+  since a script can query it back), have no effect: this shell has no
+  line editor for interactive completion or key bindings to attach to.
+  `compopt` always reports it isn't running inside a completion function
+  (true here, always, exactly as bash reports it outside one), and `bind -l`
+  and `bind -p` list nothing rather than bash's large compiled-in default
+  keymap.
 - **Job control** (`jobs`, `wait`, `fg`, `bg`, `disown`, and `kill %N`) tracks
   background jobs (`cmd &`) and prints `jobs` in bash's exact column format,
   including the status text (`Running`, `Done`, `Exit N`, or a signal name
@@ -286,6 +308,8 @@ vaporshell (bash mode) has it as a builtin.
   `set -T`), and not once per pipeline stage in the parent as bash does.
 - **`time`** reports user and system time as zero on NuttX (only wall time is
   available there).
+- **`grep` is not on NuttX's toolbox**, unlike most of the other common
+  text tools it does have; a script that needs it there has no fallback.
 - **`printf %(%c)T`** (the locale's full date-and-time representation) is
   empty on NuttX: its C library's `strftime` doesn't implement that
   conversion. Every other conversion letter works there.

@@ -12,14 +12,14 @@ releases a new version.
 
 - bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
 - POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-22 by `tests/coverage/gen-docs.py`
+- generated: 2026-09-23 by `tests/coverage/gen-docs.py`
 
 
 The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **463 of 469**.
+Probes matching bash in bash mode: **477 of 479**.
 
 
 ## How this is measured
@@ -581,7 +581,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (62/67)
+### Bash builtins  (76/77)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -593,17 +593,17 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_shopt` | ok | bash shopt |
 | `bi_pushd` | ok | bash pushd popd dirs |
 | `bi_builtin` | ok | bash builtin |
-| `bi_enable` | **differs** | bash enable |
+| `bi_enable` | ok | bash enable |
 | `bi_caller` | ok | bash caller |
 | `bi_help` | ok | bash help |
 | `bi_history` | **differs** | bash history |
-| `bi_compgen` | **differs** | bash compgen |
-| `bi_complete` | **differs** | bash complete |
+| `bi_compgen` | ok | bash compgen |
+| `bi_complete` | ok | bash complete |
 | `bi_disown` | ok | bash disown |
 | `bi_printf_T` | ok | bash printf %(fmt)T |
 | `bi_getopts_silent` | ok |  |
 | `bi_test_e_stat` | ok |  |
-| `bi_bind` | **differs** | bash bind |
+| `bi_bind` | ok | bash bind |
 | `bi_exec_c` | ok | bash exec -c |
 | `shopt_query` | ok |  |
 | `shopt_list` | ok |  |
@@ -652,6 +652,16 @@ Each table lists probes for one area; the count is probes matching bash.
 | `jobs_kill_jobspec` | ok |  |
 | `jobs_disown` | ok |  |
 | `jobs_status_text` | ok |  |
+| `enable_toggle` | ok |  |
+| `enable_subshell_scoped` | ok |  |
+| `complete_subshell_scoped` | ok |  |
+| `enable_listing` | ok |  |
+| `compgen_wordlist` | ok |  |
+| `compgen_actions` | ok |  |
+| `compgen_prefix_suffix_exclude` | ok |  |
+| `complete_registry` | ok |  |
+| `compopt_outside_completion` | ok |  |
+| `bind_no_line_editor` | ok |  |
 
 ### Syntax and misc  (23/23)
 
@@ -713,11 +723,11 @@ Each table lists probes for one area; the count is probes matching bash.
 Every builtin `compgen -b` reports in the reference bash, and whether
 vaporshell (bash mode) has it as a builtin.
 
-bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 51 of them.
+bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 56 of them.
 
-**Missing (10):** `bind` `caller` `compgen` `complete` `compopt` `enable` `fc` `history` `logout` `suspend`
+**Missing (5):** `caller` `fc` `history` `logout` `suspend`
 
-**Provided (51):** `.` `:` `[` `alias` `bg` `break` `builtin` `cd` `command` `continue` `declare` `dirs` `disown` `echo` `eval` `exec` `exit` `export` `false` `fg` `getopts` `hash` `help` `jobs` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
+**Provided (56):** `.` `:` `[` `alias` `bg` `bind` `break` `builtin` `cd` `command` `compgen` `complete` `compopt` `continue` `declare` `dirs` `disown` `echo` `enable` `eval` `exec` `exit` `export` `false` `fg` `getopts` `hash` `help` `jobs` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
 
 
 ## Known deliberate differences
@@ -802,6 +812,28 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 51 of the
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **`enable`** turns builtins on and off (`-n`, `-p`, `-a`, plain names); a
+  disabled builtin is invisible to command resolution everywhere in the
+  shell, so it falls through to an external program of the same name, as
+  in bash.
+- **`compgen`** generates a word list the way bash's tab completion would
+  build one internally: `-W`, `-f`, `-d`, `-A` (`variable`, `function`,
+  `builtin`, `alias`, `keyword`, `command`), `-v`, `-X`, `-P`/`-S`. Genuinely
+  useful outside interactive completion, since a script can call it
+  directly. Where a source's own order isn't alphabetical (`-f`/`-d`: whatever
+  order the directory returns; `-A command`: PATH order), this doesn't sort
+  it either, matching bash. Combining two sources in one call (`-W` together
+  with `-A`) follows a fixed internal order rather than the order given on
+  the command line, differing from bash there in a way not worth chasing for
+  such a rare combination.
+- **`complete`, `compopt` and `bind`** are accepted but, beyond `complete`'s
+  own spec registry (`-F`/`-W`/etc., `-p` to list, `-r` to remove — real,
+  since a script can query it back), have no effect: this shell has no
+  line editor for interactive completion or key bindings to attach to.
+  `compopt` always reports it isn't running inside a completion function
+  (true here, always, exactly as bash reports it outside one), and `bind -l`
+  and `bind -p` list nothing rather than bash's large compiled-in default
+  keymap.
 - **Job control** (`jobs`, `wait`, `fg`, `bg`, `disown`, and `kill %N`) tracks
   background jobs (`cmd &`) and prints `jobs` in bash's exact column format,
   including the status text (`Running`, `Done`, `Exit N`, or a signal name
@@ -893,6 +925,8 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 51 of the
   `set -T`), and not once per pipeline stage in the parent as bash does.
 - **`time`** reports user and system time as zero on NuttX (only wall time is
   available there).
+- **`grep` is not on NuttX's toolbox**, unlike most of the other common
+  text tools it does have; a script that needs it there has no fallback.
 - **`printf %(%c)T`** (the locale's full date-and-time representation) is
   empty on NuttX: its C library's `strftime` doesn't implement that
   conversion. Every other conversion letter works there.

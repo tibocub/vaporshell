@@ -1182,3 +1182,33 @@ sleep 5 & disown; jobs; echo "count=$(jobs | wc -l)"
 
 ## jobs_status_text | bashbuiltin
 sleep 5 & kill -TERM %1; sleep 0.2; jobs
+
+## enable_toggle | bashbuiltin
+enable -n echo; echo hi; enable echo; echo hi; enable -n echo; command -v echo
+
+## enable_subshell_scoped | bashbuiltin
+( enable -n echo ); command -v echo
+
+## complete_subshell_scoped | bashbuiltin
+( complete -F _foo mycmd ); complete -p 2>&1; echo done
+
+## enable_listing | bashbuiltin
+enable -n printf; enable -p | grep -c printf; enable -n cd; enable -a | grep cd
+
+## compgen_wordlist | bashbuiltin
+compgen -W "apple banana avocado" -- a; compgen -W "apple banana" -- xyz; echo rc=$?
+
+## compgen_actions | bashbuiltin
+foo_func() { :; }; compgen -A function -- foo; compgen -A builtin -- ech; compgen -A keyword -- wh
+
+## compgen_prefix_suffix_exclude | bashbuiltin
+compgen -X "a*" -W "apple avocado banana" --; compgen -P "pre_" -S "_suf" -W "a b" -- a
+
+## complete_registry | bashbuiltin
+complete -W "a b c" mycmd; complete -p mycmd; complete -r mycmd; complete -p mycmd 2>/dev/null; echo rc=$?
+
+## compopt_outside_completion | bashbuiltin
+compopt -o nospace 2>/dev/null; echo rc=$?
+
+## bind_no_line_editor | bashbuiltin
+bind "\C-l:clear-screen" 2>/dev/null; echo rc=$?

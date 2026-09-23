@@ -160,6 +160,68 @@ static void free_aliases(struct alias_s *a)
     }
 }
 
+static struct disabled_s *clone_disabled(const struct disabled_s *d)
+{
+  struct disabled_s *head = NULL;
+  struct disabled_s **tail = &head;
+
+  for (; d != NULL; d = d->next)
+    {
+      struct disabled_s *c = vs_xmalloc(sizeof(*c));
+
+      c->name = vs_xstrdup(d->name);
+      c->next = NULL;
+      *tail = c;
+      tail = &c->next;
+    }
+
+  return head;
+}
+
+static void free_disabled(struct disabled_s *d)
+{
+  while (d != NULL)
+    {
+      struct disabled_s *n = d->next;
+
+      free(d->name);
+      free(d);
+      d = n;
+    }
+}
+
+static struct complete_spec_s *clone_complete_specs(const struct complete_spec_s *s)
+{
+  struct complete_spec_s *head = NULL;
+  struct complete_spec_s **tail = &head;
+
+  for (; s != NULL; s = s->next)
+    {
+      struct complete_spec_s *c = vs_xmalloc(sizeof(*c));
+
+      c->name = vs_xstrdup(s->name);
+      c->opts = vs_xstrdup(s->opts);
+      c->next = NULL;
+      *tail = c;
+      tail = &c->next;
+    }
+
+  return head;
+}
+
+static void free_complete_specs(struct complete_spec_s *s)
+{
+  while (s != NULL)
+    {
+      struct complete_spec_s *n = s->next;
+
+      free(s->name);
+      free(s->opts);
+      free(s);
+      s = n;
+    }
+}
+
 static struct hash_s *clone_hash(const struct hash_s *h)
 {
   struct hash_s *head = NULL;
@@ -239,6 +301,8 @@ static void snap_enter(struct snap_s *s)
   g_sh.funcs = clone_funcs(s->saved.funcs);
   g_sh.aliases = clone_aliases(s->saved.aliases);
   g_sh.hash = clone_hash(s->saved.hash);
+  g_sh.disabled_builtins = clone_disabled(s->saved.disabled_builtins);
+  g_sh.complete_specs = clone_complete_specs(s->saved.complete_specs);
   if (s->saved.pos != NULL)
     {
       int k;
@@ -297,6 +361,8 @@ static void snap_leave(struct snap_s *s)
   free_funcs(g_sh.funcs);
   free_aliases(g_sh.aliases);
   free_hash(g_sh.hash);
+  free_disabled(g_sh.disabled_builtins);
+  free_complete_specs(g_sh.complete_specs);
   dirstack_free();
   for (i = 0; i < g_sh.npos; i++)
     {

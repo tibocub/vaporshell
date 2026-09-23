@@ -119,6 +119,30 @@ struct alias_s
   char *value;
 };
 
+/* enable -n: a builtin invisible to command resolution, until re-enabled. A
+ * subshell's own enable/disable does not outlive it, just like a subshell's
+ * own variables or functions -- so this lives in g_sh and is cloned the
+ * same way (inproc.c).
+ */
+
+struct disabled_s
+{
+  struct disabled_s *next;
+  char *name;
+};
+
+/* complete's own registered specs (its -F/-W/etc. argument text, verbatim,
+ * for `complete -p` to echo back); likewise scoped like a subshell's own
+ * variables.
+ */
+
+struct complete_spec_s
+{
+  struct complete_spec_s *next;
+  char *name;
+  char *opts;
+};
+
 struct hash_s
 {
   struct hash_s *next;
@@ -223,6 +247,12 @@ int bi_jobs(int argc, char **argv);
 int bi_fg(int argc, char **argv);
 int bi_bg(int argc, char **argv);
 int bi_disown(int argc, char **argv);
+int bi_enable(int argc, char **argv);                 /* enable.c */
+int bi_compgen(int argc, char **argv);                 /* compgen.c */
+int bi_complete(int argc, char **argv);                /* compgen.c: complete, compopt */
+int bi_compopt(int argc, char **argv);
+int bi_bind(int argc, char **argv);                    /* bind.c: no-op -- no line editor here */
+bool builtin_is_enabled(const char *name);             /* false: enable -n disabled it */
 
 bool is_valid_name(const char *s, size_t len);
 struct var_s *var_lookup(const char *name);       /* follows namerefs */
@@ -421,6 +451,8 @@ struct shell_s
   int lineno;                 /* line of the command being run: $LINENO */
   struct local_s *locals;
   struct alias_s *aliases;
+  struct disabled_s *disabled_builtins;   /* enable -n */
+  struct complete_spec_s *complete_specs; /* complete's registry */
   struct hash_s *hash;
   int getopts_pos;            /* getopts: index inside a clustered option arg */
   char getopts_last[24];      /* OPTIND as getopts last stored it */

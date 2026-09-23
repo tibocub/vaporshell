@@ -2000,7 +2000,12 @@ const struct builtin_s g_vs_builtins[] =
   { "jobs",     bi_jobs,     false, "jobs [-l|-p] [-n]: list background jobs", VS_M_ALL },
   { "fg",       bi_fg,       false, "fg [job]: bring a job to the foreground", VS_M_ALL },
   { "bg",       bi_bg,       false, "bg [job]: resume a stopped job in the background", VS_M_ALL },
-  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VS_M_ALL },
+  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VS_M_BASH },
+  { "enable",   bi_enable,   false, "enable [-n] [-a|-p] [name...]: enable or disable shell builtins", VS_M_BASH },
+  { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VS_M_BASH },
+  { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VS_M_BASH },
+  { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VS_M_BASH },
+  { "bind",     bi_bind,     false, "bind [-p|-P|-l] [keyseq:cmd]: readline key bindings (no line editor here)", VS_M_BASH },
   { NULL, NULL, false, NULL, 0 }
 };
 
@@ -2012,7 +2017,7 @@ const struct builtin_s *builtin_find(const char *name)
     {
       if ((b->modes & vs_mode_bit()) != 0 && strcmp(b->name, name) == 0)
         {
-          return b;
+          return builtin_is_enabled(name) ? b : NULL;
         }
     }
 

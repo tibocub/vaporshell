@@ -12,10 +12,10 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 
 - bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
 - POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-22 by `tests/coverage/gen-docs.py`
+- generated: 2026-09-23 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **463 of 469**. POSIX utilities not provided as builtins: **0**.
+Probes matching dash in POSIX mode: **473 of 479**. POSIX utilities not provided as builtins: **0**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -543,7 +543,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (61/67)
+### Bash builtins  (71/77)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -561,7 +561,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `bi_history` | ok | bash history |
 | `bi_compgen` | ok | bash compgen |
 | `bi_complete` | ok | bash complete |
-| `bi_disown` | **differs** | bash disown |
+| `bi_disown` | ok | bash disown |
 | `bi_printf_T` | ok | bash printf %(fmt)T |
 | `bi_getopts_silent` | ok |  |
 | `bi_test_e_stat` | ok |  |
@@ -614,6 +614,16 @@ Each table lists probes for one area; the count is probes matching dash.
 | `jobs_kill_jobspec` | **differs** |  |
 | `jobs_disown` | **differs** |  |
 | `jobs_status_text` | **differs** |  |
+| `enable_toggle` | ok |  |
+| `enable_subshell_scoped` | ok |  |
+| `complete_subshell_scoped` | **differs** |  |
+| `enable_listing` | ok |  |
+| `compgen_wordlist` | ok |  |
+| `compgen_actions` | ok |  |
+| `compgen_prefix_suffix_exclude` | ok |  |
+| `complete_registry` | ok |  |
+| `compopt_outside_completion` | ok |  |
+| `bind_no_line_editor` | ok |  |
 
 ### Syntax and misc  (23/23)
 
