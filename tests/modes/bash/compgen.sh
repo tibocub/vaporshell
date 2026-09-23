@@ -11,8 +11,13 @@ touch afile1 afile2 bfile1
 # wordlist no match
 ( compgen -W "apple banana" -- xyz; echo rc=$?
 )
-# files prefix
-( compgen -f -- a
+# files prefix (both must appear; the order readdir returns them in is not
+# portable -- and here, since the reference bash and vaporshell each read a
+# different filesystem, not even repeatable across the two)
+( out="$(compgen -f -- a)"
+  case $out in *afile1*) ;; *) echo "missing afile1";; esac
+  case $out in *afile2*) ;; *) echo "missing afile2";; esac
+  echo done
 )
 # variable action
 ( XYZ_TEST=1; compgen -A variable -- XYZ_
