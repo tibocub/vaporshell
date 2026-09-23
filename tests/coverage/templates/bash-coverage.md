@@ -195,6 +195,22 @@ vaporshell (bash mode) has it as a builtin.
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **Job control** (`jobs`, `wait`, `fg`, `bg`, `disown`, and `kill %N`) tracks
+  background jobs (`cmd &`) and prints `jobs` in bash's exact column format,
+  including the status text (`Running`, `Done`, `Exit N`, or a signal name
+  such as `Terminated`) and the `[N]+`/`[N]-` markers for the current and
+  previous job. There is no real terminal job control here (no process
+  groups, no `tcsetpgrp`, nothing suspends a job with `Ctrl-Z`): `fg`/`bg`
+  work with what a job can actually be in this shell — running in the
+  background, or finished — and a job only shows `Stopped` if something
+  outside the shell sends it `SIGSTOP` directly. Job ids count up forever
+  and are never reused, unlike bash's, which reuses a job's number once it
+  is no longer displayed; this is simpler and only matters to a script that
+  depends on specific reused numbers. Bash's own choice of which job gets
+  the `+`/`-` marker is itself not deterministic once more than one job has
+  already finished (it depends on `SIGCHLD` reaping order, confirmed by
+  running the same script repeatedly), so this is matched only where bash's
+  own behaviour is stable.
 - **Process substitution** (`<(cmd)` and `>(cmd)`) works, but not with bash's
   true concurrency: this shell has no background-execution model to build
   that on (NuttX has no fork at all, and even `$(...)` here runs to

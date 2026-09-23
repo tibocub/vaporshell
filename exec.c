@@ -1596,14 +1596,34 @@ static int exec_async_spawn(struct node_s *st)
 
   env_free(envp);
   free(path);
-  fv_free(&argv);
   if (ret != 0)
     {
+      fv_free(&argv);
       vs_err("&: %s", strerror(ret));
       return 126;
     }
 
   g_sh.last_bg = pid;
+  {
+    struct sbuf_s cmd;
+    int k;
+
+    sb_init(&cmd);
+    for (k = 0; k < argv.n; k++)
+      {
+        if (k > 0)
+          {
+            sb_addc(&cmd, ' ');
+          }
+
+        sb_adds(&cmd, argv.v[k]);
+      }
+
+    job_add(pid, cmd.s != NULL ? cmd.s : "(command)");
+    sb_free(&cmd);
+  }
+
+  fv_free(&argv);
   return 0;
 }
 
@@ -1643,6 +1663,7 @@ static int exec_async(struct node_s *n)
     }
 
   g_sh.last_bg = pid;
+  job_add_node(pid, n);
   return 0;
 }
 

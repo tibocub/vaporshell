@@ -618,7 +618,28 @@ int bi_kill(int argc, char **argv)
 
   for (; i < argc; i++)
     {
-      if (kill((pid_t)atol(argv[i]), sig) != 0)
+      pid_t pid;
+
+      if (argv[i][0] == '%')
+        {
+          bool bad;
+          struct job_s *j = job_find_spec(argv[i], &bad);
+
+          if (j == NULL)
+            {
+              vs_err("kill: %s: no such job", argv[i]);
+              status = 1;
+              continue;
+            }
+
+          pid = j->pid;
+        }
+      else
+        {
+          pid = (pid_t)atol(argv[i]);
+        }
+
+      if (kill(pid, sig) != 0)
         {
           vs_err("kill: %s: %s", argv[i], strerror(errno));
           status = 1;

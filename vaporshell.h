@@ -143,6 +143,28 @@ struct frame_s
   bool is_func;
 };
 
+/* jobs.c: a background job (`cmd &`). One pid per job: a pipeline launched
+ * in the background is one forked child that manages its own internal
+ * pipeline, so there is only ever one pid here to track and wait for.
+ */
+
+enum job_state_e
+{
+  JOB_RUNNING,
+  JOB_STOPPED,        /* not produced by this shell itself, only observed */
+  JOB_DONE
+};
+
+struct job_s
+{
+  int id;                 /* 1-based, never reused (bash reuses; see docs) */
+  pid_t pid;
+  char *cmd;              /* for `jobs`: the source text of the command */
+  enum job_state_e state;
+  int status;             /* exit status, once JOB_DONE */
+  bool notified;          /* `jobs` has shown this one since it last changed */
+};
+
 struct func_s
 {
   struct func_s *next;
@@ -188,6 +210,19 @@ bool vs_mb_isclass(long wc, const char *name, size_t n);
 char *procsub_new(const char *cmd, size_t cmdlen, bool is_output);
 size_t procsub_mark(void);
 void procsub_drain(size_t from);
+
+/* jobs.c: background jobs (`cmd &`), `jobs`, `wait`, `fg`, `bg`, `disown`. */
+
+int job_add(pid_t pid, const char *cmd);              /* returns its job id */
+int job_add_node(pid_t pid, const struct node_s *n);   /* describes the node itself */
+void job_reap(void);                                   /* WNOHANG poll of every running job */
+struct job_s *job_find_id(int id);
+struct job_s *job_find_spec(const char *spec, bool *bad_spec);  /* %1, %+, %-, %%, a bare pid, or NULL: %+/current */
+void job_remove(struct job_s *j);
+int bi_jobs(int argc, char **argv);
+int bi_fg(int argc, char **argv);
+int bi_bg(int argc, char **argv);
+int bi_disown(int argc, char **argv);
 
 bool is_valid_name(const char *s, size_t len);
 struct var_s *var_lookup(const char *name);       /* follows namerefs */
@@ -320,6 +355,12 @@ struct shell_s
   int cmdsub_status;      /* status of the last command substitution, or -1 */
   pid_t pid;              /* $$ (stays the parent's inside subshells) */
   pid_t last_bg;          /* $! */
+  struct job_s *jobs;     /* jobs.c: background jobs, oldest first */
+  size_t njobs;
+  size_t jobs_cap;
+  int next_job_id;
+  int job_current;        /* job id marked '+' in `jobs` (0: none) */
+  int job_previous;       /* job id marked '-' (0: none) */
   const char *arg0;       /* $0 */
   const char *self;       /* how to re-run this shell (platform_nuttx.c) */
 

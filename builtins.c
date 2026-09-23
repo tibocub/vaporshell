@@ -1706,33 +1706,102 @@ static int bi_type(int argc, char **argv)
 static int bi_wait(int argc, char **argv)
 {
   int status = 0;
-  int i;
+  int i = 1;
+  bool next_any = false;
 
-  if (argc == 1)
+  job_reap();
+  if (i < argc && strcmp(argv[i], "-n") == 0)
     {
-      int ws;
+      next_any = true;
+      i++;
+    }
 
-      while (waitpid(-1, &ws, 0) > 0 || errno == EINTR)
+  if (i >= argc)
+    {
+      if (next_any)
         {
+          /* the next of ANY tracked job to finish, blocking-poll since
+           * there is no single waitpid() call meaning "any of these pids"
+           */
+
+          for (; ; )
+            {
+              size_t k;
+              bool any = false;
+
+              job_reap();
+              for (k = 0; k < g_sh.njobs; k++)
+                {
+                  any = true;
+                  if (g_sh.jobs[k].state == JOB_DONE)
+                    {
+                      status = g_sh.jobs[k].status;
+                      job_remove(&g_sh.jobs[k]);
+                      return status;
+                    }
+                }
+
+              if (!any)
+                {
+                  vs_err("wait: no jobs");
+                  return 127;
+                }
+
+              { struct timespec ts = { 0, 20000000L }; nanosleep(&ts, NULL); }
+            }
+        }
+
+      /* no operands: wait for every job still running, but (unlike an
+       * explicit spec) this never fails and never reports a status
+       */
+
+      while (g_sh.njobs > 0)
+        {
+          job_reap();
+          if (g_sh.jobs[0].state == JOB_DONE)
+            {
+              job_remove(&g_sh.jobs[0]);
+            }
+          else
+            {
+              { struct timespec ts = { 0, 20000000L }; nanosleep(&ts, NULL); }
+            }
         }
 
       return 0;
     }
 
-  for (i = 1; i < argc; i++)
+  for (; i < argc; i++)
     {
-      int ws;
-      pid_t pid = (pid_t)atol(argv[i]);
+      bool bad;
+      struct job_s *j = job_find_spec(argv[i], &bad);
 
-      if (waitpid(pid, &ws, 0) < 0)
+      if (j == NULL)
         {
-          vs_err("wait: pid %s is not a child of this shell", argv[i]);
+          if (argv[i][0] == '%')
+            {
+              vs_err("wait: %s: no such job", argv[i]);
+            }
+          else
+            {
+              vs_err("wait: pid %s is not a child of this shell", argv[i]);
+            }
+
           status = 127;
+          continue;
         }
-      else
+
+      while (j->state == JOB_RUNNING)
         {
-          status = WIFEXITED(ws) ? WEXITSTATUS(ws) : 128 + WTERMSIG(ws);
+          job_reap();
+          if (j->state == JOB_RUNNING)
+            {
+              { struct timespec ts = { 0, 20000000L }; nanosleep(&ts, NULL); }
+            }
         }
+
+      status = j->status;
+      job_remove(j);
     }
 
   return status;
@@ -1928,6 +1997,10 @@ const struct builtin_s g_vs_builtins[] =
   { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VS_M_BASH },
   { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VS_M_ALL },
   { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VS_M_ALL },
+  { "jobs",     bi_jobs,     false, "jobs [-l|-p] [-n]: list background jobs", VS_M_ALL },
+  { "fg",       bi_fg,       false, "fg [job]: bring a job to the foreground", VS_M_ALL },
+  { "bg",       bi_bg,       false, "bg [job]: resume a stopped job in the background", VS_M_ALL },
+  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VS_M_ALL },
   { NULL, NULL, false, NULL, 0 }
 };
 

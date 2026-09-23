@@ -19,7 +19,7 @@ The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **453 of 462**.
+Probes matching bash in bash mode: **463 of 469**.
 
 
 ## How this is measured
@@ -326,7 +326,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (57/60)
+### POSIX builtins  (59/60)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -386,8 +386,8 @@ Each table lists probes for one area; the count is probes matching bash.
 | `special_read_timeout` | ok | bash read -t |
 | `special_kill_l` | ok |  |
 | `special_kill_self` | ok |  |
-| `special_fg_bg` | **differs** |  |
-| `special_jobs` | **differs** |  |
+| `special_fg_bg` | ok |  |
+| `special_jobs` | ok |  |
 | `special_fc` | **differs** |  |
 | `special_newgrp` | ok |  |
 
@@ -581,7 +581,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (54/60)
+### Bash builtins  (62/67)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -599,7 +599,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_history` | **differs** | bash history |
 | `bi_compgen` | **differs** | bash compgen |
 | `bi_complete` | **differs** | bash complete |
-| `bi_disown` | **differs** | bash disown |
+| `bi_disown` | ok | bash disown |
 | `bi_printf_T` | ok | bash printf %(fmt)T |
 | `bi_getopts_silent` | ok |  |
 | `bi_test_e_stat` | ok |  |
@@ -645,6 +645,13 @@ Each table lists probes for one area; the count is probes matching bash.
 | `printf_T_basic` | ok |  |
 | `printf_T_width_and_reuse` | ok |  |
 | `printf_T_nested_parens` | ok |  |
+| `jobs_basic` | ok |  |
+| `jobs_wait_spec` | ok |  |
+| `jobs_wait_multiple` | ok |  |
+| `jobs_wait_no_args` | ok |  |
+| `jobs_kill_jobspec` | ok |  |
+| `jobs_disown` | ok |  |
+| `jobs_status_text` | ok |  |
 
 ### Syntax and misc  (23/23)
 
@@ -706,11 +713,11 @@ Each table lists probes for one area; the count is probes matching bash.
 Every builtin `compgen -b` reports in the reference bash, and whether
 vaporshell (bash mode) has it as a builtin.
 
-bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of them.
+bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 51 of them.
 
-**Missing (14):** `bg` `bind` `caller` `compgen` `complete` `compopt` `disown` `enable` `fc` `fg` `history` `jobs` `logout` `suspend`
+**Missing (10):** `bind` `caller` `compgen` `complete` `compopt` `enable` `fc` `history` `logout` `suspend`
 
-**Provided (47):** `.` `:` `[` `alias` `break` `builtin` `cd` `command` `continue` `declare` `dirs` `echo` `eval` `exec` `exit` `export` `false` `getopts` `hash` `help` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
+**Provided (51):** `.` `:` `[` `alias` `bg` `break` `builtin` `cd` `command` `continue` `declare` `dirs` `disown` `echo` `eval` `exec` `exit` `export` `false` `fg` `getopts` `hash` `help` `jobs` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
 
 
 ## Known deliberate differences
@@ -795,6 +802,22 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 47 of the
   per function or `source` frame, plus `main` for a script but not for `-c`),
   and the read-only `BASH_VERSINFO`. They are computed when first read.
   `BASH_VERSINFO[5]` is a placeholder machine type.
+- **Job control** (`jobs`, `wait`, `fg`, `bg`, `disown`, and `kill %N`) tracks
+  background jobs (`cmd &`) and prints `jobs` in bash's exact column format,
+  including the status text (`Running`, `Done`, `Exit N`, or a signal name
+  such as `Terminated`) and the `[N]+`/`[N]-` markers for the current and
+  previous job. There is no real terminal job control here (no process
+  groups, no `tcsetpgrp`, nothing suspends a job with `Ctrl-Z`): `fg`/`bg`
+  work with what a job can actually be in this shell — running in the
+  background, or finished — and a job only shows `Stopped` if something
+  outside the shell sends it `SIGSTOP` directly. Job ids count up forever
+  and are never reused, unlike bash's, which reuses a job's number once it
+  is no longer displayed; this is simpler and only matters to a script that
+  depends on specific reused numbers. Bash's own choice of which job gets
+  the `+`/`-` marker is itself not deterministic once more than one job has
+  already finished (it depends on `SIGCHLD` reaping order, confirmed by
+  running the same script repeatedly), so this is matched only where bash's
+  own behaviour is stable.
 - **Process substitution** (`<(cmd)` and `>(cmd)`) works, but not with bash's
   true concurrency: this shell has no background-execution model to build
   that on (NuttX has no fork at all, and even `$(...)` here runs to

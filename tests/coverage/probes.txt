@@ -1161,3 +1161,24 @@ cat <(printf "no newline"); echo "|end"; cat <(printf "a\nb\nc\n")
 
 ## procsub_multiple_in_one_command | procsub
 paste <(echo a) <(echo b)
+
+## jobs_basic | bashbuiltin
+sleep 1 & sleep 1 & jobs
+
+## jobs_wait_spec | bashbuiltin
+sleep 0.1 & wait %1; echo rc=$?; jobs
+
+## jobs_wait_multiple | bashbuiltin
+false & true & wait %1 %2; echo rc=$?
+
+## jobs_wait_no_args | bashbuiltin
+false & wait; echo rc=$?
+
+## jobs_kill_jobspec | bashbuiltin
+sleep 5 & kill %1; sleep 0.2; jobs
+
+## jobs_disown | bashbuiltin
+sleep 5 & disown; jobs; echo "count=$(jobs | wc -l)"
+
+## jobs_status_text | bashbuiltin
+sleep 5 & kill -TERM %1; sleep 0.2; jobs

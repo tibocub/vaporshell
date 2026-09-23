@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-22 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **460 of 462**. POSIX utilities not provided as builtins: **3**.
+Probes matching dash in POSIX mode: **463 of 469**. POSIX utilities not provided as builtins: **0**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -288,7 +288,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (58/60)
+### POSIX builtins  (60/60)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -348,8 +348,8 @@ Each table lists probes for one area; the count is probes matching dash.
 | `special_read_timeout` | ok | bash read -t |
 | `special_kill_l` | ok |  |
 | `special_kill_self` | ok |  |
-| `special_fg_bg` | **differs** |  |
-| `special_jobs` | **differs** |  |
+| `special_fg_bg` | ok |  |
+| `special_jobs` | ok |  |
 | `special_fc` | ok |  |
 | `special_newgrp` | ok |  |
 
@@ -543,7 +543,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (60/60)
+### Bash builtins  (61/67)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -561,7 +561,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `bi_history` | ok | bash history |
 | `bi_compgen` | ok | bash compgen |
 | `bi_complete` | ok | bash complete |
-| `bi_disown` | ok | bash disown |
+| `bi_disown` | **differs** | bash disown |
 | `bi_printf_T` | ok | bash printf %(fmt)T |
 | `bi_getopts_silent` | ok |  |
 | `bi_test_e_stat` | ok |  |
@@ -607,6 +607,13 @@ Each table lists probes for one area; the count is probes matching dash.
 | `printf_T_basic` | ok |  |
 | `printf_T_width_and_reuse` | ok |  |
 | `printf_T_nested_parens` | ok |  |
+| `jobs_basic` | **differs** |  |
+| `jobs_wait_spec` | **differs** |  |
+| `jobs_wait_multiple` | ok |  |
+| `jobs_wait_no_args` | ok |  |
+| `jobs_kill_jobspec` | **differs** |  |
+| `jobs_disown` | **differs** |  |
+| `jobs_status_text` | **differs** |  |
 
 ### Syntax and misc  (23/23)
 
@@ -688,15 +695,15 @@ them as builtins, next to dash.
 | `unset` | special | special |
 | **regular utilities** | | |
 | `alias` | builtin | builtin |
-| `bg` | builtin | missing (gap) |
+| `bg` | builtin | builtin |
 | `cd` | builtin | builtin |
 | `command` | builtin | builtin |
 | `false` | builtin | builtin |
 | `fc` | missing | missing |
-| `fg` | builtin | missing (gap) |
+| `fg` | builtin | builtin |
 | `getopts` | builtin | builtin |
 | `hash` | builtin | builtin |
-| `jobs` | builtin | missing (gap) |
+| `jobs` | builtin | builtin |
 | `kill` | builtin | builtin |
 | `newgrp` | external | external |
 | `pwd` | builtin | builtin |
