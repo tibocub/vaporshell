@@ -957,6 +957,6 @@ bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 56 of the
 No probes exist for: interactive behaviour (line editing, history,
 completion prompts, real terminal job control -- `Ctrl-Z`, process groups),
 `PS1`-`PS4` expansion beyond `PS4` under `set -x`, locale-dependent
-behaviour, `set -x` trace formatting, `coproc`, the `shopt` options that
+behaviour, `set -x` trace formatting, the `shopt` options that
 only matter interactively, and error-message text. "ok" above says nothing
 about these.

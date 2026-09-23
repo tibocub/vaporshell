@@ -134,17 +134,24 @@ globbing). Variables live in a table, not in `environ`: only exported ones
 reach a child. See `docs/design.md`, "Architecture".
 
 Modes: bash's behaviour is the default and `--posix` selects POSIX; both are
-presets of feature bits over one engine (`mode.h`, `docs/modes.md`). Only a
-handful of bits exist so far -- each one is a measured difference with a
-test -- and bash's larger features (`[[`, arrays, brace expansion, ...) are
-not built yet.
+presets of feature bits over one engine (`mode.h`, `docs/modes.md`). Each bit
+is a measured difference with a test.
 
-Working: quoting, all POSIX expansions (parameter operators, `$(...)`,
-backticks, `$(( ))`, tilde, field splitting, pathname expansion), all
-POSIX redirections and here-documents, pipelines, `&&`/`||`/`!`, `;`/`&`,
-`if`/`for`/`while`/`until`/`case`, `{ }`, `( )`, functions, positional
-parameters, `break`/`continue N`/`return`, `set -e -u -x -f -C -a -n -v`, `trap`
-(EXIT and signals), aliases, `$LINENO`, and the builtins in `help`.
+Working: the scripting language, essentially in full -- quoting, all POSIX
+and bash expansions (parameter operators including substring/replace/case
+conversion, `$(...)`, backticks, `$(( ))`, tilde, brace expansion, field
+splitting, pathname expansion, process substitution), all POSIX and bash
+redirections and here-documents/here-strings, pipelines, `&&`/`||`/`!`,
+`;`/`&`, `if`/`for`/`while`/`until`/`case`/`select`, the C-style
+`for ((;;))`, `[[ ]]` and `(( ))`, `{ }`, `( )`, functions (both forms),
+`local` (including namerefs), indexed and associative arrays,
+`break`/`continue N`/`return`, `set -e -u -x -f -C -a -n -v -o pipefail`,
+`shopt`, `trap` (EXIT and signals), aliases, job control (`jobs`/`fg`/`bg`/
+`wait`/`disown`, no real terminal job control), `coproc`, `declare`/
+`typeset`, `mapfile`, `enable`/`compgen`, `$LINENO`, and the builtins in
+`help`. See the TODO list below for the itemised, honest version, including
+what's *not* done -- mainly interactive line editing, which doesn't exist
+in any form yet.
 
 How close each mode is to its reference is measured, not claimed: see
 [docs/bash-coverage.md](docs/bash-coverage.md) (bash 5.3.0) and
@@ -188,12 +195,12 @@ stated priority (see GOALS above) stays POSIX-first, bash
 quality-of-life second; this list exists so nothing bash actually does
 is invisible while that priority order gets worked through. Updated
 whenever something gets implemented -- if this drifts from reality,
-treat that as a bug in the list, not in the code.
-
-**Note on `[[ ]]`:** `[[` is a keyword with its own grammar (no word
-splitting or globbing inside, unquoted `<`/`>`, `=~`), not just another
-name for `test`. It needs its own parsing path in the parser; `test` and
-`[` are done and are in the builtin table.
+treat that as a bug in the list, not in the code. As of the `v0.1.0`
+tag, the scripting language itself (everything below except the
+"Interactive quality-of-life" section) is done to the point that how
+close each mode is to its reference is a measured number, not a guess:
+see [docs/bash-coverage.md](docs/bash-coverage.md) and
+[docs/posix-coverage.md](docs/posix-coverage.md).
 
 ### Basic shell features
 - [x] execute a script file
@@ -213,53 +220,55 @@ name for `test`. It needs its own parsing path in the parser; `test` and
       waitpid() got called (confirmed directly in NuttX's own Kconfig
       help text for that option), which pipelines hit routinely since
       every stage has to be spawned before any of them are waited on
-- [x] redirection: `>`, `<`, `>>`, `2>`, `2>&1`, `&>`, `n>&m` -- `&>` (bash) not yet
-- [x] here-documents (`<<`) and here-strings (`<<<`) -- `<<` and `<<-` done; here-strings (bash) not yet
-- [ ] process substitution (`<(...)`, `>(...)`)
+- [x] redirection: `>`, `<`, `>>`, `2>`, `2>&1`, `&>`, `&>>`, `n>&m`
+- [x] here-documents (`<<`, `<<-`) and here-strings (`<<<`)
+- [x] process substitution (`<(...)`, `>(...)`) -- materialized as a
+      real temp file rather than a true concurrent pipe, since this
+      shell has no background-execution model to build that on
+      (NuttX has no `fork()`); correct end results for the dominant
+      real-world usage (`diff <(...) <(...)`, `tee >(...)`), not true
+      concurrency -- see `docs/bash-coverage.md`
 - [x] subshells: `( cmd1; cmd2 )` in an isolated child environment
 - [x] command grouping: `{ cmd1; cmd2; }` in the *current* environment
       (distinct from subshells -- no isolation, just sequencing)
 - [x] globbing / wildcard expansion (`*`, `?`, `[...]`)
-- [ ] brace expansion (`{a,b,c}`, `{1..5}`)
+- [x] brace expansion (`{a,b,c}`, `{1..5}`, `{1..10..3}`)
 - [x] tilde expansion (`~`, `~user`)
-- [x] background execution (`&`) and `jobs`/`fg`/`bg`/`wait` -- real -- `&` and `wait` done (standalone build only); no job control (`jobs`/`fg`/`bg`) yet
-      job control depends on process groups, which NuttX itself only
-      stubs (see `docs/c-posix-compatibility.md` in vaporOS-nuttx);
-      worth revisiting what's actually achievable here specifically
-      before committing to it
+- [x] background execution (`&`), `jobs`/`fg`/`bg`/`wait`/`disown`,
+      and `kill %N` -- `jobs` prints bash's exact column format
+      (status text, `[N]+`/`[N]-` markers); job ids count up forever
+      rather than being reused, unlike bash's. No *real* terminal job
+      control (process groups, `Ctrl-Z` suspension, `tcsetpgrp`) --
+      NuttX itself only stubs process groups (see
+      `docs/c-posix-compatibility.md` in vaporOS-nuttx) -- so `fg`/`bg`
+      work with what a job can actually be here: running in the
+      background, or finished
+- [x] `coproc [NAME] command` -- the array `NAME`/`NAME_PID`; a plain
+      external command works everywhere (no fork needed, like `&`
+      itself); a compound-command body needs a real fork, so it's
+      host-only there
 
 ### Control flow
-- [x] `if`/`then`/`elif`/`else`/`fi` -- works both on one line
-      (`;`-separated) and across multiple (the common script style,
-      with an interactive continuation prompt too), including nested
-      if/fi and pipes/`test`/`[` inside conditions. A genuinely
-      tricky feature to get right -- four separate, real bugs found
-      and fixed along the way: a naive word-boundary check treating
-      punctuation like `-` as a keyword boundary (so `echo
-      multiline-then-ok` was misread as containing the real keyword
-      "then"); a missing leading-newline skip that broke detecting a
-      *nested* if specifically (its own extracted body text starts
-      with the newline that followed the outer "then"); the same
-      leading-whitespace issue in the marker-scanning pass itself; and
-      the construct not being separated from text that follows its
-      own closing "fi" on the same line/string, which silently
-      discarded any trailing statements until fixed
-- [x] `for NAME in LIST; do ...; done` -- no bare "for x; do" (no "in
-      list", positional parameters) yet, positional parameters aren't
-      implemented; real, reported error rather than a silent guess
-- [ ] `for ((init; cond; step)); do ...; done` (C-style, bash-specific)
+- [x] `if`/`then`/`elif`/`else`/`fi`
+- [x] `for NAME in LIST; do ...; done`, and bare `for NAME; do ...`
+      (positional parameters)
+- [x] `for ((init; cond; step)); do ...; done` (C-style, bash-specific)
 - [x] `while ...; do ...; done`
 - [x] `until ...; do ...; done`
-- [x] `case ... in ... esac` -- pattern matching supports literal
-      text, `*`, `?`, and `|` alternation; bracket expressions
-      (`[abc]`/`[a-z]`) are a real, known gap, not implemented
-- [ ] `select ...; do ...; done` (bash-specific menu construct)
+- [x] `case ... in ... esac` -- literal text, `*`, `?`, `|`
+      alternation, and bracket expressions (`[abc]`/`[a-z]`);
+      `;&`/`;;&` fallthrough
+- [x] `select ...; do ...; done` (bash-specific menu construct) --
+      column layout matches bash's exactly, including the quirk where
+      a layout that would end up one row wide falls back to one item
+      per line
 - [x] `break` / `continue` (including `break N` / `continue N`)
-- [ ] real `[[ ... ]]` semantics (see correction above)
+- [x] real `[[ ... ]]` semantics -- its own grammar (no word splitting
+      or globbing inside, unquoted `<`/`>`, `=~` with `BASH_REMATCH`)
 
 ### Functions
-- [x] `name() { ...; }` / `function name { ...; }` -- `name() { ...; }` done; the bash `function name` form not yet
-- [ ] `local` (function-scoped variables)
+- [x] `name() { ...; }` and the bash `function name { ...; }` form
+- [x] `local` (function-scoped variables), including `local -n`/`-i`/etc.
 - [x] `return`
 - [x] recursion
 
@@ -274,73 +283,112 @@ name for `test`. It needs its own parsing path in the parser; `test` and
       left behind
 - [x] `$$` (this shell's PID)
 - [x] `$!` (PID of the last background job)
-- [ ] `$_` (last argument of the previous command)
+- [x] `$_` (last argument of the previous command)
 - [x] `shift`
 - [x] `set --` (rewriting positional parameters)
+- [x] `PIPESTATUS`, `FUNCNAME`, `BASH_SOURCE`, `BASH_LINENO`,
+      `BASH_VERSINFO`, `BASH_REMATCH`, `RANDOM`, `SECONDS`, `OSTYPE`,
+      `HOSTNAME`, `UID`/`EUID`, `PPID`, and the rest bash scripts
+      typically read (see the Variables table in the coverage doc for
+      the full, measured list)
 
 ### Arithmetic
 - [x] `$(( ))` arithmetic expansion
-- [ ] `(( ))` as a command/conditional (exit status from truthiness)
-- [ ] `let`
-- [x] compound assignment inside arithmetic contexts (`+=`, `-=`, -- `+=` `-=` etc. done; `++`/`--` not yet
+- [x] `(( ))` as a command/conditional (exit status from truthiness)
+- [x] `let`
+- [x] compound assignment inside arithmetic contexts (`+=`, `-=`,
       `*=`, `/=`, `%=`, `++`, `--`)
 
 ### Arrays
-- [ ] indexed arrays: `arr=(a b c)`, `${arr[0]}`, `${arr[@]}`,
-      `${#arr[@]}`
-- [ ] associative arrays: `declare -A`, `${assoc[key]}`
+- [x] indexed arrays: `arr=(a b c)`, `${arr[0]}`, `${arr[@]}`,
+      `${#arr[@]}`, slices, negative/arithmetic subscripts, per-element
+      operators
+- [x] associative arrays: `declare -A`, `${assoc[key]}` -- kept in
+      insertion order; bash's own is its hash order, which no script
+      may rely on either
+- [x] namerefs: `declare -n`/`local -n`, `+n`, `unset -n` -- chained,
+      element targets (`declare -n e='a[1]'`), `for` rebinding
 
 ### Parameter expansion (string manipulation)
 - [x] `${var:-default}` / `${var:=default}` / `${var:?msg}` /
       `${var:+alt}`
-- [x] `${#var}` (string length)
-- [ ] `${var:offset}` / `${var:offset:length}` (substring)
+- [x] `${#var}` (string length) -- characters, not bytes, in a
+      multibyte locale
+- [x] `${var:offset}` / `${var:offset:length}` (substring)
 - [x] `${var#pattern}` / `${var##pattern}` (remove shortest/longest
       matching prefix)
 - [x] `${var%pattern}` / `${var%%pattern}` (remove shortest/longest
       matching suffix)
-- [ ] `${var/pat/repl}` / `${var//pat/repl}` (replace first/all)
-- [ ] `${var^}` / `${var^^}` / `${var,}` / `${var,,}` (case conversion)
-- [ ] `${!var}` (indirect reference)
+- [x] `${var/pat/repl}` / `${var//pat/repl}` (replace first/all)
+- [x] `${var^}` / `${var^^}` / `${var,}` / `${var,,}` (case conversion)
+- [x] `${!var}` (indirect reference), `${!prefix*}` / `${!prefix@}`
+- [x] `${var@Q}` and the other `@` transform operators
 
 ### Builtins
 - [x] `cd`, `exit`/`quit`, `help`, `.`/`source`
-- [x] `read`
+- [x] `read`, including `-a` (into an array), `-n`, `-d`, `-t`, `-p`
 - [x] `export`, `unset`, `readonly`
-- [ ] `declare`/`typeset`, `local`
-- [ ] `alias`/`unalias`
+- [x] `declare`/`typeset`, `local` -- `-p` in bash's exact format,
+      `-a`/`-A`/`-i`/`-l`/`-u`/`-r`/`-x`/`-n`/`-g`; `declare -f`
+      (printing a function's body) is the one unimplemented piece
+- [x] `alias`/`unalias`
 - [x] `trap`
 - [x] `eval`
 - [x] `exec` (replacing the shell process, and fd manipulation)
-- [ ] `getopts`
-- [x] `set` (shell options: `-e`, `-u`, `-x`, `-o pipefail`, ...) -- `-e -u -x -f -C` and `-o` names done; `pipefail` not yet
-- [ ] `shopt` (bash-specific shell options)
-- [x] `type`, `command`, `builtin`, `hash` -- `type` and `command` done; `builtin` and `hash` not yet
-- [ ] `times`, `ulimit`, `disown`
+- [x] `getopts`
+- [x] `set` (shell options: `-e`, `-u`, `-x`, `-o pipefail`, ...)
+- [x] `shopt` (bash-specific shell options)
+- [x] `type`, `command`, `builtin`, `hash`
+- [x] `times`, `ulimit`, `disown`
+- [x] `mapfile`/`readarray`
+- [x] `printf %(fmt)T` (strftime-backed time formatting)
+- [x] `enable` (turn builtins on/off), `compgen` (word-list generation
+      -- genuinely useful outside interactive completion, since a
+      script can call it directly)
+- [x] `complete`, `compopt`, `bind` -- accepted, but (beyond
+      `complete`'s own spec registry, which a script can query back)
+      inert: no line editor exists here for them to attach to yet (see
+      "Interactive quality-of-life" below)
+- [ ] `fc`, persistent `history` -- tracked with the interactive work,
+      since they're meaningless without a real line editor keeping a
+      history buffer in the first place
 
 ### Interactive quality-of-life (GOALS' own "once POSIX is solid" tier)
-- [ ] tab completion
+
+The scripting language above is done; this section is next. None of
+it exists yet -- there is currently no line editor at all (raw
+`readline()`, no key handling beyond what the terminal driver itself
+gives for free), so every item here starts from zero.
+
+- [ ] a real line editor: raw terminal mode, cursor movement, kill
+      ring, multi-line editing for an unfinished construct (`if` with
+      no matching `fi` yet, etc.)
+- [ ] tab completion -- `compgen`/`complete` already generate the word
+      lists; what's missing is the interactive UI that calls them as
+      the user types and renders the result (a fish-style inline
+      suggestion, or a bash-style listing, or both)
+- [ ] syntax highlighting as the user types (fish-style): needs the
+      lexer to run incrementally against an in-progress, possibly
+      unparseable line
+- [ ] reverse-search (`Ctrl-R`) -- some kind of "graphical"
+      (ncurses-ish) picker is the fish-like version of this, not just
+      readline's own line-at-a-time incremental search
+- [ ] persistent history across sessions, `fc`, `!!`/`!$`/`!N`-style
+      history expansion
 - [ ] `.bashrc`-style startup file
-- [ ] persistent history across sessions (readline's own
-      `CONFIG_READLINE_CMD_HISTORY` already gives in-session history;
-      persisting it to a file is separate, still open)
-- [ ] `!!`, `!$`, `!N`-style history expansion
 
 ### File Test Operators
 - [x] `-e`, `-d`, `-f`
 - [x] `-r`, `-w`, `-x` (readable/writable/executable)
-- [x] `-h`/`-L` (symlink) -- blocked on NuttX itself: no symlink -- works via `lstat` on the standalone build; still blocked on NuttX itself
+- [x] `-h`/`-L` (symlink) -- blocked on NuttX itself: no symlink
       support at the VFS layer at all (confirmed directly, see
       `docs/c-posix-compatibility.md`), not something fixable in
-      vaporshell/toybox alone
+      vaporshell/toybox alone; works via `lstat` on the standalone build
 - [x] `-s` (non-empty)
-- [x] `-nt` / `-ot` / `-ef` (newer/older/same-file) -- these are
-      already implemented in the ported `test.c` itself (upstream
-      toybox has them); just not yet exercised/confirmed on-device
+- [x] `-nt` / `-ot` / `-ef` (newer/older/same-file)
 
 ### Comparison / String Comparison / Logical Operators (`test`/`[`)
 - [x] `-eq` `-ne` `-lt` `-le` `-gt` `-ge`
 - [x] `=` `!=` `<` `>`
-- [x] `&&` `||` `!` (shell-level; `test`'s own internal `-a`/`-o`
-      combinators are also already in the ported source, not yet
-      separately confirmed)
+- [x] `&&` `||` `!` (shell-level and `test`'s own internal `-a`/`-o`
+      combinators)
