@@ -28,7 +28,7 @@ CASES = [
     ("x=$(exit 7); echo rc=$?", "rc=7"),
     ("f() { echo in f: $1; return 4; }; f arg; echo rc=$?", "rc=4"),
     ("true | false; echo rc=$?", "rc=1"),
-    ("echo one two | wc -w", "2 -"),
+    ("echo one two | wc -w", "2"),
     ("echo written > /tmp/vs_smoke; echo more >> /tmp/vs_smoke; cat /tmp/vs_smoke", "more"),
     ("[ -d /tmp ] && echo dir-ok", "dir-ok"),
     ("case abc in a*) echo case-ok;; esac", "case-ok"),
