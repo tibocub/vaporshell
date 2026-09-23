@@ -308,6 +308,17 @@ vaporshell (bash mode) has it as a builtin.
   `set -T`), and not once per pipeline stage in the parent as bash does.
 - **`time`** reports user and system time as zero on NuttX (only wall time is
   available there).
+- **`coproc [NAME] command`** works: the array `NAME` (`[0]` to read from
+  the coprocess, `[1]` to write to it; default name `COPROC`) and
+  `NAME_PID`. `NAME` is only recognized when a compound command follows it,
+  exactly matching bash's own grammar -- `coproc mycp cat` is the unnamed
+  two-word simple command `mycp cat`, not a named coprocess (bash's grammar
+  has no rule for that either). A plain external command works the same way
+  `cmd &` does without fork; a compound-command body needs a real fork, so
+  it is host-only, like other background compound commands. `coproc` itself
+  always reports success (exit status 0), even when the coprocess could not
+  be started, exactly as bash's does -- a real failure only shows up later,
+  through `NAME_PID`'s own exit status.
 - **`grep` is not on NuttX's toolbox**, unlike most of the other common
   text tools it does have; a script that needs it there has no fallback.
 - **`printf %(%c)T`** (the locale's full date-and-time representation) is
@@ -324,7 +335,8 @@ vaporshell (bash mode) has it as a builtin.
 ## Not covered
 
 No probes exist for: interactive behaviour (line editing, history,
-completion, prompts, job control), `PS1`-`PS4` expansion beyond `PS4` under
-`set -x`, locale-dependent behaviour, `set -x` trace formatting,
-`coproc`, the `shopt` options that only matter interactively, and error-message text. "ok" above says nothing
+completion prompts, real terminal job control -- `Ctrl-Z`, process groups),
+`PS1`-`PS4` expansion beyond `PS4` under `set -x`, locale-dependent
+behaviour, `set -x` trace formatting, `coproc`, the `shopt` options that
+only matter interactively, and error-message text. "ok" above says nothing
 about these.

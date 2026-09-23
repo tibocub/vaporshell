@@ -15,7 +15,7 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 - generated: 2026-09-23 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **473 of 479**. POSIX utilities not provided as builtins: **0**.
+Probes matching dash in POSIX mode: **474 of 482**. POSIX utilities not provided as builtins: **0**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -653,7 +653,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `misc_time_p` | ok | bash time -p |
 | `scalar_plus_equals` | ok |  |
 
-### bashkeyword  (6/6)
+### bashkeyword  (7/9)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -663,6 +663,9 @@ Each table lists probes for one area; the count is probes matching dash.
 | `select_no_in_clause` | ok |  |
 | `select_continue_and_ps3` | ok |  |
 | `select_column_layout` | ok |  |
+| `coproc_plain` | ok |  |
+| `coproc_named_two_word_disambiguation` | **differs** |  |
+| `coproc_invalid_name` | **differs** |  |
 
 ### posix  (1/1)
 

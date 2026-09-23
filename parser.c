@@ -408,7 +408,7 @@ static bool is_reserved_word(const char *w)
   static const char *const words[] =
   {
     "if", "then", "else", "elif", "fi", "do", "done", "case", "esac",
-    "while", "until", "for", "select", "in", "{", "}", "!", "[[", "]]", "function", "time"
+    "while", "until", "for", "select", "in", "{", "}", "!", "[[", "]]", "function", "time", "coproc"
   };
   size_t i;
 
@@ -1314,6 +1314,80 @@ static struct node_s *parse_for(struct parser_s *p)
   return n;
 }
 
+/* Is 't' the start of a compound command (bash's grammar: coproc's NAME is
+ * only recognised when followed by one, never a plain simple command)?
+ */
+
+static bool starts_compound(const struct token_s *t)
+{
+  static const char *const kw[] = { "{", "if", "while", "until", "for",
+                                    "select", "case", "[[", NULL };
+  int i;
+
+  if (t->type == T_LPAREN)
+    {
+      return true;                 /* a subshell, or the start of (( */
+    }
+
+  if (t->type != T_WORD || t->quoted)
+    {
+      return false;
+    }
+
+  for (i = 0; kw[i] != NULL; i++)
+    {
+      if (strcmp(t->text, kw[i]) == 0)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+/* coproc [NAME] command -- NAME (default "COPROC") only exists as a
+ * distinct word when a compound command follows it; `coproc mycp cat` is
+ * the plain two-word simple command `mycp cat`, unnamed, exactly as in
+ * bash (its own grammar has no "coproc NAME simple-command" rule either).
+ */
+
+static struct node_s *parse_coproc(struct parser_s *p)
+{
+  struct node_s *n = new_node(p, N_COPROC);
+  struct token_s *t;
+
+  advance(p);                      /* the "coproc" keyword */
+  n->name = "COPROC";
+  t = peek(p);
+  if (t->type == T_WORD && !t->quoted && is_valid_name(t->text, strlen(t->text)))
+    {
+      size_t save_pos = p->lx.pos;
+      struct token_s save_tok = p->tok;
+      bool save_have = p->have;
+      char *name = t->text;
+
+      advance(p);
+      if (starts_compound(peek(p)))
+        {
+          n->name = name;
+        }
+      else
+        {
+          p->lx.pos = save_pos;
+          p->tok = save_tok;
+          p->have = save_have;
+        }
+    }
+
+  n->a = parse_command(p);
+  if (n->a == NULL)
+    {
+      return NULL;
+    }
+
+  return n;
+}
+
 /* select NAME [in WORDS] ; do LIST done  -- same shape as `for`, minus the
  * `for ((..))` arithmetic form, which `select` has no equivalent of.
  */
@@ -1561,6 +1635,10 @@ static struct node_s *parse_command(struct parser_s *p)
       else if (strcmp(t->text, "select") == 0 && vs_feat(VF_BASH_SYNTAX))
         {
           n = parse_select(p);
+        }
+      else if (strcmp(t->text, "coproc") == 0 && vs_feat(VF_BASH_SYNTAX))
+        {
+          n = parse_coproc(p);
         }
       else if (strcmp(t->text, "case") == 0)
         {

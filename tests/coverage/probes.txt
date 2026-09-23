@@ -1212,3 +1212,12 @@ compopt -o nospace 2>/dev/null; echo rc=$?
 
 ## bind_no_line_editor | bashbuiltin
 bind "\C-l:clear-screen" 2>/dev/null; echo rc=$?
+
+## coproc_plain | bashkeyword
+coproc cat; echo x >&${COPROC[1]}; read -u ${COPROC[0]} l; echo "got:$l"; kill $COPROC_PID 2>/dev/null
+
+## coproc_named_two_word_disambiguation | bashkeyword
+coproc mycp cat 2>&1; echo rc=$?
+
+## coproc_invalid_name | bashkeyword
+coproc 1bad cat 2>&1; echo rc=$?

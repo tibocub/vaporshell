@@ -899,6 +899,153 @@ static int exec_for(struct node_s *n)
  * EOF ends the loop (status 1); an empty item list does nothing (status 0).
  */
 
+static bool stage_is_plain_external(const struct node_s *st, bool in_pipeline);
+static void cloexec(int fd);
+
+/* coproc [NAME] command (bash): a background process with a pipe to its
+ * stdin and one from its stdout, both kept open here as NAME[1]/NAME[0]
+ * (NAME defaults to "COPROC"), plus NAME_PID.
+ *
+ * A plain external command works the same way as `cmd &` does without fork
+ * (vs_plat_spawn); anything else -- a compound command, a builtin, a
+ * function -- needs a real fork to run the shell itself as the coprocess,
+ * so it is host-only, like other background compound commands.
+ */
+
+static int exec_coproc(struct node_s *n)
+{
+  int p_in[2];                 /* parent writes p_in[1]; the coprocess reads p_in[0] as stdin */
+  int p_out[2];                /* the coprocess writes p_out[1] as stdout; parent reads p_out[0] */
+  pid_t pid;
+  struct arr_s *a;
+  char pidvar[64];
+  bool plain = stage_is_plain_external(n->a, false);
+
+  if (!plain && !vs_plat_have_fork())
+    {
+      vs_err("coproc: only a plain external command is supported here (no fork)");
+      return 0;         /* coproc itself always reports success, as in bash */
+    }
+
+  if (pipe(p_in) != 0)
+    {
+      vs_err("coproc: %s", strerror(errno));
+      return 0;
+    }
+
+  if (pipe(p_out) != 0)
+    {
+      vs_err("coproc: %s", strerror(errno));
+      close(p_in[0]);
+      close(p_in[1]);
+      return 0;
+    }
+
+  cloexec(p_in[1]);
+  cloexec(p_out[0]);
+
+  if (plain)
+    {
+      struct fieldv_s argv;
+      char *path;
+      char **envp;
+      int err = 0;
+      int close_fds[2];
+      int ret;
+
+      fv_init(&argv);
+      if (expand_words(n->a->words, &argv) != 0 || argv.n == 0)
+        {
+          fv_free(&argv);
+          close(p_in[0]);
+          close(p_in[1]);
+          close(p_out[0]);
+          close(p_out[1]);
+          return 0;
+        }
+
+      path = hash_find_command(argv.v[0], var_get("PATH"), &err);
+      if (path == NULL)
+        {
+          vs_err("%s: command not found", argv.v[0]);
+          fv_free(&argv);
+          close(p_in[0]);
+          close(p_in[1]);
+          close(p_out[0]);
+          close(p_out[1]);
+          return 0;
+        }
+
+      close_fds[0] = p_in[1];
+      close_fds[1] = p_out[0];
+      envp = var_build_env();
+      fflush(NULL);
+      ret = vs_plat_spawn(path, argv.v, envp, p_in[0], p_out[1], close_fds, 2, &pid);
+      env_free(envp);
+      free(path);
+      fv_free(&argv);
+      close(p_in[0]);
+      close(p_out[1]);
+      if (ret != 0)
+        {
+          close(p_in[1]);
+          close(p_out[0]);
+          vs_err("coproc: %s", strerror(ret));
+          return 0;
+        }
+    }
+  else
+    {
+      pid = vs_plat_fork();
+      if (pid < 0)
+        {
+          close(p_in[0]);
+          close(p_in[1]);
+          close(p_out[0]);
+          close(p_out[1]);
+          vs_err("coproc: %s", strerror(errno));
+          return 0;
+        }
+
+      if (pid == 0)
+        {
+          close(p_in[1]);
+          close(p_out[0]);
+          dup2(p_in[0], STDIN_FILENO);
+          dup2(p_out[1], STDOUT_FILENO);
+          close(p_in[0]);
+          close(p_out[1]);
+          child_run(n->a);
+        }
+
+      close(p_in[0]);
+      close(p_out[1]);
+    }
+
+  a = arr_new();
+  {
+    char buf[24];
+
+    snprintf(buf, sizeof(buf), "%d", p_out[0]);
+    arr_set(a, 0, buf);
+    snprintf(buf, sizeof(buf), "%d", p_in[1]);
+    arr_set(a, 1, buf);
+  }
+
+  var_array_replace(n->name, a);
+  snprintf(pidvar, sizeof(pidvar), "%s_PID", n->name);
+  {
+    char buf[24];
+
+    snprintf(buf, sizeof(buf), "%ld", (long)pid);
+    var_set(pidvar, buf);
+  }
+
+  g_sh.last_bg = pid;
+  job_add_node(pid, n->a);
+  return 0;
+}
+
 static int exec_select(struct node_s *n)
 {
   struct fieldv_s items;
@@ -2235,6 +2382,10 @@ int exec_node(struct node_s *n)
 
       case N_SELECT:
         status = with_redirs(n, exec_select);
+        break;
+
+      case N_COPROC:
+        status = exec_coproc(n);
         break;
 
       case N_CASE:

@@ -70,6 +70,7 @@ enum node_type_e
   N_WHILE,                    /* a: condition, b: body, flag: until */
   N_FOR,                      /* name, words, flag: has "in", a: body */
   N_SELECT,                   /* name, words, flag: has "in", a: body (bash) */
+  N_COPROC,                   /* name (default "COPROC"), a: body (bash) */
   N_CASE,                     /* words: subject (single), items */
   N_FUNCDEF,                  /* name, a: body */
   N_DBRACKET,                 /* [[ ]]: a: the expression */
