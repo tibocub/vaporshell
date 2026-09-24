@@ -20,7 +20,7 @@
  * which.
  *
  * Hand-maintained, not generated from any build config -- reasonable
- * at this scope (41 commands so far); worth revisiting if this list
+ * at this scope (65 commands so far); worth revisiting if this list
  * grows much longer. Kept in sync with vaporOS-coreutils' own
  * Makefile/CSRCS list by hand for now.
  */
@@ -40,6 +40,10 @@ const char *const g_tbx_commands[] =
     "head", "tail", "wc", "tee", "cut", "uniq", "sort", "yes",
     "grep", "egrep", "fgrep", "sed", "tr", "ln", "cmp", "uname", "arch",
     "expr", "date", "chmod",
+    "find", "xargs", "env", "nohup", "comm", "expand", "fold", "nl", "od",
+    "paste", "split", "tty", "unlink", "rev", "tac", "truncate", "xxd",
+    "mktemp", "md5sum", "sha1sum", "sha224sum", "sha256sum", "sha384sum",
+    "sha512sum",
     "poweroff",
     "test", "[",
     NULL
