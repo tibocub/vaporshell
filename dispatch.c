@@ -20,7 +20,7 @@
  * which.
  *
  * Hand-maintained, not generated from any build config -- reasonable
- * at this scope (29 commands so far); worth revisiting if this list
+ * at this scope (41 commands so far); worth revisiting if this list
  * grows much longer. Kept in sync with vaporOS-coreutils' own
  * Makefile/CSRCS list by hand for now.
  */
@@ -38,6 +38,8 @@ const char *const g_tbx_commands[] =
     "printenv",
     "basename", "dirname", "sleep", "which",
     "head", "tail", "wc", "tee", "cut", "uniq", "sort", "yes",
+    "grep", "egrep", "fgrep", "sed", "tr", "ln", "cmp", "uname", "arch",
+    "expr", "date", "chmod",
     "poweroff",
     "test", "[",
     NULL
