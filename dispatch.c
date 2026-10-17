@@ -44,7 +44,7 @@ const char *const g_tbx_commands[] =
     "paste", "split", "tty", "unlink", "rev", "tac", "truncate", "xxd",
     "mktemp", "md5sum", "sha1sum", "sha224sum", "sha256sum", "sha384sum",
     "sha512sum",
-    "poweroff",
+    "poweroff", "free", "df", "mount", "umount",
     "test", "[",
     NULL
 };
