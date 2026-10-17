@@ -30,6 +30,11 @@
  * readline_fd.c): write it first, then tell readline what to redraw.
  */
 
+#ifdef CONFIG_READLINE_TABCOMPLETION
+int vs_complete(const char *line, int len, char *ins, int inslen,
+                readline_list_f list, void *ctx);
+#endif
+
 static char *read_prompted(const char *prompt)
 {
 #ifdef VAPORSHELL_POSIX
@@ -43,6 +48,9 @@ static char *read_prompted(const char *prompt)
   (void)n;
 #if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
   readline_prompt(prompt);
+#endif
+#ifdef CONFIG_READLINE_TABCOMPLETION
+  readline_completer(vs_complete);
 #endif
   return readline(prompt);
 }
