@@ -403,7 +403,7 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
  * (recursion), tracked by the buffer offset where each expansion ends.
  */
 
-static bool is_reserved_word(const char *w)
+bool vs_parser_reserved_word(const char *w)
 {
   static const char *const words[] =
   {
@@ -436,7 +436,7 @@ static bool try_alias(struct parser_s *p, struct token_s *t)
 
   if (p->no_alias || t->type != T_WORD || t->quoted || g_sh.aliases == NULL ||
       !(g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS) || g_sh.so_expand_aliases) ||
-      is_reserved_word(t->text))
+      vs_parser_reserved_word(t->text))
     {
       return false;
     }

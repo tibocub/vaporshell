@@ -24,6 +24,7 @@
 #include "expand.h"
 #include "mode.h"
 #include "complete.h"
+#include "rcfile.h"
 
 static const char *const KEYWORDS[] =
 {
@@ -46,6 +47,27 @@ struct cg_s
 static void (*g_sink)(void *ctx, const char *word);
 static void *g_sink_ctx;
 
+/* One candidate, a+b+c (any may be NULL): to the sink if set, else a line on stdout. */
+
+static void out3(const char *a, const char *b, const char *c)
+{
+  if (g_sink != NULL)
+    {
+      struct sbuf_s w;
+
+      sb_init(&w);
+      sb_adds(&w, a != NULL ? a : "");
+      sb_adds(&w, b);
+      sb_adds(&w, c != NULL ? c : "");
+      g_sink(g_sink_ctx, w.s);
+      sb_free(&w);
+    }
+  else
+    {
+      printf("%s%s%s\n", a != NULL ? a : "", b, c != NULL ? c : "");
+    }
+}
+
 static bool has_prefix(const struct cg_s *c, const char *s)
 {
   return strncmp(s, c->pfx, c->pfxlen) == 0;
@@ -63,23 +85,7 @@ static void emit(struct cg_s *c, const char *s, const char *prefix_opt, const ch
       return;
     }
 
-  if (g_sink != NULL)
-    {
-      struct sbuf_s b;
-
-      sb_init(&b);
-      sb_adds(&b, prefix_opt != NULL ? prefix_opt : "");
-      sb_adds(&b, s);
-      sb_adds(&b, suffix_opt != NULL ? suffix_opt : "");
-      g_sink(g_sink_ctx, b.s);
-      sb_free(&b);
-    }
-  else
-    {
-      printf("%s%s%s\n", prefix_opt != NULL ? prefix_opt : "", s,
-             suffix_opt != NULL ? suffix_opt : "");
-    }
-
+  out3(prefix_opt, s, suffix_opt);
   c->hits++;
 }
 
@@ -183,8 +189,16 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
           continue;
         }
 
-      printf("%s%s%s%s%s\n", pre != NULL ? pre : "", dirpart, de->d_name,
-             (dirs_only && S_ISDIR(st.st_mode)) ? "" : "", suf != NULL ? suf : "");
+      {
+        struct sbuf_s name;
+
+        sb_init(&name);
+        sb_adds(&name, dirpart);
+        sb_adds(&name, de->d_name);
+        out3(pre, name.s, suf);
+        sb_free(&name);
+      }
+
       c->hits++;
     }
 
@@ -732,10 +746,96 @@ static void set_comp_vars(const char *line, int point)
  * lane: it runs in this shell, uncapped (shortcut: no time budget yet).
  */
 
+/* What the shell's own commands complete to, when the user has not said
+ * otherwise. Plain data: nothing is registered or loaded at startup.
+ */
+
+static const struct complete_spec_s g_default_specs[] =
+{
+  { NULL, "cd", "-d " },       { NULL, "pushd", "-d " },
+  { NULL, "unset", "-v " },    { NULL, "export", "-v " },
+  { NULL, "readonly", "-v " }, { NULL, "declare", "-v " },
+  { NULL, "typeset", "-v " },  { NULL, "local", "-v " },
+  { NULL, "unalias", "-a " },  { NULL, "type", "-c " },
+  { NULL, "command", "-c " },  { NULL, "which", "-c " },
+  { NULL, "builtin", "-b " },  { NULL, "help", "-b " },
+  { NULL, "enable", "-b " },   { NULL, "source", "-f " },
+  { NULL, ".", "-f " },
+};
+
+/* The spec for 'cmd': one registered with `complete`; else a file
+ * <dir>/<cmd>.vsh from $VS_COMPLETION_PATH (default
+ * ~/.config/vaporshell/completions:/etc/vaporshell/completions), run once the
+ * first time the command is completed; else the shell's own defaults.
+ */
+
+static const struct complete_spec_s *spec_for(const char *cmd)
+{
+  const struct complete_spec_s *s = find_spec(cmd);
+  const char *dirs = var_get("VS_COMPLETION_PATH");
+  const char *home = var_get("HOME");
+  struct sbuf_s dflt;
+  size_t i;
+
+  if (s != NULL)
+    {
+      return s;
+    }
+
+  sb_init(&dflt);
+  if (dirs == NULL)
+    {
+      if (home != NULL && *home != '\0')
+        {
+          sb_adds(&dflt, home);
+          sb_adds(&dflt, "/.config/vaporshell/completions:");
+        }
+
+      sb_adds(&dflt, "/etc/vaporshell/completions");
+      dirs = dflt.s;
+    }
+
+  while (strchr(cmd, '/') == NULL && dirs != NULL && *dirs != '\0')
+    {
+      size_t len = strcspn(dirs, ":");
+      struct sbuf_s file;
+
+      sb_init(&file);
+      sb_addn(&file, dirs, len);
+      sb_addc(&file, '/');
+      sb_adds(&file, cmd);
+      sb_adds(&file, ".vsh");
+      if (vs_rc_source(file.s))
+        {
+          s = find_spec(cmd);
+        }
+
+      sb_free(&file);
+      if (s != NULL)
+        {
+          sb_free(&dflt);
+          return s;
+        }
+
+      dirs += len + (dirs[len] == ':' ? 1 : 0);
+    }
+
+  sb_free(&dflt);
+  for (i = 0; i < sizeof(g_default_specs) / sizeof(g_default_specs[0]); i++)
+    {
+      if (strcmp(g_default_specs[i].name, cmd) == 0)
+        {
+          return &g_default_specs[i];
+        }
+    }
+
+  return NULL;
+}
+
 bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                        vs_comp_list_f sink, void *ctx)
 {
-  const struct complete_spec_s *spec = find_spec(cmd);
+  const struct complete_spec_s *spec = spec_for(cmd);
   char *ov[48];
   char *av[52];
   const char *func = NULL;

@@ -414,6 +414,57 @@ def _():
     s.close()
 
 
+@test("specs load lazily from VS_COMPLETION_PATH; cd completes directories only")
+def _():
+    d = os.path.join(TMP, "specs"); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "comptest.vsh"), "w").write("complete -W 'red green' comptest\n")
+    w = os.path.join(TMP, "work"); os.makedirs(os.path.join(w, "namedir"), exist_ok=True)
+    open(os.path.join(w, "namefile"), "w").close()
+    s = shell(env={"VS_COMPLETION_PATH": d}, cwd=w)
+    s.type("comptest g"); s.send("\t")
+    expect(s, ["$ comptest green"])
+    s.send(CTRL("U")); s.type("cd na"); s.send("\t")
+    expect(s, ["$ cd namedir/"])
+    s.close()
+
+
+@test("autosuggestion: shown after the cursor, taken with Right/End, never run unasked")
+def _():
+    s = shell()
+    s.type("echo alphabet"); s.send(ENTER)
+    s.type("echo al")
+    expect(s, ["$ echo alphabet", "alphabet", "$ echo alphabet"])      # grey rest is on screen
+    s.send(RIGHT); s.send(ENTER)
+    assert s.screen()[-2:] == ["alphabet", "$"], s.screen()
+    s.type("echo al"); s.send(ENTER)                                     # Enter runs only what was typed
+    assert s.screen()[-3:] == ["$ echo al", "al", "$"], s.screen()
+    s.type("echo a"); s.send(END); s.send(ENTER)                         # the newest match is "echo al"
+    assert s.screen()[-2:] == ["al", "$"], s.screen()
+    s.close()
+    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s.type("echo one"); s.send(ENTER); s.type("echo o")
+    assert s.screen()[-1] == "$ echo o", s.screen()
+    s.close()
+
+
+@test("highlighting: command words are green when they run something, red when not")
+def _():
+    s = shell()
+    s.raw = b""
+    s.type("echo hi | zzznotacmd x; FOO=1 ls")
+    raw = s.raw.decode()
+    assert "\x1b[32mecho\x1b[0m" in raw, raw[-200:]
+    assert "\x1b[31mzzznotacmd\x1b[0m" in raw, raw[-200:]
+    assert "FOO=1 \x1b[32mls" in raw, raw[-200:]
+    expect(s, ["$ echo hi | zzznotacmd x; FOO=1 ls"])
+    s.close()
+    s = shell(env={"VS_HIGHLIGHT": "0"})
+    s.raw = b""
+    s.type("echo hi")
+    assert "\x1b[32m" not in s.raw.decode()
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

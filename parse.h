@@ -156,4 +156,8 @@ int ws_skip_cmdsub(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_procsub(const char *s, size_t len, size_t i, size_t *end);
 int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end);
 
+/* Is 'w' a keyword that starts or ends a compound command (if, done, [[ ...)? */
+
+bool vs_parser_reserved_word(const char *w);
+
 #endif

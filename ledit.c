@@ -304,13 +304,19 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
 /* Draw 'prompt' + 's' and leave the cursor at byte 'cursor' of s. */
 
 static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
-                 size_t cursor)
+                 size_t cursor, const char *ghost, bool hilite)
 {
   struct sbuf_s o;
   struct cursor_s c = { 0, 0 };
   struct cursor_s at = { 0, 0 };
   size_t i;
   char t[24];
+  const char *hlv = var_get("VS_HIGHLIGHT");
+  bool hl = hilite && (hlv == NULL || strcmp(hlv, "0") != 0);
+  bool at_cmd = true;
+  bool colored = false;
+  size_t cmd_end = 0;
+  size_t skip_to = 0;
 
   sb_init(&o);
   if (e->cur_row > 0)
@@ -333,6 +339,61 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
       if (i == cursor)
         {
           at = c;
+        }
+
+      if (hl && i == cmd_end && colored)
+        {
+          sb_adds(&o, "\033[0m");
+          colored = false;
+        }
+
+      if (hl && at_cmd && !colored && i >= skip_to && strchr(" \t\n|;&(", ch) == NULL)
+        {
+          /* A command word: green if it runs something, red if not. Assignments
+           * (A=1), quoted or expanded words are left alone.
+           */
+
+          size_t j = i;
+          char word[96];
+          bool plain = true;
+
+          while (j < len && strchr(" \t\n|;&()<>", s[j]) == NULL)
+            {
+              plain = plain && strchr("'\"$`\\=*?[{~", s[j]) == NULL;
+              j++;
+            }
+
+          if (j > i && j - i < sizeof(word) && plain)
+            {
+              memcpy(word, s + i, j - i);
+              word[j - i] = '\0';
+              sb_adds(&o, vs_is_command(word) ? "\033[32m" : "\033[31m");
+              colored = true;
+              cmd_end = j;
+            }
+
+          {
+            size_t k = i;
+
+            while (k < j && (isalnum((unsigned char)s[k]) || s[k] == '_'))
+              {
+                k++;
+              }
+
+            if (k > i && k < j && s[k] == '=')       /* NAME=value: the command comes after it */
+              {
+                skip_to = j;
+              }
+            else
+              {
+                at_cmd = false;
+              }
+          }
+        }
+
+      if (hl && strchr("|;&(", ch) != NULL)
+        {
+          at_cmd = true;
         }
 
       if (ch == '\n')
@@ -359,9 +420,31 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
         }
     }
 
+  if (colored)
+    {
+      sb_adds(&o, "\033[0m");
+    }
+
   if (cursor >= len)
     {
       at = c;
+    }
+
+  if (ghost != NULL && *ghost != '\0')            /* grey, after the cursor */
+    {
+      size_t gl = strlen(ghost);
+      size_t k;
+
+      sb_adds(&o, "\033[90m");
+      for (k = 0; k < gl; k = next_char(ghost, gl, k))
+        {
+          size_t n = next_char(ghost, gl, k) - k;
+
+          adv(&c, (unsigned char)ghost[k] < 0x80 ? 1 : cwidth(u8decode(ghost + k, n)), e->cols);
+          sb_addn(&o, ghost + k, n);
+        }
+
+      sb_adds(&o, "\033[0m");
     }
 
   if (c.col >= e->cols && e->cols > 0)
@@ -393,9 +476,39 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   sb_free(&o);
 }
 
+/* The newest history entry that starts with what is typed: the rest of it is
+ * shown in grey and Right / End / Ctrl-F / Ctrl-E at the end of the line takes it.
+ * VS_AUTOSUGGEST=0 turns it off. NULL if there is none.
+ */
+
+static const char *suggestion(const struct ed_s *e)
+{
+  const char *off = var_get("VS_AUTOSUGGEST");
+  int i;
+
+  if (e->pos != e->b.len || e->b.len == 0 || (off != NULL && strcmp(off, "0") == 0) ||
+      strchr(text(e), '\n') != NULL)
+    {
+      return NULL;
+    }
+
+  for (i = vs_hist_count() - 1; i >= 0; i--)
+    {
+      const char *h = vs_hist_get(i);
+
+      if (strlen(h) > e->b.len && strncmp(h, text(e), e->b.len) == 0 &&
+          strpbrk(h + e->b.len, "\n\033") == NULL)
+        {
+          return h + e->b.len;
+        }
+    }
+
+  return NULL;
+}
+
 static void refresh(struct ed_s *e)
 {
-  draw(e, e->prompt, text(e), e->b.len, e->pos);
+  draw(e, e->prompt, text(e), e->b.len, e->pos, suggestion(e), true);
 }
 
 static void put(const char *s)
@@ -676,11 +789,11 @@ static bool search(struct ed_s *e)
         {
           const char *h = vs_hist_get(idx);
 
-          draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0);
+          draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0, NULL, false);
         }
       else
         {
-          draw(e, pr.s, "", 0, 0);
+          draw(e, pr.s, "", 0, 0, NULL, false);
         }
 
       sb_free(&pr);
@@ -830,7 +943,7 @@ static void show_list(struct ed_s *e, struct clist_s *l)
     }
 
   rows = (l->n + per - 1) / per;
-  draw(e, e->prompt, text(e), e->b.len, e->b.len);
+  draw(e, e->prompt, text(e), e->b.len, e->b.len, NULL, true);
   if (l->n > 100)                       /* bash's completion-query-items */
     {
       char q[64];
@@ -1058,6 +1171,12 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_EOL:
+        if (suggestion(e) != NULL)
+          {
+            snap(e);
+            insert(e, suggestion(e), strlen(suggestion(e)));
+          }
+
         e->pos = e->b.len;
         break;
 
@@ -1069,6 +1188,11 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         if (e->pos < e->b.len)
           {
             e->pos = next_char(s, e->b.len, e->pos);
+          }
+        else if (suggestion(e) != NULL)
+          {
+            snap(e);
+            insert(e, suggestion(e), strlen(suggestion(e)));
           }
 
         break;
@@ -1347,7 +1471,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
 
       if (cmd == C_INTERRUPT)
         {
-          draw(&e, e.prompt, text(&e), e.b.len, e.b.len);
+          draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, false);
           put("^C\r\n");
           g_sh.last_status = 130;
           g_sh.input_aborted = continuation;
@@ -1372,7 +1496,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
 
   if (!e.eof)
     {
-      draw(&e, e.prompt, text(&e), e.b.len, e.b.len);
+      draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, true);
       put("\r\n");
       size_t n = e.b.len;
 

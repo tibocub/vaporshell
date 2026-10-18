@@ -27,15 +27,20 @@ static bool readable(const char *path)
  * not end the session, and its status is not the first prompt's $?.
  */
 
-static void source(const char *path)
+bool vs_rc_source(const char *path)
 {
-  if (readable(path))
+  if (!readable(path))
     {
-      run_file(path);
-      g_sh.unwind = UW_NONE;
-      g_sh.last_status = 0;
+      return false;
     }
+
+  run_file(path);
+  g_sh.unwind = UW_NONE;
+  g_sh.last_status = 0;
+  return true;
 }
+
+#define source(path) vs_rc_source(path)
 
 static char *in_home(const char *name)
 {
