@@ -80,7 +80,7 @@ the status tables below in the same commit.
 | Login shell (`-l`, `--login`, or argv[0] starting with `-`) and `~/.vsh_profile` | ✓ | |
 | `--rcfile FILE` (`--init-file`), `--norc` | ✓ | a failing rc file does not end the session; POSIX mode reads none |
 | `~/.bashrc` | ✓ by design: never read implicitly | opt in with `source ~/.bashrc` from the rc file |
-| `bind` for real (`bind '"\C-x": kill-line'`, `bind -x '"\C-g": code'` with `READLINE_LINE`/`READLINE_POINT`, `-r -l -p`) | ✓ (`bind.c`) | keys are single keys or escape sequences, no chords, no macros; `~/.inputrc` (or `$INPUTRC`) is read before the rc file, and `bind -f FILE` reads one: only `"keys": command` lines count, `set`/`$if` are skipped. 36 editor commands under readline's names |
+| `bind` for real (`bind '"\C-x": kill-line'`, `bind -x '"\C-g": code'` with `READLINE_LINE`/`READLINE_POINT`, `-r -l -p`) | ✓ (`bind.c`) | keys are single keys or escape sequences, no chords, no macros; `~/.inputrc` (or `$INPUTRC`) is read before the rc file, and `bind -f FILE` reads one: only `"keys": command` lines count, `set`/`$if` and function names we lack are skipped silently. 36 editor commands under readline's names |
 | `$VS_*` look-and-feel variables (colors, suggestions on/off) | ◐ | `VS_AUTOSUGGEST`, `VS_HIGHLIGHT`, `VS_BRACKETED_PASTE`, `VS_COMPLETION_PATH`, `VS_COMPLETION_TIMEOUT`, `VS_RC`; colors are fixed |
 | `set -o emacs` / `set -o vi` | ✗ | vi last |
 

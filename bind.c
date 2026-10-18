@@ -117,6 +117,8 @@ static void print_keys(const char *seq, int len)
   putchar('"');
 }
 
+static bool g_in_file;             /* reading an inputrc: it is shared with readline, so names we lack are skipped silently */
+
 static int read_inputrc(const char *file)
 {
   FILE *f = fopen(VS_FS(file), "r");
@@ -138,7 +140,9 @@ static int read_inputrc(const char *file)
       p[strcspn(p, "\n")] = '\0';
       if (*p == '"')
         {
+          g_in_file = true;
           status |= bi_bind(2, argv);
+          g_in_file = false;
         }
     }
 
@@ -287,7 +291,11 @@ int bi_bind(int argc, char **argv)
         }
       else if (vs_ledit_cmd_lookup(rest) < 0)
         {
-          vs_err("bind: `%s': unknown function name", rest);
+          if (!g_in_file)
+            {
+              vs_err("bind: `%s': unknown function name", rest);
+            }
+
           status = 1;
         }
       else

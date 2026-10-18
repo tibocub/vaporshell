@@ -646,11 +646,11 @@ def _():
 @test("~/.inputrc is read at startup")
 def _():
     d = os.path.join(TMP, "rc"); os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, ".inputrc"), "w").write('# a comment\nset editing-mode emacs\n"\\C-o": backward-kill-line\n')
+    open(os.path.join(d, ".inputrc"), "w").write('# a comment\nset editing-mode emacs\n"\\C-o": backward-kill-line\n"\\C-t": no-such-readline-fn\n')
     s = shell(env={"HOME": d, "VS_AUTOSUGGEST": "0"})
     s.type("echo gone"); s.send(CTRL("O")); s.type("echo ok"); s.send(ENTER)
     scr = "\n".join(s.screen())
-    assert "$ echo gone" not in scr and "\nok" in "\n" + scr, scr
+    assert "unknown function" not in scr and "$ echo gone" not in scr and "\nok" in "\n" + scr, scr
     s.close()
 
 
