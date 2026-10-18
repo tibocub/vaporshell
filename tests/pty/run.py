@@ -528,6 +528,24 @@ def _():
     s.close()
 
 
+@test("generated .vsh specs of the tbx commands (ls -<Tab>), files otherwise")
+def _():
+    d = os.path.abspath(os.path.join(os.path.dirname(VS), "..", "..", "vaporOS-coreutils", "completions"))
+    if not os.path.isfile(os.path.join(d, "ls.vsh")):
+        return                                           # the sibling repo is not here
+    w = os.path.join(TMP, "optwork"); os.makedirs(w, exist_ok=True)
+    open(os.path.join(w, "afile"), "w").close()
+    s = shell(cwd=w, env={"VS_AUTOSUGGEST": "0", "VS_COMPLETION_PATH": d})
+    s.type("ls --co"); s.send("\t")                     # a single match completes
+    expect(s, ["$ ls --color"])
+    s.send(CTRL("U")); s.type("ls -"); s.send("\t")
+    scr = s.screen()
+    assert any("-1" in l and "list one file per line" in l for l in scr), scr
+    s.send(CTRL("U")); s.type("ls af"); s.send("\t")
+    expect(s, ["$ ls afile"])
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

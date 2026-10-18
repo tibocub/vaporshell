@@ -106,6 +106,19 @@ def main():
             print("      wanted line: " + expect)
             print("      got: " + " | ".join(lines))
 
+    # The line editor itself: Tab completes an option of a tbx command from the
+    # table compiled in (comp_defaults.h), Backspace edits, Ctrl-U clears.
+    for keys, want in [("ls --co\t", "ls --color"), ("echo abc\x7f\x7fX", "echo aX"), ("fre\t", "free")]:
+        os.write(fd, keys.encode())
+        out = read(3, want)
+        if want in out:
+            print("ok    keys " + repr(keys))
+        else:
+            failures += 1
+            print("FAIL  keys " + repr(keys) + " -> " + repr(out[-80:]))
+        os.write(fd, b"\x15")
+        read(1, PROMPT)
+
     send("exit", 3, "nsh> ")
     os.write(fd, b"poweroff\n")
     time.sleep(1)
