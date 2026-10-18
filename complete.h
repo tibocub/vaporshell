@@ -12,6 +12,11 @@ typedef void (*vs_comp_list_f)(void *ctx, const char *name);
  * list(). Returns the number of candidates.
  */
 
+#include <stdbool.h>
+
+bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                       vs_comp_list_f sink, void *ctx);
+
 int vs_complete(const char *line, int len, char *ins, int inslen,
                 vs_comp_list_f list, void *ctx);
 

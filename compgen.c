@@ -23,6 +23,7 @@
 #include "exec.h"
 #include "expand.h"
 #include "mode.h"
+#include "complete.h"
 
 static const char *const KEYWORDS[] =
 {
@@ -39,6 +40,11 @@ struct cg_s
   int n;
   int hits;
 };
+
+/* When set, candidates go here instead of to stdout (vs_comp_from_spec). */
+
+static void (*g_sink)(void *ctx, const char *word);
+static void *g_sink_ctx;
 
 static bool has_prefix(const struct cg_s *c, const char *s)
 {
@@ -57,8 +63,23 @@ static void emit(struct cg_s *c, const char *s, const char *prefix_opt, const ch
       return;
     }
 
-  printf("%s%s%s\n", prefix_opt != NULL ? prefix_opt : "", s,
-         suffix_opt != NULL ? suffix_opt : "");
+  if (g_sink != NULL)
+    {
+      struct sbuf_s b;
+
+      sb_init(&b);
+      sb_adds(&b, prefix_opt != NULL ? prefix_opt : "");
+      sb_adds(&b, s);
+      sb_adds(&b, suffix_opt != NULL ? suffix_opt : "");
+      g_sink(g_sink_ctx, b.s);
+      sb_free(&b);
+    }
+  else
+    {
+      printf("%s%s%s\n", prefix_opt != NULL ? prefix_opt : "", s,
+             suffix_opt != NULL ? suffix_opt : "");
+    }
+
   c->hits++;
 }
 
@@ -598,4 +619,181 @@ int bi_compopt(int argc, char **argv)
   (void)argv;
   vs_err("compopt: not currently executing completion function");
   return 1;
+}
+
+/* ---- Completion from a registered spec ------------------------------------------ */
+
+/* Split a stored option string ("-W 'a b' -f ") back into words. */
+
+static int split_opts(const char *o, char **v, int max)
+{
+  int n = 0;
+
+  while (*o != '\0' && n < max)
+    {
+      struct sbuf_s b;
+
+      while (*o == ' ')
+        {
+          o++;
+        }
+
+      if (*o == '\0')
+        {
+          break;
+        }
+
+      sb_init(&b);
+      if (*o == '\'')
+        {
+          for (o++; *o != '\0' && *o != '\''; o++)
+            {
+              sb_addc(&b, *o);
+            }
+
+          if (*o == '\'')
+            {
+              o++;
+            }
+        }
+      else
+        {
+          for (; *o != '\0' && *o != ' '; o++)
+            {
+              sb_addc(&b, *o);
+            }
+        }
+
+      v[n++] = b.s != NULL ? sb_take(&b) : vs_xstrdup("");
+    }
+
+  return n;
+}
+
+/* bash's COMP_WORDS / COMP_CWORD / COMP_LINE / COMP_POINT for a complete -F function. */
+
+static void set_comp_vars(const char *line, int point)
+{
+  struct arr_s *words = arr_new();
+  int i = 0;
+  int cword = 0;
+  char num[16];
+
+  while (i < point)
+    {
+      int start;
+
+      while (i < point && (line[i] == ' ' || line[i] == '\t'))
+        {
+          i++;
+        }
+
+      if (i >= point)
+        {
+          break;
+        }
+
+      start = i;
+      while (i < point && line[i] != ' ' && line[i] != '\t')
+        {
+          i++;
+        }
+
+      {
+        char *w = vs_xmalloc((size_t)(i - start) + 1);
+
+        memcpy(w, line + start, (size_t)(i - start));
+        w[i - start] = '\0';
+        arr_append(words, w);
+        free(w);
+      }
+    }
+
+  cword = (int)(arr_max_index(words) + 1);
+  if (point > 0 && cword > 0 && line[point - 1] != ' ' && line[point - 1] != '\t')
+    {
+      cword--;                              /* still typing the last word */
+    }
+  else
+    {
+      arr_append(words, "");                /* a fresh, empty word */
+    }
+
+  var_array_replace("COMP_WORDS", words);
+  snprintf(num, sizeof(num), "%d", cword);
+  var_set("COMP_CWORD", num);
+  var_set("COMP_LINE", line);
+  snprintf(num, sizeof(num), "%d", point);
+  var_set("COMP_POINT", num);
+}
+
+/* Candidates for 'word' (the last word of line[0..point)) from the spec
+ * registered for 'cmd'. False if there is none. A -F function is the slow
+ * lane: it runs in this shell, uncapped (shortcut: no time budget yet).
+ */
+
+bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                       vs_comp_list_f sink, void *ctx)
+{
+  const struct complete_spec_s *spec = find_spec(cmd);
+  char *ov[48];
+  char *av[52];
+  const char *func = NULL;
+  int n;
+  int i;
+
+  if (spec == NULL)
+    {
+      return false;
+    }
+
+  n = split_opts(spec->opts, ov, 48);
+  av[0] = "compgen";
+  for (i = 0; i < n; i++)
+    {
+      av[i + 1] = ov[i];
+      if (strcmp(ov[i], "-F") == 0 && i + 1 < n)
+        {
+          func = ov[i + 1];
+        }
+    }
+
+  av[n + 1] = "--";
+  av[n + 2] = (char *)word;
+  g_sink = sink;
+  g_sink_ctx = ctx;
+  bi_compgen(n + 3, av);
+  g_sink = NULL;
+
+  if (func != NULL && func_find(func) != NULL)
+    {
+      char *fa[4];
+      const struct arr_s *r;
+      long k;
+
+      set_comp_vars(line, point);
+      var_unset("COMPREPLY");
+      fa[0] = (char *)func;
+      fa[1] = (char *)cmd;
+      fa[2] = (char *)word;
+      fa[3] = (char *)"";
+      run_argv(4, fa, false);
+      r = var_array("COMPREPLY", false);
+      for (k = 0; r != NULL && k <= arr_max_index(r); k++)
+        {
+          const char *e = arr_get(r, k);
+
+          if (e != NULL)
+            {
+              sink(ctx, e);
+            }
+        }
+    }
+
+  for (i = 0; i < n; i++)
+    {
+      free(ov[i]);
+    }
+
+  return true;
 }

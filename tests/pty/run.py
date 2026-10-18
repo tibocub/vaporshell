@@ -363,10 +363,63 @@ def _():
         open(os.path.join(d, "f%03d" % i), "w").close()
     open(os.path.join(d, "fz"), "w").close()
     s = shell(cwd=d, rows=40)
-    s.type("echo f"); s.send("\t")
-    names = " ".join(s.screen()[1:-1]).split()
+    s.type("echo f"); s.send("\t"); s.send("y")      # 101 > 100: it asks first
+    names = " ".join(s.screen()[2:-1]).split()
     assert len(names) == 101 and "f000" in names and "fz" in names, names
     assert s.screen()[-1] == "$ echo f", s.screen()[-1]
+    s.close()
+
+
+@test("more than 100 candidates ask first")
+def _():
+    d = os.path.join(TMP, "lots"); os.makedirs(d, exist_ok=True)
+    for i in range(150):
+        open(os.path.join(d, "g%03d" % i), "w").close()
+    s = shell(cwd=d, rows=60)
+    s.type("echo g"); s.send("\t")
+    assert "Display all 150 possibilities? (y or n)" in s.screen(), s.screen()
+    s.send("n")
+    assert s.screen()[-1] == "$ echo g" and "g149" not in " ".join(s.screen()), s.screen()
+    s.send("\t"); s.send("y")
+    assert "g149" in " ".join(s.screen()), s.screen()
+    s.close()
+
+
+@test("command completion sees a program added after the first Tab")
+def _():
+    bindir = os.path.join(TMP, "pbin"); os.makedirs(bindir, exist_ok=True)
+    s = shell(env={"PATH": bindir + ":" + os.environ["PATH"]})
+    s.type("zzprog"); s.send("\t")
+    expect(s, ["$ zzprog"])                       # nothing yet: the cache is built
+    f = os.path.join(bindir, "zzprogram")
+    open(f, "w").close(); os.chmod(f, 0o755)
+    s.send("\t")
+    expect(s, ["$ zzprogram"])
+    s.close()
+
+
+@test("complete -W and complete -F drive Tab")
+def _():
+    rc = os.path.join(TMP, "spec.rc")
+    open(rc, "w").write("complete -W 'alpha beta bravo' mycmd\n"
+                        "_f() { COMPREPLY=($(compgen -W 'one two' -- \"${COMP_WORDS[COMP_CWORD]}\")); }\n"
+                        "complete -F _f fcmd\n")
+    s = shell(args=["--rcfile", rc])
+    s.type("mycmd be"); s.send("\t")
+    expect(s, ["$ mycmd beta"])
+    s.send(CTRL("U")); s.type("mycmd b"); s.send("\t")
+    assert s.screen()[-1] == "$ mycmd b" and "beta" in " ".join(s.screen()) and "bravo" in " ".join(s.screen()), s.screen()
+    s.send(CTRL("U")); s.type("echo x; fcmd tw"); s.send("\t")
+    assert s.screen()[-1] == "$ echo x; fcmd two", s.screen()
+    s.close()
+
+
+@test("Tab completes variable names")
+def _():
+    s = shell()
+    s.type("VSTESTVAR=1"); s.send(ENTER)
+    s.type("echo $VSTEST"); s.send("\t")
+    expect(s, ["$ VSTESTVAR=1", "$ echo $VSTESTVAR"])
     s.close()
 
 

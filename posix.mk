@@ -32,7 +32,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all help check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
+.PHONY: all help bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -48,6 +48,14 @@ $(BUILDDIR)/%.o: %.c
 # ONLY=printf runs only the tests whose file name contains "printf".
 check: $(BIN)
 	sh tests/run-suites.sh $(BIN)
+
+# Tab latency: make -f posix.mk bench [LINE='ls /usr/bi']
+BENCH_OBJS := $(filter-out $(BUILDDIR)/vaporshell_main.o,$(OBJS))
+$(BUILDDIR)/complete_bench: tests/bench/complete_bench.c $(BENCH_OBJS)
+	$(CC) $(CFLAGS) -o $@ $< $(BENCH_OBJS) $(LDLIBS)
+
+bench: $(BUILDDIR)/complete_bench
+	@$(BUILDDIR)/complete_bench "$(or $(LINE),g)"
 
 check-pty: $(BIN)
 	python3 -I tests/pty/run.py $(BIN) $(ONLY)

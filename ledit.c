@@ -831,6 +831,22 @@ static void show_list(struct ed_s *e, struct clist_s *l)
 
   rows = (l->n + per - 1) / per;
   draw(e, e->prompt, text(e), e->b.len, e->b.len);
+  if (l->n > 100)                       /* bash's completion-query-items */
+    {
+      char q[64];
+      char key[SEQ_MAX];
+      int klen;
+
+      snprintf(q, sizeof(q), "\r\nDisplay all %d possibilities? (y or n)", l->n);
+      put(q);
+      if (read_key(key, &klen) <= 0 || (key[0] != 'y' && key[0] != 'Y' && key[0] != ' '))
+        {
+          put("\r\n");
+          e->cur_row = 0;
+          return;
+        }
+    }
+
   sb_init(&o);
   sb_adds(&o, "\r\n");
   for (r = 0; r < rows; r++)

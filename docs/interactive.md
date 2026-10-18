@@ -39,7 +39,7 @@ the status tables below in the same commit.
 | Prompt | escapes, promptvars, `PROMPT_COMMAND`, `PROMPT_DIRTRIM` (Tier 1) |
 | Line editing | own editor (`ledit.c`) on Linux and vaporOS; verified on the simulator and on the RP2040 over USB |
 | History | in-memory + `HISTFILE` (default `~/.vsh_history`); `history` builtin; no `fc`, no `!!` |
-| Completion | `complete.c`: command names + paths, rescans `$PATH` every Tab, no candidate cap (to be replaced by the cached table, see "Completion"); `compgen` works in scripts; `complete`/`compopt` registry stores specs but nothing consults them interactively; `bind` is accepted and ignored |
+| Completion | `complete.c`: command names from a cached sorted `$PATH` table, paths, `$VARIABLES`, and per-command specs registered with `complete` (`-W -A -f -d -P -S -X` and `-F` functions); asks before listing more than 100; `compgen` works in scripts; `bind` is accepted and ignored |
 | Startup files | none read |
 | Job control | `jobs`/`fg`/`bg`/`wait`/`disown`; no Ctrl-Z (NuttX has no process groups) |
 
@@ -88,8 +88,8 @@ the status tables below in the same commit.
 | Autosuggestion from history (grey text; Right/End accepts, Alt-F one word) | ✗ | biggest value for least code |
 | Syntax highlighting while typing (valid command / path / quote / error) | ✗ | reuses `wordscan.c` and the command hash; no fork |
 | Completion menu: grid with selection, Shift-Tab, descriptions | ✗ | |
-| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ✗ | see "Completion" |
-| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ✗ | native, no fork |
+| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | works for any command with a `complete` spec (rc file or sourced script); no specs ship yet, and fish-style `-s/-l/-d/-n` flags are not implemented |
+| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ◐ | `$VAR` and `${VAR}` ✓; the rest ✗ |
 | Case-insensitive and substring/fuzzy fallback matching | ✗ | |
 | Abbreviations (`abbr`) | ✗ | |
 | `..` / `...` / `cd -` / `autocd` | ✗ | |
@@ -199,15 +199,14 @@ claims, `tests/bench/`:
 | Metric | Target |
 |---|---|
 | Interpreter only (before this work, Linux x86-64, -O2) | 239.5 KB text |
-| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB. At the limit: the next features must pay for themselves |
+| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB). Over the limit: the next features must pay for themselves |
 | + autosuggest, highlighting, menu | ≤ +20 KB, each separately switchable |
 | Time to first prompt (no rc) | ≤ bash's, measured |
-| Tab on `$PATH` command prefix, warm cache | < 1 ms |
+| Tab on `$PATH` command prefix, warm cache | < 1 ms. **Measured 2026-10-18: 0.07–0.11 ms** (`make -f posix.mk bench LINE=ec`), was 1.5–2.0 ms before the cache; 30 `$PATH` directories, 4,500 names |
 | Tab in a directory of 1000 entries | < 10 ms |
 
 Numbers go in this table as they are measured, with the date and commit.
-Not yet measured: time to first prompt, completion latency (the current
-completer rescans `$PATH` on every Tab; replacing it is the next big item).
+Not yet measured: time to first prompt, and Tab latency on the RP2040's filesystem.
 
 ## Testing
 
@@ -216,7 +215,7 @@ completer rescans `$PATH` on every Tab; replacing it is the next big item).
 - The editor is tested through a pseudo-terminal: `tests/pty/run.py` (`make -f
   posix.mk check-pty`, also part of `check-all`) drives the real binary with
   keystrokes and asserts on the screen, rendered through a small VT model
-  (`tests/pty/ptytest.py`). 33 tests today. The NuttX simulator is covered by
+  (`tests/pty/ptytest.py`). 37 tests today. The NuttX simulator is covered by
   `tests/nuttx-sim-smoke.py`, which runs through the same editor (it
   understands the editor's redraws); the pty tests do not run against the
   simulator or the RP2040 yet.
