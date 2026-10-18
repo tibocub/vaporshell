@@ -46,6 +46,7 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
 
 void vs_commands_refresh(void);
 bool vs_is_command(const char *name);
+void vs_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
 void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 
 int vs_complete(const char *line, int len, char *ins, int inslen, int *del,

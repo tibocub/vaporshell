@@ -525,6 +525,28 @@ static void spec_cand(void *ctx, const char *name, const char *desc)
   cands_add(sc->c, sc->word, name, dir ? '/' : ' ', desc);
 }
 
+struct word_ctx_s
+{
+  struct cands_s *c;
+  const char *word;             /* what was typed: candidates are matched against it whole */
+};
+
+static void job_cand(const char *spec, const char *cmd, void *arg)
+{
+  struct word_ctx_s *x = arg;
+
+  cands_add(x->c, x->word, spec, ' ', cmd);
+}
+
+static void user_cand(const char *name, void *arg)
+{
+  struct word_ctx_s *x = arg;
+  char buf[160];
+
+  snprintf(buf, sizeof(buf), "~%s", name);
+  cands_add(x->c, x->word, buf, '/', NULL);
+}
+
 /* What the generators need to know about the word being completed. */
 
 struct gen_s
@@ -561,6 +583,17 @@ static void generate(struct cands_s *c, struct gen_s *g)
             }
         }
 
+      g->whole_word = true;
+    }
+  else if (word[0] == '%' && strchr(word, '/') == NULL)
+    {
+      vs_each_job(job_cand, &(struct word_ctx_s){ c, word });    /* %1 %2 ...: with the job's command shown */
+      g->whole_word = true;
+    }
+  else if (word[0] == '~' && strchr(word, '/') == NULL)
+    {
+      cands_add(c, word, "~", '/', NULL);
+      vs_each_user(user_cand, &(struct word_ctx_s){ c, word });  /* ~name/ */
       g->whole_word = true;
     }
   else if (g->is_cmd && strchr(word, '/') == NULL)

@@ -10,8 +10,13 @@
  * either, so this is not an approximation, just not alphabetical.
  */
 
+#ifdef VAPORSHELL_POSIX
+#  define _XOPEN_SOURCE 700              /* getpwent() */
+#endif
+
 #include <nuttx/config.h>
 #include <dirent.h>
+#include <pwd.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -92,6 +97,20 @@ static void emit(struct cg_s *c, const char *s, const char *prefix_opt, const ch
 
   out3(prefix_opt, s, suffix_opt);
   c->hits++;
+}
+
+struct emit_s
+{
+  struct cg_s *c;
+  const char *pre;
+  const char *suf;
+};
+
+static void emit_name(const char *name, void *arg)
+{
+  struct emit_s *em = arg;
+
+  emit(em->c, name, em->pre, em->suf);
 }
 
 static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, const char *suf)
@@ -179,20 +198,6 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
  * and functions, since a plain command word can resolve to any of them.
  */
 
-struct emit_s
-{
-  struct cg_s *c;
-  const char *pre;
-  const char *suf;
-};
-
-static void emit_name(const char *name, void *arg)
-{
-  struct emit_s *em = arg;
-
-  emit(em->c, name, em->pre, em->suf);
-}
-
 static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
 {
   struct emit_s em = { c, pre, suf };
@@ -213,6 +218,76 @@ static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
     }
 
   vs_each_path_command(emit_name, &em);
+}
+
+static void emit_job(const char *spec, const char *cmd, void *arg)
+{
+  (void)cmd;
+  emit_name(spec, arg);
+}
+
+/* Directories under each CDPATH entry, for a name with no '/' in it. */
+
+static void gen_cdpath(struct cg_s *c, const char *pre, const char *suf)
+{
+  const char *cdpath = var_get("CDPATH");
+
+  while (cdpath != NULL && *cdpath != '\0' && strchr(c->pfx, '/') == NULL)
+    {
+      size_t n = strcspn(cdpath, ":");
+      char dir[VS_PATH_MAX];
+
+      if (n > 0 && n < sizeof(dir) - 2)
+        {
+          char fbuf[VS_PATH_MAX];
+          DIR *d;
+          struct dirent *de;
+
+          memcpy(dir, cdpath, n);
+          dir[n] = '\0';
+          d = opendir(vs_plat_fspath(dir, fbuf, sizeof(fbuf)));
+          while (d != NULL && (de = readdir(d)) != NULL)
+            {
+              struct stat st;
+              char full[VS_PATH_MAX];
+
+              if (de->d_name[0] != '.' && snprintf(full, sizeof(full), "%s/%s", dir, de->d_name) < (int)sizeof(full) &&
+                  stat(vs_plat_fspath(full, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                  emit(c, de->d_name, pre, suf);
+                }
+            }
+
+          if (d != NULL)
+            {
+              closedir(d);
+            }
+        }
+
+      cdpath += n + (cdpath[n] == ':');
+    }
+}
+
+/* fn(name, arg) for each user in the password database. Not built on NuttX, where
+ * getpwent() needs CONFIG_LIBC_PASSWD_FILE and there is no user database yet.
+ */
+
+void vs_each_user(void (*fn)(const char *name, void *arg), void *arg)
+{
+#ifdef VAPORSHELL_POSIX
+  struct passwd *pw;
+
+  setpwent();
+  while ((pw = getpwent()) != NULL)
+    {
+      fn(pw->pw_name, arg);
+    }
+
+  endpwent();
+#else
+  (void)fn;
+  (void)arg;
+#endif
 }
 
 static void gen_action(struct cg_s *c, const char *action, const char *pre, const char *suf)
@@ -276,6 +351,18 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
   else if (strcmp(action, "directory") == 0)
     {
       gen_dir_entries(c, true, pre, suf);
+    }
+  else if (strcmp(action, "job") == 0)
+    {
+      vs_each_job(emit_job, &(struct emit_s){ c, pre, suf });
+    }
+  else if (strcmp(action, "user") == 0)
+    {
+      vs_each_user(emit_name, &(struct emit_s){ c, pre, suf });
+    }
+  else if (strcmp(action, "cdpath") == 0)
+    {
+      gen_cdpath(c, pre, suf);
     }
   else
     {
@@ -711,7 +798,10 @@ void vs_set_comp_vars(const char *line, int point)
 
 static const struct complete_spec_s g_default_specs[] =
 {
-  { NULL, "cd", "-d " },       { NULL, "pushd", "-d " },
+  { NULL, "cd", "-d -A cdpath " }, { NULL, "pushd", "-d -A cdpath " },
+  { NULL, "fg", "-A job " },   { NULL, "bg", "-A job " },
+  { NULL, "disown", "-A job " }, { NULL, "wait", "-A job " },
+  { NULL, "kill", "-A job " },
   { NULL, "unset", "-v " },    { NULL, "export", "-v " },
   { NULL, "readonly", "-v " }, { NULL, "declare", "-v " },
   { NULL, "typeset", "-v " },  { NULL, "local", "-v " },

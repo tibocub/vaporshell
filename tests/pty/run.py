@@ -523,8 +523,9 @@ def _():
     s = shell(env={"HOME": home})
     s.type("cd ~/Doc"); s.send("\t")
     expect(s, ["$ cd ~/Documents/"])
-    s.send(CTRL("U")); s.type("echo ~"); s.send("\t")
-    expect(s, ["$ echo ~/"])
+    s.send(CTRL("U")); s.type("echo ~"); s.send("\t")           # ~ itself and the users: a menu
+    scr = " ".join(s.screen()[1:]).split()
+    assert s.screen()[0] == "$ echo ~" and "~" in scr and "~root" in scr, s.screen()
     s.close()
 
 
@@ -664,6 +665,23 @@ def _():
     s.type("echo kept"); s.send(ENTER)
     s.close()                                        # killed: no clean exit
     assert "echo kept" in open(hf).read()
+
+
+@test("Tab completes jobs, ~user and CDPATH directories")
+def _():
+    base = os.path.join(TMP, "cdp"); os.makedirs(os.path.join(base, "projectdir"), exist_ok=True)
+    s = shell(env={"CDPATH": base, "VS_AUTOSUGGEST": "0"})
+    s.type("sleep 30 &"); s.send(ENTER)
+    s.type("fg "); s.send("\t")
+    assert s.screen()[-1] == "$ fg %1", s.screen()
+    s.send(CTRL("U")); s.type("kill %"); s.send("\t")
+    assert s.screen()[-1] == "$ kill %1", s.screen()
+    s.send(CTRL("U")); s.type("echo ~roo"); s.send("\t")
+    assert s.screen()[-1] == "$ echo ~root/", s.screen()
+    s.send(CTRL("U")); s.type("cd projectd"); s.send("\t")
+    assert s.screen()[-1].startswith("$ cd projectdir"), s.screen()
+    s.send(CTRL("U")); s.type("kill %1"); s.send(ENTER)
+    s.close()
 
 
 @test("Tab completes variable names")

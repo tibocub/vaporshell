@@ -530,3 +530,18 @@ int bi_disown(int argc, char **argv)
 
   return 0;
 }
+
+/* fn(spec, command, arg) for every job, spec being "%N". For completion. */
+
+void vs_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg)
+{
+  size_t i;
+
+  for (i = 0; i < g_sh.njobs; i++)
+    {
+      char spec[16];
+
+      snprintf(spec, sizeof(spec), "%%%d", g_sh.jobs[i].id);
+      fn(spec, g_sh.jobs[i].cmd != NULL ? g_sh.jobs[i].cmd : "", arg);
+    }
+}
