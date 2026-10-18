@@ -19,53 +19,101 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef VAPORSHELL_POSIX
+#  define VS_LEDIT 1
+#elif defined(CONFIG_VAPOROS_VAPORSHELL_LEDIT)
+#  define VS_LEDIT 1
+#endif
+
 #include "system/readline.h"
 
 #include "vaporshell.h"
 #include "exec.h"
 #include "mode.h"
 #include "platform.h"
+#include "complete.h"
+#include "history.h"
+#include "ledit.h"
+#include "prompt.h"
+#include "rcfile.h"
 
 /* readline() never prints the prompt itself (confirmed against NuttX's
  * readline_fd.c): write it first, then tell readline what to redraw.
  */
 
-#ifdef CONFIG_READLINE_TABCOMPLETION
-int vs_complete(const char *line, int len, char *ins, int inslen,
-                readline_list_f list, void *ctx);
-#endif
-
-static char *read_prompted(const char *prompt)
+static char *read_prompted(const char *prompt, bool continuation)
 {
-#ifdef VAPORSHELL_POSIX
-  /* Prompts go to stderr, like other shells, so stdout stays clean. */
-
-  ssize_t n = write(STDERR_FILENO, prompt, strlen(prompt));
-#else
-  ssize_t n = write(STDOUT_FILENO, prompt, strlen(prompt));
+#ifdef VS_LEDIT
+  if (vs_ledit_usable())
+    {
+      return vs_ledit_read(prompt, continuation);
+    }
 #endif
 
-  (void)n;
+  {
+    char *plain = vs_xstrdup(prompt);
+    char *line;
+
+    vs_prompt_strip(plain);
+#ifdef VAPORSHELL_POSIX
+    /* Prompts go to stderr, like other shells, so stdout stays clean. */
+
+    ssize_t n = write(STDERR_FILENO, plain, strlen(plain));
+#else
+    ssize_t n = write(STDOUT_FILENO, plain, strlen(plain));
+#endif
+
+    (void)n;
 #if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
-  readline_prompt(prompt);
+    readline_prompt(plain);
 #endif
 #ifdef CONFIG_READLINE_TABCOMPLETION
-  readline_completer(vs_complete);
+    readline_completer(vs_complete);
 #endif
-  return readline(prompt);
+    line = readline(plain);
+    free(plain);
+    return line;
+  }
 }
+
+#ifdef VAPORSHELL_POSIX
+#  define DEFAULT_PS1 "\\u@\\h:\\w\\$ "
+#else
+#  define DEFAULT_PS1 "vaporshell$ "      /* NuttX has no users: uid is always 0, so \$ would say # */
+#endif
 
 static char *interactive_next_line(void *ctx, bool continuation)
 {
-  const char *ps = continuation ? var_get("PS2") : var_get("PS1");
+  const char *ps;
+  char *expanded;
+  char *line;
 
   (void)ctx;
-  if (ps == NULL)
+  if (!continuation)
     {
-      ps = continuation ? "> " : "vaporshell$ ";
+      const char *pc = var_get("PROMPT_COMMAND");
+
+      if (pc != NULL && *pc != '\0')
+        {
+          int saved = g_sh.last_status;
+
+          run_string(pc, strlen(pc));
+          g_sh.last_status = saved;
+        }
+
+      g_sh.cmd_num++;
     }
 
-  return read_prompted(ps);
+  ps = var_get(continuation ? "PS2" : "PS1");
+  if (ps == NULL)
+    {
+      ps = continuation ? "> " : DEFAULT_PS1;
+    }
+
+  expanded = vs_prompt_expand(ps);
+  line = read_prompted(expanded, continuation);
+  free(expanded);
+  return line;
 }
 
 static char *stdin_next_line(void *ctx, bool continuation)
@@ -96,6 +144,9 @@ static int shell_main(int argc, char *argv[])
   const char *command = NULL;
   bool have_command = false;
   bool force_interactive = false;
+  bool login = false;
+  bool norc = false;
+  const char *rcfile = NULL;
   int i = 1;
   int status;
 
@@ -120,6 +171,29 @@ static int shell_main(int argc, char *argv[])
         {
           i++;
           break;
+        }
+
+      if (strcmp(argv[i], "--login") == 0)
+        {
+          login = true;
+          continue;
+        }
+
+      if (strcmp(argv[i], "--norc") == 0)
+        {
+          norc = true;
+          continue;
+        }
+
+      if (strcmp(argv[i], "--rcfile") == 0 || strcmp(argv[i], "--init-file") == 0)
+        {
+          if (i + 1 >= argc)
+            {
+              return usage_error("option requires an argument", argv[i]);
+            }
+
+          rcfile = argv[++i];
+          continue;
         }
 
       if (strcmp(argv[i], "--posix") == 0)
@@ -151,6 +225,7 @@ static int shell_main(int argc, char *argv[])
             {
               case 'c': have_command = true; break;
               case 'i': force_interactive = true; break;
+              case 'l': login = true; break;
               case 'e': g_sh.opt_e = true; break;
               case 'u': g_sh.opt_u = true; break;
               case 'x': g_sh.opt_x = true; break;
@@ -195,10 +270,23 @@ static int shell_main(int argc, char *argv[])
     struct parser_s p;
 
     g_sh.interactive = force_interactive || vs_plat_interactive();
+    if (g_sh.interactive)
+      {
+        vs_hist_init();
+        if (g_sh.profile != VS_PROFILE_POSIX)
+          {
+            vs_rc_load(login || argv[0][0] == '-', norc, rcfile);
+          }
+      }
+
     parser_init(&p, g_sh.interactive ? interactive_next_line : stdin_next_line,
                 NULL);
     status = run_source(&p, g_sh.interactive);
     parser_free(&p);
+    if (g_sh.interactive)
+      {
+        vs_hist_save();
+      }
 
     if (g_sh.interactive && g_sh.unwind == UW_NONE)
       {

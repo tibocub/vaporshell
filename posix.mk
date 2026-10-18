@@ -32,7 +32,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all help check check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
+.PHONY: all help check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -48,6 +48,9 @@ $(BUILDDIR)/%.o: %.c
 # ONLY=printf runs only the tests whose file name contains "printf".
 check: $(BIN)
 	sh tests/run-suites.sh $(BIN)
+
+check-pty: $(BIN)
+	python3 -I tests/pty/run.py $(BIN) $(ONLY)
 
 check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
@@ -71,6 +74,7 @@ help:
 	@echo
 	@echo "  all              build build/vaporshell (default)"
 	@echo "  check            all suites on the Linux build     (ONLY=name filters)"
+	@echo "  check-pty        the line editor, driven through a pseudo-terminal"
 	@echo "  check-asan       the same under ASan + UBSan"
 	@echo "  check-smoosh     the smoosh POSIX corpus"
 	@echo "  check-vaporos    rebuild for vaporOS/NuttX, test in the simulator"

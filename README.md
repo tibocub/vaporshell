@@ -17,6 +17,10 @@ and open questions -- this file is the short version.
   actual `sh` language, not a look-alike. This is the priority; a
   correct, if incomplete, POSIX shell beats a shell that half-does
   POSIX and half-does something else.
+- Small and fast ("bash, but fast"). Every interactive feature is
+  switchable and its size cost measured; completion is native code plus
+  declarative, lazily loaded specs rather than shell functions that fork
+  helpers. See `docs/interactive.md`.
 - Once that's solid: steal the bash/fish quality-of-life features that
   make an interactive shell pleasant to actually use day to day --
   tab completion, history, `.bashrc`-style startup, sensible line
@@ -52,12 +56,16 @@ vaporshell/
   traps.c             trap, kill
   help.c              help (reads the builtin table)
   util.c              allocation, string buffers, errors
+  prompt.c            PS1/PS2/PS4 escapes, PROMPT_COMMAND
+  ledit.c history.c   the line editor and history (own code, both platforms)
+  complete.c          tab completion candidates
   platform.h          what differs between NuttX and a host OS
   platform_nuttx.c    NuttX: no fork, posix_spawnp, tbx fallback (dispatch.c)
   posix/              standalone build only: platform.c (fork, PATH, spawn),
                       readline.c, and stand-in <nuttx/...> headers
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
+  docs/interactive.md the interactive-shell plan + status (prompt, editor, history, completion, rc files)
   docs/design.md      the design doc -- read this first for anything non-trivial
   tests/              own/ (vs bash and dash), modes/ (per-mode suites),
                       run-suites.sh (all suites), check-all.sh (everything,
@@ -150,8 +158,9 @@ redirections and here-documents/here-strings, pipelines, `&&`/`||`/`!`,
 `wait`/`disown`, no real terminal job control), `coproc`, `declare`/
 `typeset`, `mapfile`, `enable`/`compgen`, `$LINENO`, and the builtins in
 `help`. See the TODO list below for the itemised, honest version, including
-what's *not* done -- mainly interactive line editing, which doesn't exist
-in any form yet.
+what's *not* done -- mainly the interactive layer (prompt escapes, line
+editor, history, rc files, rich completion). That is planned and tracked, with
+a status table, in [docs/interactive.md](docs/interactive.md).
 
 How close each mode is to its reference is measured, not claimed: see
 [docs/bash-coverage.md](docs/bash-coverage.md) (bash 5.3.0) and

@@ -27,6 +27,7 @@
 #include "mode.h"
 #include "exec.h"
 #include "expand.h"
+#include "prompt.h"
 
 struct xfield_s
 {
@@ -1209,6 +1210,11 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
           r = dec.s != NULL ? sb_take(&dec) : vs_xstrdup("");
         }
 
+        break;
+
+      case 'P':
+        r = vs_prompt_expand(str);
+        vs_prompt_strip(r);
         break;
 
       case 'A':

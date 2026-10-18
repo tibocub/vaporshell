@@ -43,6 +43,16 @@ const char *vs_plat_fspath(const char *path, char *buf, size_t n);
 
 bool vs_plat_interactive(void);
 
+/* The line editor's view of the terminal (ledit.c). vs_plat_tty_raw(true)
+ * puts standard input in raw mode (no echo, no line buffering, no signal
+ * characters: Ctrl-C arrives as a byte) and returns false if it cannot;
+ * (false) restores it. vs_plat_tty_read() reads one byte: 1 on success, 0 on
+ * timeout (timeout_ms < 0 waits forever), -1 at end of input.
+ */
+
+bool vs_plat_tty_raw(bool on);
+int vs_plat_tty_read(unsigned char *c, int timeout_ms);
+
 /* Identity, for bash's UID/EUID/HOSTNAME/OSTYPE. */
 
 bool vs_plat_isatty(int fd);
@@ -53,6 +63,7 @@ bool vs_plat_isatty(int fd);
  */
 
 int vs_plat_columns(void);
+int vs_plat_rows(void);                         /* -1 if unknown */
 long vs_plat_uid(void);
 long vs_plat_euid(void);
 int vs_plat_hostname(char *buf, size_t n);      /* 0 on success */

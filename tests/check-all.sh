@@ -53,6 +53,12 @@ else
     skipped="$skipped\n  ASan build (pass its path as the second argument)"
 fi
 
+step "Linux: line editor through a pseudo-terminal"
+before=$(tally_failed "$VS_TALLY")
+python3 -I "$HERE/pty/run.py" "$VS"; st=$?
+[ "$st" -eq 0 ] || rc=1
+tally_guard "$VS_TALLY" "line editor (pty)" "$st" "$before"
+
 step "Linux: smoosh POSIX corpus"
 before=$(tally_failed "$VS_TALLY")
 sh "$HERE/smoosh-check.sh" "$VS"; st=$?

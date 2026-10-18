@@ -1,0 +1,1380 @@
+/*
+ * ledit.c -- the line editor.
+ *
+ * One editor for every platform: it needs raw terminal input and a way to
+ * write, both through platform.h. Everything it draws for one keystroke is
+ * composed into a single buffer and written with one write(): a USB serial
+ * console is much happier with that than with a byte at a time.
+ *
+ * A key is read as a complete *sequence* of bytes ("\033[A", "\033f", "a",
+ * an entire UTF-8 character) and looked up in one table, so adding a binding
+ * is adding a row. The buffer is UTF-8 whatever the platform's locale
+ * support: the terminal on the other end speaks it.
+ *
+ * Drawing is stateless apart from one number: how many rows the cursor sits
+ * below the first row of the prompt. Each redraw goes back up that many rows,
+ * clears to the end of the screen and prints prompt and buffer again, which
+ * is correct for wrapped lines and multi-line prompts alike.
+ */
+
+#include <nuttx/config.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "vaporshell.h"
+#include "complete.h"
+#include "history.h"
+#include "ledit.h"
+#include "platform.h"
+#include "prompt.h"
+
+#ifdef VAPORSHELL_POSIX
+#  define ED_OUT STDERR_FILENO          /* like other shells: stdout stays clean */
+#else
+#  define ED_OUT STDOUT_FILENO
+#endif
+
+#define ESC_TIMEOUT_MS 40               /* a lone ESC vs. the start of a sequence */
+#define UNDO_DEPTH     24
+#define SEQ_MAX        16
+
+/* ---- Commands and the key table -------------------------------------------- */
+
+enum cmd_e
+{
+  C_NONE = 0, C_SELF, C_ACCEPT, C_BOL, C_EOL, C_BACK, C_FWD, C_BACKWORD,
+  C_FWDWORD, C_DELETE, C_DELETE_OR_EOF, C_BACKSPACE, C_KILL_EOL, C_KILL_BOL,
+  C_KILL_WORD_BACK_WS, C_KILL_WORD, C_KILL_WORD_BACK, C_YANK, C_TRANSPOSE,
+  C_CLEAR, C_PREV, C_NEXT, C_PSEARCH_BACK, C_PSEARCH_FWD, C_RSEARCH,
+  C_INTERRUPT, C_COMPLETE, C_UPCASE, C_DOWNCASE, C_CAPITALIZE, C_UNDO,
+  C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST
+};
+
+static const struct
+{
+  const char *seq;
+  unsigned char cmd;
+} g_keys[] =
+{
+  { "\001", C_BOL }, { "\005", C_EOL }, { "\002", C_BACK }, { "\006", C_FWD },
+  { "\004", C_DELETE_OR_EOF }, { "\010", C_BACKSPACE }, { "\177", C_BACKSPACE },
+  { "\013", C_KILL_EOL }, { "\025", C_KILL_BOL }, { "\027", C_KILL_WORD_BACK_WS },
+  { "\031", C_YANK }, { "\024", C_TRANSPOSE }, { "\014", C_CLEAR },
+  { "\020", C_PREV }, { "\016", C_NEXT }, { "\022", C_RSEARCH },
+  { "\003", C_INTERRUPT }, { "\r", C_ACCEPT }, { "\n", C_ACCEPT },
+  { "\t", C_COMPLETE }, { "\037", C_UNDO }, { "\030\025", C_UNDO },
+  { "\033b", C_BACKWORD }, { "\033f", C_FWDWORD }, { "\033d", C_KILL_WORD },
+  { "\033\177", C_KILL_WORD_BACK }, { "\033\010", C_KILL_WORD_BACK },
+  { "\033u", C_UPCASE }, { "\033l", C_DOWNCASE }, { "\033c", C_CAPITALIZE },
+  { "\033p", C_PSEARCH_BACK }, { "\033n", C_PSEARCH_FWD },
+  { "\033<", C_HIST_FIRST }, { "\033>", C_HIST_LAST },
+  { "\033\r", C_NEWLINE }, { "\033/", C_UNDO },
+  { "\033[A", C_PREV }, { "\033OA", C_PREV },
+  { "\033[B", C_NEXT }, { "\033OB", C_NEXT },
+  { "\033[C", C_FWD }, { "\033OC", C_FWD },
+  { "\033[D", C_BACK }, { "\033OD", C_BACK },
+  { "\033[H", C_BOL }, { "\033OH", C_BOL }, { "\033[1~", C_BOL }, { "\033[7~", C_BOL },
+  { "\033[F", C_EOL }, { "\033OF", C_EOL }, { "\033[4~", C_EOL }, { "\033[8~", C_EOL },
+  { "\033[3~", C_DELETE },
+  { "\033[1;5C", C_FWDWORD }, { "\033[1;5D", C_BACKWORD },
+  { "\033[1;3C", C_FWDWORD }, { "\033[1;3D", C_BACKWORD },
+  { "\033[5~", C_PSEARCH_BACK }, { "\033[6~", C_PSEARCH_FWD },
+  { "\033[200~", C_PASTE },
+  { NULL, C_NONE }
+};
+
+/* ---- State --------------------------------------------------------------- */
+
+struct snap_s
+{
+  char *s;
+  size_t pos;
+};
+
+struct ed_s
+{
+  struct sbuf_s b;              /* the line; b.s is NULL until something is typed */
+  size_t pos;                   /* cursor, a byte offset */
+  const char *prompt;
+  int cols;
+  int cur_row;                  /* rows the cursor is below the prompt's first row */
+  struct sbuf_s kill;
+  bool last_kill;               /* the previous command was a kill: append to it */
+  int hi;                       /* history index being shown; vs_hist_count() = the new line */
+  char *hsaved;                 /* the new line, while another entry is shown */
+  char *prefix;                 /* prefix search: the text it started from */
+  struct snap_s undo[UNDO_DEPTH];
+  int nundo;
+  int last;                     /* the previous command */
+  bool bracketed;               /* terminal paste markers are on */
+  bool eof;
+  bool fresh;                   /* the first draw (the cursor starts at column 0) */
+};
+
+static const char *text(const struct ed_s *e)
+{
+  return e->b.s != NULL ? e->b.s : "";
+}
+
+/* ---- UTF-8 ---------------------------------------------------------------- */
+
+static size_t u8len(unsigned char c)
+{
+  return c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : c >= 0xc0 ? 2 : 1;
+}
+
+static size_t prev_char(const char *s, size_t pos)
+{
+  if (pos == 0)
+    {
+      return 0;
+    }
+
+  pos--;
+  while (pos > 0 && ((unsigned char)s[pos] & 0xc0) == 0x80)
+    {
+      pos--;
+    }
+
+  return pos;
+}
+
+static size_t next_char(const char *s, size_t len, size_t pos)
+{
+  size_t n = u8len((unsigned char)s[pos]);
+
+  return pos + n > len ? len : pos + n;
+}
+
+static long u8decode(const char *s, size_t n)
+{
+  unsigned char c = (unsigned char)s[0];
+  long wc;
+  size_t i;
+
+  if (c < 0x80 || n < 2)
+    {
+      return c;
+    }
+
+  wc = c >= 0xf0 ? c & 0x07 : c >= 0xe0 ? c & 0x0f : c & 0x1f;
+  for (i = 1; i < n && i < 4; i++)
+    {
+      wc = (wc << 6) | ((unsigned char)s[i] & 0x3f);
+    }
+
+  return wc;
+}
+
+/* Display width of a code point: 0 for combining marks, 2 for East Asian
+ * wide and emoji, else 1. A small table is enough for editing a command line.
+ */
+
+static int cwidth(long wc)
+{
+  if (wc < 0x300)
+    {
+      return 1;
+    }
+
+  if ((wc >= 0x300 && wc <= 0x36f) || (wc >= 0x200b && wc <= 0x200f) ||
+      (wc >= 0xfe00 && wc <= 0xfe0f) || wc == 0x20e3)
+    {
+      return 0;
+    }
+
+  if ((wc >= 0x1100 && wc <= 0x115f) || (wc >= 0x2e80 && wc <= 0xa4cf) ||
+      (wc >= 0xac00 && wc <= 0xd7a3) || (wc >= 0xf900 && wc <= 0xfaff) ||
+      (wc >= 0xfe30 && wc <= 0xfe6f) || (wc >= 0xff00 && wc <= 0xff60) ||
+      (wc >= 0xffe0 && wc <= 0xffe6) || (wc >= 0x1f300 && wc <= 0x1f64f) ||
+      (wc >= 0x1f900 && wc <= 0x1f9ff) || (wc >= 0x20000 && wc <= 0x3fffd))
+    {
+      return 2;
+    }
+
+  return 1;
+}
+
+/* ---- Drawing ----------------------------------------------------------- */
+
+struct cursor_s
+{
+  int row;
+  int col;
+};
+
+/* Advance past a character 'w' columns wide. A column equal to the width of
+ * the terminal is the "pending wrap" state: the next character goes to the
+ * start of the next row.
+ */
+
+static void adv(struct cursor_s *c, int w, int cols)
+{
+  if (w > 0 && c->col + w > cols)
+    {
+      c->row++;
+      c->col = 0;
+    }
+
+  c->col += w;
+}
+
+static void out_cursor_move(struct sbuf_s *o, int up, int col)
+{
+  char t[24];
+
+  if (up > 0)
+    {
+      snprintf(t, sizeof(t), "\033[%dA", up);
+      sb_adds(o, t);
+    }
+
+  sb_addc(o, '\r');
+  if (col > 0)
+    {
+      snprintf(t, sizeof(t), "\033[%dC", col);
+      sb_adds(o, t);
+    }
+}
+
+/* The prompt: written as is (minus the \[ \] markers); the cursor ends up
+ * where its last line ends.
+ */
+
+static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int cols)
+{
+  bool ignore = false;
+  bool esc = false;
+
+  for (; *p != '\0'; p++)
+    {
+      unsigned char ch = (unsigned char)*p;
+
+      if (ch == PROMPT_IGN_START || ch == PROMPT_IGN_END)
+        {
+          ignore = ch == PROMPT_IGN_START;
+          continue;
+        }
+
+      if (ignore || esc)
+        {
+          sb_addc(o, (char)ch);
+          if (esc && ((ch >= '@' && ch <= '~' && ch != '[') || ch == '\a'))
+            {
+              esc = false;
+            }
+
+          continue;
+        }
+
+      if (ch == '\033')
+        {
+          esc = true;
+          sb_addc(o, (char)ch);
+        }
+      else if (ch == '\n')
+        {
+          sb_adds(o, "\r\n");
+          c->row++;
+          c->col = 0;
+        }
+      else if (ch == '\r')
+        {
+          sb_addc(o, '\r');
+          c->col = 0;
+        }
+      else if ((ch & 0xc0) != 0x80)
+        {
+          size_t n = u8len(ch);
+          int w = cwidth(u8decode(p, strlen(p) < n ? strlen(p) : n));
+
+          adv(c, w, cols);
+          sb_addc(o, (char)ch);
+        }
+      else
+        {
+          sb_addc(o, (char)ch);
+        }
+    }
+}
+
+/* Draw 'prompt' + 's' and leave the cursor at byte 'cursor' of s. */
+
+static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
+                 size_t cursor)
+{
+  struct sbuf_s o;
+  struct cursor_s c = { 0, 0 };
+  struct cursor_s at = { 0, 0 };
+  size_t i;
+  char t[24];
+
+  sb_init(&o);
+  if (e->cur_row > 0)
+    {
+      snprintf(t, sizeof(t), "\033[%dA", e->cur_row);
+      sb_adds(&o, t);
+    }
+
+  sb_adds(&o, "\r\033[J");
+  draw_prompt(&o, prompt, &c, e->cols);
+  if (cursor == 0)
+    {
+      at = c;
+    }
+
+  for (i = 0; i < len; )
+    {
+      unsigned char ch = (unsigned char)s[i];
+
+      if (i == cursor)
+        {
+          at = c;
+        }
+
+      if (ch == '\n')
+        {
+          sb_adds(&o, "\r\n");
+          c.row++;
+          c.col = 0;
+          i++;
+        }
+      else if (ch < 0x20 || ch == 0x7f)
+        {
+          adv(&c, 2, e->cols);
+          sb_addc(&o, '^');
+          sb_addc(&o, ch == 0x7f ? '?' : (char)(ch + '@'));
+          i++;
+        }
+      else
+        {
+          size_t n = next_char(s, len, i) - i;
+
+          adv(&c, ch < 0x80 ? 1 : cwidth(u8decode(s + i, n)), e->cols);
+          sb_addn(&o, s + i, n);
+          i += n;
+        }
+    }
+
+  if (cursor >= len)
+    {
+      at = c;
+    }
+
+  if (c.col >= e->cols && e->cols > 0)
+    {
+      sb_adds(&o, "\r\n");          /* leave the pending-wrap state */
+      c.row++;
+      c.col = 0;
+      if (cursor >= len)
+        {
+          at = c;
+        }
+    }
+
+  /* From the end of the text back to the cursor. */
+
+  if (c.row > at.row || c.col != at.col)
+    {
+      out_cursor_move(&o, c.row - at.row, at.col);
+    }
+
+  e->cur_row = at.row;
+  e->fresh = false;
+  if (o.s != NULL)
+    {
+      ssize_t w = write(ED_OUT, o.s, o.len);
+
+      (void)w;
+    }
+
+  sb_free(&o);
+}
+
+static void refresh(struct ed_s *e)
+{
+  draw(e, e->prompt, text(e), e->b.len, e->pos);
+}
+
+static void put(const char *s)
+{
+  ssize_t w = write(ED_OUT, s, strlen(s));
+
+  (void)w;
+}
+
+/* ---- Editing primitives -------------------------------------------------- */
+
+static void snap(struct ed_s *e)
+{
+  if (e->nundo == UNDO_DEPTH)
+    {
+      free(e->undo[0].s);
+      memmove(e->undo, e->undo + 1, sizeof(e->undo[0]) * (UNDO_DEPTH - 1));
+      e->nundo--;
+    }
+
+  e->undo[e->nundo].s = vs_xstrdup(text(e));
+  e->undo[e->nundo].pos = e->pos;
+  e->nundo++;
+}
+
+static void set_text(struct ed_s *e, const char *s)
+{
+  sb_free(&e->b);
+  sb_init(&e->b);
+  sb_adds(&e->b, s);
+  e->pos = e->b.len;
+}
+
+static void insert(struct ed_s *e, const char *s, size_t n)
+{
+  size_t tail = e->b.len - e->pos;
+  char *keep = NULL;
+
+  if (n == 0)
+    {
+      return;
+    }
+
+  if (tail > 0)
+    {
+      keep = vs_xmalloc(tail);
+      memcpy(keep, e->b.s + e->pos, tail);
+    }
+
+  e->b.len = e->pos;
+  sb_addn(&e->b, s, n);
+  e->pos = e->b.len;
+  if (keep != NULL)
+    {
+      sb_addn(&e->b, keep, tail);
+      free(keep);
+    }
+
+  e->b.s[e->b.len] = '\0';
+}
+
+/* Remove [from, to). 'kill' puts the text in the kill buffer, joined to the
+ * previous kill if there was one right before (prepended when 'before').
+ */
+
+static void erase(struct ed_s *e, size_t from, size_t to, bool kill, bool before)
+{
+  if (to <= from)
+    {
+      return;
+    }
+
+  if (kill)
+    {
+      struct sbuf_s k;
+
+      if (!e->last_kill)
+        {
+          sb_free(&e->kill);
+          sb_init(&e->kill);
+        }
+
+      sb_init(&k);
+      if (before)
+        {
+          sb_addn(&k, e->b.s + from, to - from);
+          if (e->kill.s != NULL)
+            {
+              sb_addn(&k, e->kill.s, e->kill.len);
+            }
+        }
+      else
+        {
+          if (e->kill.s != NULL)
+            {
+              sb_addn(&k, e->kill.s, e->kill.len);
+            }
+
+          sb_addn(&k, e->b.s + from, to - from);
+        }
+
+      sb_free(&e->kill);
+      e->kill = k;
+    }
+
+  memmove(e->b.s + from, e->b.s + to, e->b.len - to);
+  e->b.len -= to - from;
+  e->b.s[e->b.len] = '\0';
+  e->pos = from;
+}
+
+static bool is_word(unsigned char c)
+{
+  return isalnum(c) || c == '_' || c >= 0x80;
+}
+
+static size_t word_end(const struct ed_s *e, size_t p)
+{
+  const char *s = text(e);
+
+  while (p < e->b.len && !is_word((unsigned char)s[p]))
+    {
+      p = next_char(s, e->b.len, p);
+    }
+
+  while (p < e->b.len && is_word((unsigned char)s[p]))
+    {
+      p = next_char(s, e->b.len, p);
+    }
+
+  return p;
+}
+
+static size_t word_start(const struct ed_s *e, size_t p)
+{
+  const char *s = text(e);
+
+  while (p > 0 && !is_word((unsigned char)s[prev_char(s, p)]))
+    {
+      p = prev_char(s, p);
+    }
+
+  while (p > 0 && is_word((unsigned char)s[prev_char(s, p)]))
+    {
+      p = prev_char(s, p);
+    }
+
+  return p;
+}
+
+/* Change the case of the word ahead of the cursor. 'mode': 'u', 'l', 'c'. */
+
+static void case_word(struct ed_s *e, char mode)
+{
+  size_t end = word_end(e, e->pos);
+  size_t i;
+  bool first = true;
+
+  for (i = e->pos; i < end; i++)
+    {
+      unsigned char c = (unsigned char)e->b.s[i];
+
+      if (c >= 0x80 || !isalnum(c))
+        {
+          continue;
+        }
+
+      if (mode == 'u' || (mode == 'c' && first))
+        {
+          e->b.s[i] = (char)toupper(c);
+        }
+      else
+        {
+          e->b.s[i] = (char)tolower(c);
+        }
+
+      first = false;
+    }
+
+  e->pos = end;
+}
+
+/* ---- History --------------------------------------------------------------- */
+
+static void hist_show(struct ed_s *e, int idx)
+{
+  int n = vs_hist_count();
+
+  if (e->hi == n && e->hsaved == NULL)
+    {
+      e->hsaved = vs_xstrdup(text(e));
+    }
+
+  e->hi = idx;
+  set_text(e, idx >= n ? (e->hsaved != NULL ? e->hsaved : "") : vs_hist_get(idx));
+}
+
+static void hist_move(struct ed_s *e, int dir, bool prefix)
+{
+  int n = vs_hist_count();
+  int i = e->hi + dir;
+
+  if (prefix && e->prefix == NULL)
+    {
+      e->prefix = vs_xstrdup(text(e));
+      e->prefix[e->pos] = '\0';
+    }
+
+  for (; i >= 0 && i <= n; i += dir)
+    {
+      if (!prefix || i == n ||
+          strncmp(vs_hist_get(i), e->prefix, strlen(e->prefix)) == 0)
+        {
+          hist_show(e, i);
+          if (prefix)
+            {
+              e->pos = strlen(e->prefix);
+            }
+
+          return;
+        }
+    }
+}
+
+/* ---- Incremental search ----------------------------------------------------- */
+
+static int read_key(struct ed_s *e, char *seq, int *len);
+
+static int find_hist(const char *needle, int from, int dir, const char **hit)
+{
+  int n = vs_hist_count();
+  int i;
+
+  for (i = from; i >= 0 && i < n; i += dir)
+    {
+      const char *h = vs_hist_get(i);
+
+      *hit = strstr(h, needle);
+      if (*hit != NULL)
+        {
+          return i;
+        }
+    }
+
+  return -1;
+}
+
+/* Returns true if the user accepted the match with Enter. The match is left
+ * in the buffer either way unless the search was cancelled.
+ */
+
+static bool search(struct ed_s *e)
+{
+  struct sbuf_s q;
+  int idx = vs_hist_count();
+  const char *hit = NULL;
+  char seq[SEQ_MAX];
+  int len;
+  bool failed = false;
+  char *orig = vs_xstrdup(text(e));
+  size_t orig_pos = e->pos;
+  bool accepted = false;
+
+  sb_init(&q);
+  for (; ; )
+    {
+      struct sbuf_s pr;
+
+      sb_init(&pr);
+      sb_adds(&pr, failed ? "(failed reverse-i-search)`" : "(reverse-i-search)`");
+      if (q.s != NULL)
+        {
+          sb_adds(&pr, q.s);
+        }
+
+      sb_adds(&pr, "': ");
+      if (idx < vs_hist_count())
+        {
+          const char *h = vs_hist_get(idx);
+
+          draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0);
+        }
+      else
+        {
+          draw(e, pr.s, "", 0, 0);
+        }
+
+      sb_free(&pr);
+      if (read_key(e, seq, &len) <= 0)
+        {
+          break;
+        }
+
+      if (len == 1 && (seq[0] == 0x12 || seq[0] == 0x13))     /* Ctrl-R / Ctrl-S */
+        {
+          int dir = seq[0] == 0x12 ? -1 : 1;
+          int from = idx < vs_hist_count() ? idx + dir : vs_hist_count() - 1;
+          int found = q.s != NULL ? find_hist(q.s, from, dir, &hit) : -1;
+
+          failed = found < 0 && q.s != NULL;
+          if (found >= 0)
+            {
+              idx = found;
+            }
+        }
+      else if (len == 1 && (seq[0] == 0x7f || seq[0] == 0x08))
+        {
+          if (q.len > 0)
+            {
+              q.len = prev_char(q.s, q.len);
+              q.s[q.len] = '\0';
+              idx = vs_hist_count();
+              hit = NULL;
+              failed = false;
+              if (q.len > 0)
+                {
+                  int found = find_hist(q.s, vs_hist_count() - 1, -1, &hit);
+
+                  if (found >= 0)
+                    {
+                      idx = found;
+                    }
+                }
+            }
+        }
+      else if (len == 1 && (seq[0] == 0x07 || seq[0] == 0x03))  /* Ctrl-G / Ctrl-C */
+        {
+          set_text(e, orig);
+          e->pos = orig_pos;
+          idx = vs_hist_count();
+          break;
+        }
+      else if (len >= 1 && (unsigned char)seq[0] >= 0x20 && seq[0] != 0x7f)
+        {
+          int found;
+
+          sb_addn(&q, seq, (size_t)len);
+          found = find_hist(q.s, idx < vs_hist_count() ? idx : vs_hist_count() - 1,
+                            -1, &hit);
+          failed = found < 0;
+          if (found >= 0)
+            {
+              idx = found;
+            }
+        }
+      else
+        {
+          /* Any other key ends the search and keeps the match; Enter also
+           * runs it.
+           */
+
+          if (idx < vs_hist_count())
+            {
+              set_text(e, vs_hist_get(idx));
+              e->pos = hit != NULL ? (size_t)(hit - vs_hist_get(idx)) : e->b.len;
+            }
+
+          accepted = len == 1 && (seq[0] == '\r' || seq[0] == '\n');
+          e->hi = idx;
+          sb_free(&q);
+          free(orig);
+          return accepted;
+        }
+    }
+
+  if (idx < vs_hist_count() && hit != NULL)
+    {
+      set_text(e, vs_hist_get(idx));
+      e->pos = (size_t)(hit - vs_hist_get(idx));
+      e->hi = idx;
+    }
+
+  sb_free(&q);
+  free(orig);
+  return false;
+}
+
+/* ---- Completion --------------------------------------------------------------- */
+
+struct clist_s
+{
+  char **v;
+  int n;
+  int cap;
+  int maxw;
+};
+
+static int str_width(const char *s)
+{
+  int w = 0;
+  size_t n = strlen(s);
+  size_t i;
+
+  for (i = 0; i < n; i = next_char(s, n, i))
+    {
+      w += (unsigned char)s[i] < 0x80 ? 1 : cwidth(u8decode(s + i, n - i));
+    }
+
+  return w;
+}
+
+static void list_cb(void *ctx, const char *name)
+{
+  struct clist_s *l = ctx;
+  int w = str_width(name);
+
+  if (l->n == l->cap)
+    {
+      l->cap = l->cap > 0 ? l->cap * 2 : 16;
+      l->v = vs_xrealloc(l->v, (size_t)l->cap * sizeof(char *));
+    }
+
+  l->v[l->n++] = vs_xstrdup(name);
+  if (w > l->maxw)
+    {
+      l->maxw = w;
+    }
+}
+
+static void show_list(struct ed_s *e, struct clist_s *l)
+{
+  int colw = l->maxw + 2;
+  int per = e->cols / colw;
+  int rows;
+  int r;
+  int k;
+  struct sbuf_s o;
+
+  if (per < 1)
+    {
+      per = 1;
+    }
+
+  rows = (l->n + per - 1) / per;
+  draw(e, e->prompt, text(e), e->b.len, e->b.len);
+  sb_init(&o);
+  sb_adds(&o, "\r\n");
+  for (r = 0; r < rows; r++)
+    {
+      for (k = r; k < l->n; k += rows)
+        {
+          int pad = colw - str_width(l->v[k]);
+
+          sb_adds(&o, l->v[k]);
+          if (k + rows < l->n)
+            {
+              while (pad-- > 0)
+                {
+                  sb_addc(&o, ' ');
+                }
+            }
+        }
+
+      sb_adds(&o, "\r\n");
+    }
+
+  put(o.s);
+  sb_free(&o);
+  e->cur_row = 0;                       /* the next draw starts on a fresh line */
+}
+
+static void complete(struct ed_s *e)
+{
+  struct clist_s l;
+  char ins[128];
+  int i;
+  int n;
+
+  memset(&l, 0, sizeof(l));
+  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), list_cb, &l);
+  if (ins[0] != '\0')
+    {
+      snap(e);
+      insert(e, ins, strlen(ins));
+    }
+
+  if (n > 1 && ins[0] == '\0')
+    {
+      show_list(e, &l);
+    }
+
+  for (i = 0; i < l.n; i++)
+    {
+      free(l.v[i]);
+    }
+
+  free(l.v);
+}
+
+/* ---- Keys ---------------------------------------------------------------- */
+
+/* One key as a byte sequence: a character (all of its UTF-8 bytes), or an
+ * escape sequence. Returns 1, or <= 0 at end of input.
+ */
+
+static int read_key(struct ed_s *e, char *seq, int *len)
+{
+  unsigned char c;
+  int r;
+  int n = 0;
+
+  (void)e;
+  r = vs_plat_tty_read(&c, -1);
+  if (r <= 0)
+    {
+      return r;
+    }
+
+  seq[n++] = (char)c;
+  if (c == 0x1b)
+    {
+      if (vs_plat_tty_read(&c, ESC_TIMEOUT_MS) <= 0)
+        {
+          *len = n;                         /* a lone ESC */
+          return 1;
+        }
+
+      seq[n++] = (char)c;
+      if (c == '[' || c == 'O')
+        {
+          /* Parameters and intermediates up to the final byte (0x40-0x7e). */
+
+          while (n < SEQ_MAX - 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0)
+            {
+              seq[n++] = (char)c;
+              if (c >= 0x40 && c <= 0x7e)
+                {
+                  break;
+                }
+            }
+        }
+      else if (c >= 0xc0)
+        {
+          size_t k = u8len(c);
+
+          while (k-- > 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 &&
+                 n < SEQ_MAX - 1)
+            {
+              seq[n++] = (char)c;
+            }
+        }
+    }
+  else if (c >= 0xc0)
+    {
+      size_t k = u8len(c);
+
+      while (k-- > 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 && n < SEQ_MAX - 1)
+        {
+          seq[n++] = (char)c;
+        }
+    }
+
+  *len = n;
+  return 1;
+}
+
+static int lookup(const char *seq, int len)
+{
+  int i;
+
+  for (i = 0; g_keys[i].seq != NULL; i++)
+    {
+      if (strlen(g_keys[i].seq) == (size_t)len &&
+          memcmp(g_keys[i].seq, seq, (size_t)len) == 0)
+        {
+          return g_keys[i].cmd;
+        }
+    }
+
+  return C_NONE;
+}
+
+/* After ESC [ 200 ~: take everything up to ESC [ 201 ~ as typed text. */
+
+static void paste(struct ed_s *e)
+{
+  struct sbuf_s p;
+  unsigned char c;
+  static const char end[] = "\033[201~";
+  size_t m = 0;
+
+  sb_init(&p);
+  while (vs_plat_tty_read(&c, 2000) > 0)
+    {
+      if (c == (unsigned char)end[m])
+        {
+          if (++m == sizeof(end) - 1)
+            {
+              break;
+            }
+
+          continue;
+        }
+
+      if (m > 0)
+        {
+          sb_addn(&p, end, m);
+          m = c == (unsigned char)end[0] ? 1 : 0;
+          if (m == 1)
+            {
+              continue;
+            }
+        }
+
+      sb_addc(&p, c == '\r' ? '\n' : (char)c);
+    }
+
+  if (p.s != NULL)
+    {
+      while (p.len > 0 && p.s[p.len - 1] == '\n')
+        {
+          p.len--;                      /* the last newline would run the command */
+        }
+
+      snap(e);
+      insert(e, p.s, p.len);
+    }
+
+  sb_free(&p);
+}
+
+/* Run one command. Returns true when the line is finished. */
+
+static bool run(struct ed_s *e, int cmd, const char *seq, int len)
+{
+  const char *s = text(e);
+  bool kill = false;
+
+  switch (cmd)
+    {
+      case C_SELF:
+        if (e->last != C_SELF)
+          {
+            snap(e);
+          }
+
+        insert(e, seq, (size_t)len);
+        break;
+
+      case C_ACCEPT:
+        return true;
+
+      case C_BOL:
+        e->pos = 0;
+        break;
+
+      case C_EOL:
+        e->pos = e->b.len;
+        break;
+
+      case C_BACK:
+        e->pos = prev_char(s, e->pos);
+        break;
+
+      case C_FWD:
+        if (e->pos < e->b.len)
+          {
+            e->pos = next_char(s, e->b.len, e->pos);
+          }
+
+        break;
+
+      case C_BACKWORD:
+        e->pos = word_start(e, e->pos);
+        break;
+
+      case C_FWDWORD:
+        e->pos = word_end(e, e->pos);
+        break;
+
+      case C_DELETE_OR_EOF:
+        if (e->b.len == 0)
+          {
+            e->eof = true;
+            return true;
+          }
+
+        /* fall through */
+
+      case C_DELETE:
+        if (e->pos < e->b.len)
+          {
+            snap(e);
+            erase(e, e->pos, next_char(s, e->b.len, e->pos), false, false);
+          }
+
+        break;
+
+      case C_BACKSPACE:
+        if (e->pos > 0)
+          {
+            snap(e);
+            erase(e, prev_char(s, e->pos), e->pos, false, false);
+          }
+
+        break;
+
+      case C_KILL_EOL:
+        snap(e);
+        erase(e, e->pos, e->b.len, true, false);
+        kill = true;
+        break;
+
+      case C_KILL_BOL:
+        snap(e);
+        erase(e, 0, e->pos, true, true);
+        kill = true;
+        break;
+
+      case C_KILL_WORD:
+        snap(e);
+        erase(e, e->pos, word_end(e, e->pos), true, false);
+        kill = true;
+        break;
+
+      case C_KILL_WORD_BACK:
+        snap(e);
+        erase(e, word_start(e, e->pos), e->pos, true, true);
+        kill = true;
+        break;
+
+      case C_KILL_WORD_BACK_WS:
+        {
+          size_t p = e->pos;
+
+          while (p > 0 && isspace((unsigned char)s[p - 1]))
+            {
+              p--;
+            }
+
+          while (p > 0 && !isspace((unsigned char)s[p - 1]))
+            {
+              p--;
+            }
+
+          snap(e);
+          erase(e, p, e->pos, true, true);
+          kill = true;
+        }
+
+        break;
+
+      case C_YANK:
+        if (e->kill.s != NULL)
+          {
+            snap(e);
+            insert(e, e->kill.s, e->kill.len);
+          }
+
+        break;
+
+      case C_TRANSPOSE:
+        if (e->b.len >= 2)
+          {
+            size_t b2 = e->pos >= e->b.len ? prev_char(s, e->b.len) : e->pos;
+            size_t a2 = prev_char(s, b2);
+            size_t end = next_char(s, e->b.len, b2);
+            char *x = vs_xmalloc(end - a2);
+
+            if (b2 > 0)
+              {
+                snap(e);
+                memcpy(x, s + b2, end - b2);
+                memcpy(x + (end - b2), s + a2, b2 - a2);
+                memcpy(e->b.s + a2, x, end - a2);
+                e->pos = end;
+              }
+
+            free(x);
+          }
+
+        break;
+
+      case C_UPCASE:
+      case C_DOWNCASE:
+      case C_CAPITALIZE:
+        snap(e);
+        case_word(e, cmd == C_UPCASE ? 'u' : cmd == C_DOWNCASE ? 'l' : 'c');
+        break;
+
+      case C_UNDO:
+        if (e->nundo > 0)
+          {
+            struct snap_s *u = &e->undo[--e->nundo];
+
+            set_text(e, u->s);
+            e->pos = u->pos;
+            free(u->s);
+          }
+
+        break;
+
+      case C_CLEAR:
+        put("\033[H\033[2J");
+        e->cur_row = 0;
+        break;
+
+      case C_PREV:
+      case C_NEXT:
+        hist_move(e, cmd == C_PREV ? -1 : 1, false);
+        break;
+
+      case C_PSEARCH_BACK:
+      case C_PSEARCH_FWD:
+        hist_move(e, cmd == C_PSEARCH_BACK ? -1 : 1, true);
+        break;
+
+      case C_HIST_FIRST:
+        if (vs_hist_count() > 0)
+          {
+            hist_show(e, 0);
+          }
+
+        break;
+
+      case C_HIST_LAST:
+        hist_show(e, vs_hist_count());
+        break;
+
+      case C_RSEARCH:
+        if (search(e))
+          {
+            return true;
+          }
+
+        break;
+
+      case C_COMPLETE:
+        complete(e);
+        break;
+
+      case C_PASTE:
+        paste(e);
+        break;
+
+      case C_NEWLINE:
+        snap(e);
+        insert(e, "\n", 1);
+        break;
+
+      default:
+        break;
+    }
+
+  e->last_kill = kill;
+  if (cmd != C_PSEARCH_BACK && cmd != C_PSEARCH_FWD)
+    {
+      free(e->prefix);
+      e->prefix = NULL;
+    }
+
+  return false;
+}
+
+/* ---- Entry points ------------------------------------------------------------- */
+
+bool vs_ledit_usable(void)
+{
+  const char *term = var_get("TERM");
+
+  if (!vs_plat_isatty(STDIN_FILENO))
+    {
+      return false;
+    }
+
+  return term == NULL || strcmp(term, "dumb") != 0;
+}
+
+static void ed_free(struct ed_s *e)
+{
+  int i;
+
+  sb_free(&e->b);
+  sb_free(&e->kill);
+  free(e->hsaved);
+  free(e->prefix);
+  for (i = 0; i < e->nundo; i++)
+    {
+      free(e->undo[i].s);
+    }
+}
+
+char *vs_ledit_read(const char *prompt, bool continuation)
+{
+  struct ed_s e;
+  char seq[SEQ_MAX];
+  char *result = NULL;
+  const char *bp;
+  int len;
+
+  memset(&e, 0, sizeof(e));
+  sb_init(&e.b);
+  sb_init(&e.kill);
+  e.prompt = prompt;
+  e.hi = vs_hist_count();
+  e.fresh = true;
+  e.last = C_NONE;
+
+  if (!vs_plat_tty_raw(true))
+    {
+      return NULL;
+    }
+
+  bp = var_get("VS_BRACKETED_PASTE");
+#ifdef VAPORSHELL_POSIX
+  e.bracketed = bp == NULL || strcmp(bp, "0") != 0;
+#else
+  e.bracketed = bp != NULL && strcmp(bp, "1") == 0;
+#endif
+  if (e.bracketed)
+    {
+      put("\033[?2004h");
+    }
+
+  for (; ; )
+    {
+      int cmd;
+      int cols = vs_plat_columns();
+      const char *cv = var_get("COLUMNS");
+
+      e.cols = cols > 0 ? cols : (cv != NULL && atoi(cv) > 0) ? atoi(cv) : 80;
+      refresh(&e);
+      if (read_key(&e, seq, &len) <= 0)
+        {
+          e.eof = e.b.len == 0;
+          break;
+        }
+
+      cmd = lookup(seq, len);
+      if (cmd == C_NONE && ((unsigned char)seq[0] >= 0x20 && seq[0] != 0x7f) &&
+          seq[0] != 0x1b)
+        {
+          cmd = C_SELF;
+        }
+
+      if (cmd == C_INTERRUPT)
+        {
+          draw(&e, e.prompt, text(&e), e.b.len, e.b.len);
+          put("^C\r\n");
+          g_sh.last_status = 130;
+          result = vs_xstrdup("\n");
+          goto done;
+        }
+
+      if (run(&e, cmd, seq, len))
+        {
+          break;
+        }
+
+      e.last = cmd;
+    }
+
+  /* Leave the line on screen, the cursor on the next row. */
+
+  if (!e.eof)
+    {
+      draw(&e, e.prompt, text(&e), e.b.len, e.b.len);
+      put("\r\n");
+      size_t n = e.b.len;
+
+      result = vs_xmalloc(n + 2);
+      memcpy(result, text(&e), n);
+      result[n] = '\n';
+      result[n + 1] = '\0';
+      if (!continuation)
+        {
+          vs_hist_add(text(&e));
+        }
+    }
+
+done:
+  if (e.bracketed)
+    {
+      put("\033[?2004l");
+    }
+
+  vs_plat_tty_raw(false);
+  ed_free(&e);
+  return result;
+}

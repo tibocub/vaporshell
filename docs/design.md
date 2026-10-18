@@ -70,6 +70,12 @@ doesn't exist. **Job control is out of scope** for now. `Ctrl+C`
 still works against a single foreground child directly (see below);
 what doesn't work is the group semantics around it.
 
+> **Superseded:** the line editor, history, completion and rc-file work is now
+> planned and tracked in `interactive.md`, which decided on a vaporshell-owned
+> editor shared by Linux and vaporOS instead of NuttX's readline. The
+> "Comfort NSH lacks" checklist below is kept for history; `interactive.md`
+> has the current status.
+
 ## Line editing: a nuance worth designing around, not just reusing blindly
 
 `apps/system/readline` has real command history already built in

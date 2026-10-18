@@ -2005,6 +2005,7 @@ const struct builtin_s g_vs_builtins[] =
   { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VS_M_BASH },
   { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VS_M_BASH },
   { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VS_M_BASH },
+  { "history",  bi_history,  false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history", VS_M_BASH },
   { "bind",     bi_bind,     false, "bind [-p|-P|-l] [keyseq:cmd]: readline key bindings (no line editor here)", VS_M_BASH },
   { NULL, NULL, false, NULL, 0 }
 };
