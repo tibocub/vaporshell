@@ -276,9 +276,24 @@ static void refresh_commands(void)
   g_ncmds = g_ncmds > 0 ? u + 1 : 0;
 }
 
+/* Call fn for every name in the (refreshed) $PATH table, sorted, once each. */
+
+void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg)
+{
+  int i;
+
+  refresh_commands();
+  for (i = 0; i < g_ncmds; i++)
+    {
+      fn(g_cmds[i], arg);
+    }
+}
+
 static void complete_command(struct cands_s *c, const char *prefix)
 {
   const struct builtin_s *b;
+  const struct alias_s *a;
+  const struct func_s *f;
   size_t pl = strlen(prefix);
   int lo = 0;
   int hi;
@@ -287,6 +302,16 @@ static void complete_command(struct cands_s *c, const char *prefix)
   for (b = g_vs_builtins; b->name != NULL; b++)
     {
       cands_add(c, prefix, b->name, ' ', NULL);
+    }
+
+  for (a = g_sh.aliases; a != NULL; a = a->next)
+    {
+      cands_add(c, prefix, a->name, ' ', NULL);
+    }
+
+  for (f = g_sh.funcs; f != NULL; f = f->next)
+    {
+      cands_add(c, prefix, f->name, ' ', NULL);
     }
 
   for (i = 0; g_tbx_commands[i] != NULL; i++)
@@ -354,7 +379,7 @@ static void complete_path(struct cands_s *c, const char *word)
       dlen = strlen(dir);
     }
 
-  d = opendir(dlen > 0 ? vs_plat_fspath(dir, fbuf, sizeof(fbuf)) : ".");
+  d = opendir(vs_plat_fspath(dlen > 0 ? dir : ".", fbuf, sizeof(fbuf)));    /* NuttX rejects a bare "." */
   if (d == NULL)
     {
       return;
@@ -480,10 +505,18 @@ static void generate(struct cands_s *c, struct gen_s *g)
 
               memcpy(cmd, cs, cl);
               cmd[cl] = '\0';
+              int status = g_sh.last_status;
+              int pipest[64];
+              int npipest = g_sh.nps;
+
+              memcpy(pipest, g_sh.ps, sizeof(pipest));
               g_sh.comp_expired = false;
               g_sh.comp_deadline = ms > 0 ? vs_now_ms() + ms : 0;
               r = vs_comp_from_spec(cmd, g->line, g->len, word, spec_cand, &sc);
               g_sh.comp_deadline = 0;
+              g_sh.last_status = status;               /* spec files and -F functions must not change $? */
+              g_sh.nps = npipest;
+              memcpy(g_sh.ps, pipest, sizeof(pipest));
               if (g_sh.comp_expired)
                 {
                   g_sh.unwind = UW_NONE;         /* what was running is abandoned; the candidates so far stay */
@@ -703,6 +736,11 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
   return n;
 }
 
+void vs_commands_refresh(void)
+{
+  refresh_commands();
+}
+
 /* Does 'name' run something: a keyword, alias, function, builtin, a program in
  * the cached $PATH table, or a path to an executable file? For highlighting.
  */
@@ -724,8 +762,7 @@ bool vs_is_command(const char *name)
       return stat(VS_FS(name), &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & 0111) != 0;
     }
 
-  refresh_commands();
-  hi = g_ncmds;
+  hi = g_ncmds;                         /* the table was refreshed by vs_commands_refresh() */
   while (lo < hi)
     {
       int mid = (lo + hi) / 2;

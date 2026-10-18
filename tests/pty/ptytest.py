@@ -142,11 +142,16 @@ class Session:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.settle()
 
-    def settle(self, idle=0.15, limit=5.0):
-        end = time.time() + limit
-        quiet = time.time()
-        while time.time() < end and time.time() - quiet < idle:
-            r, _, _ = select.select([self.fd], [], [], 0.03)
+    def settle(self, idle=None, limit=5.0):
+        """Read until the program has gone quiet: `idle` seconds after its last output
+        (PTY_IDLE in the environment scales it for slow builds), or up to 0.4 s if it
+        has not answered at all yet."""
+        idle = idle or float(os.environ.get("PTY_IDLE", "0.05"))
+        start = time.time()
+        end = start + limit
+        last = None
+        while time.time() < end:
+            r, _, _ = select.select([self.fd], [], [], 0.01)
             if r:
                 try:
                     data = os.read(self.fd, 65536)
@@ -156,7 +161,11 @@ class Session:
                     return False
                 self.raw += data
                 self.term.feed(data)
-                quiet = time.time()
+                last = time.time()
+            elif last is not None and time.time() - last >= idle:
+                break
+            elif last is None and time.time() - start >= 0.4:
+                break
         return True
 
     def send(self, data, settle=True):

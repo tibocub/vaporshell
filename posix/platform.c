@@ -15,6 +15,7 @@
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
 #include <poll.h>
+#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
 #include <wchar.h>
@@ -72,6 +73,46 @@ int vs_plat_rows(void)
 
 static struct termios g_cooked;
 static bool g_is_raw;
+static const int g_fatal[] = { SIGTERM, SIGQUIT };
+static struct sigaction g_saved_sa[2];
+
+/* A signal that would end the shell while it edits must not leave the terminal
+ * without echo: put the settings back, then die of it as it would have.
+ */
+
+static void raw_fatal(int sig)
+{
+  tcsetattr(STDIN_FILENO, TCSANOW, &g_cooked);
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
+static void fatal_handlers(bool install)
+{
+  struct sigaction sa;
+  size_t i;
+
+  for (i = 0; i < sizeof(g_fatal) / sizeof(g_fatal[0]); i++)
+    {
+      if (!install)
+        {
+          if (g_saved_sa[i].sa_handler == SIG_DFL)
+            {
+              sigaction(g_fatal[i], &g_saved_sa[i], NULL);
+            }
+
+          continue;
+        }
+
+      sigaction(g_fatal[i], NULL, &g_saved_sa[i]);
+      if (g_saved_sa[i].sa_handler == SIG_DFL)          /* a `trap` of the user's stays theirs */
+        {
+          memset(&sa, 0, sizeof(sa));
+          sa.sa_handler = raw_fatal;
+          sigaction(g_fatal[i], &sa, NULL);
+        }
+    }
+}
 
 bool vs_plat_tty_raw(bool on)
 {
@@ -82,6 +123,7 @@ bool vs_plat_tty_raw(bool on)
       if (g_is_raw)
         {
           tcsetattr(STDIN_FILENO, TCSADRAIN, &g_cooked);
+          fatal_handlers(false);
           g_is_raw = false;
         }
 
@@ -109,6 +151,7 @@ bool vs_plat_tty_raw(bool on)
       return false;
     }
 
+  fatal_handlers(true);
   g_is_raw = true;
   return true;
 }

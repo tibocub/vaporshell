@@ -621,6 +621,51 @@ def _():
     s.close()
 
 
+@test("Tab leaves $? alone, even when it loads a spec file")
+def _():
+    d = os.path.join(TMP, "statspec"); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "stcmd.vsh"), "w").write("complete -c stcmd -s h\n")
+    s = shell(env={"VS_COMPLETION_PATH": d})
+    s.type("false"); s.send(ENTER)
+    s.type("stcmd -"); s.send("\t"); s.send(CTRL("U"))
+    s.type('echo "rc=$?"'); s.send(ENTER)
+    assert "rc=1" in s.screen(), s.screen()
+    s.close()
+
+
+@test("aliases and functions complete in command position")
+def _():
+    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s.type("alias zzalias='echo a'"); s.send(ENTER)
+    s.type("zzfunc() { :; }"); s.send(ENTER)
+    s.type("zzal"); s.send("\t"); expect(s, ["$ alias zzalias='echo a'", "$ zzfunc() { :; }", "$ zzalias"])
+    s.send(CTRL("U")); s.type("zzfu"); s.send("\t")
+    assert s.screen()[-1] == "$ zzfunc", s.screen()
+    s.close()
+
+
+@test("a SIGTERM while typing leaves the terminal as it was")
+def _():
+    import signal, termios
+    s = shell()
+    s.type("abc")
+    os.kill(s.pid, signal.SIGTERM); time.sleep(0.3)
+    lflag = termios.tcgetattr(s.fd)[3]
+    assert lflag & termios.ECHO and lflag & termios.ICANON, lflag
+    s.close()
+
+
+@test("history is saved as each command is entered, not at exit")
+def _():
+    hf = os.path.join(TMP, "eachcmd")
+    if os.path.exists(hf):
+        os.unlink(hf)
+    s = shell(env={"HISTFILE": hf})
+    s.type("echo kept"); s.send(ENTER)
+    s.close()                                        # killed: no clean exit
+    assert "echo kept" in open(hf).read()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

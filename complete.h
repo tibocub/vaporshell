@@ -36,7 +36,13 @@ typedef void (*vs_comp_cand_f)(void *ctx, const char *name, const char *tail, co
 int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                        vs_comp_list_f sink, void *ctx);
 
+/* vs_is_command() looks in the $PATH table as it was at the last vs_commands_refresh()
+ * (one stat per directory), so a caller checking several words refreshes once.
+ */
+
+void vs_commands_refresh(void);
 bool vs_is_command(const char *name);
+void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 
 int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
                 vs_comp_cand_f list, void *ctx);

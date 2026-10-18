@@ -195,16 +195,17 @@ static size_t next_char(const char *s, size_t len, size_t pos)
 static long u8decode(const char *s, size_t n)
 {
   unsigned char c = (unsigned char)s[0];
+  size_t l = u8len(c) < n ? u8len(c) : n;       /* only this character's own bytes */
   long wc;
   size_t i;
 
-  if (c < 0x80 || n < 2)
+  if (c < 0x80 || l < 2)
     {
       return c;
     }
 
   wc = c >= 0xf0 ? c & 0x07 : c >= 0xe0 ? c & 0x0f : c & 0x1f;
-  for (i = 1; i < n && i < 4; i++)
+  for (i = 1; i < l; i++)
     {
       wc = (wc << 6) | ((unsigned char)s[i] & 0x3f);
     }
@@ -216,7 +217,7 @@ static long u8decode(const char *s, size_t n)
  * wide and emoji, else 1. A small table is enough for editing a command line.
  */
 
-static int cwidth(long wc)
+static int wc_width(long wc)
 {
   if (wc < 0x300)
     {
@@ -239,6 +240,13 @@ static int cwidth(long wc)
     }
 
   return 1;
+}
+
+/* Columns taken by the UTF-8 character at s, of which 'avail' bytes are there. */
+
+static int char_cols(const char *s, size_t avail)
+{
+  return (unsigned char)s[0] < 0x80 ? 1 : wc_width(u8decode(s, avail));
 }
 
 /* ---- Drawing ----------------------------------------------------------- */
@@ -331,8 +339,7 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
         }
       else if ((ch & 0xc0) != 0x80)
         {
-          size_t n = u8len(ch);
-          int w = cwidth(u8decode(p, strlen(p) < n ? strlen(p) : n));
+          int w = char_cols(p, strlen(p));
 
           adv(c, w, cols);
           sb_addc(o, (char)ch);
@@ -381,6 +388,7 @@ static unsigned char *highlight(const char *s, size_t len)
   int budget = 16;                /* stat() calls per redraw: a long line must not make typing slow */
 
   memset(st, HL_NONE, len + 1);
+  vs_commands_refresh();
   while (i < len)
     {
       char ch = s[i];
@@ -537,7 +545,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
         {
           size_t n = next_char(s, len, i) - i;
 
-          adv(&c, ch < 0x80 ? 1 : cwidth(u8decode(s + i, n)), e->cols);
+          adv(&c, char_cols(s + i, n), e->cols);
           sb_addn(&o, s + i, n);
           i += n;
         }
@@ -565,7 +573,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
         {
           size_t n = next_char(ghost, gl, k) - k;
 
-          adv(&c, (unsigned char)ghost[k] < 0x80 ? 1 : cwidth(u8decode(ghost + k, n)), e->cols);
+          adv(&c, char_cols(ghost + k, n), e->cols);
           sb_addn(&o, ghost + k, n);
         }
 
@@ -1037,7 +1045,7 @@ static int str_width(const char *s)
 
   for (i = 0; i < n; i = next_char(s, n, i))
     {
-      w += (unsigned char)s[i] < 0x80 ? 1 : cwidth(u8decode(s + i, n - i));
+      w += char_cols(s + i, n - i);
     }
 
   return w;
@@ -1154,7 +1162,7 @@ static char *menu_text(const struct ed_s *e)
               while (j < dl && room > 0)
                 {
                   size_t n = next_char(m->desc[k], dl, j) - j;
-                  int w = (unsigned char)m->desc[k][j] < 0x80 ? 1 : cwidth(u8decode(m->desc[k] + j, n));
+                  int w = char_cols(m->desc[k] + j, n);
 
                   if (w > room)
                     {
@@ -1984,6 +1992,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
       if (!continuation)
         {
           vs_hist_add(text(&e));
+          vs_hist_save();                 /* now, not at exit: a kill or a reset keeps the session */
         }
     }
 
