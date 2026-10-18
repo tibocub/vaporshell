@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 #include "complete.h"
@@ -39,6 +40,7 @@ struct ent_s
 
 struct cands_s
 {
+  int mode;                     /* 0 prefix, 1 prefix ignoring case, 2 anywhere in the name, ignoring case */
   struct ent_s *e;
   int cap;
   int n;
@@ -64,12 +66,39 @@ static void cands_free(struct cands_s *c)
  * full. `suffix` is appended to the inserted text only (' ' or '/').
  */
 
+/* Does 'name' match what was typed, the way the current mode says? */
+
+static bool matches(int mode, const char *name, const char *typed)
+{
+  size_t tl = strlen(typed);
+
+  if (mode == 0)
+    {
+      return strncmp(name, typed, tl) == 0;
+    }
+
+  if (mode == 1)
+    {
+      return strncasecmp(name, typed, tl) == 0;
+    }
+
+  for (; *name != '\0'; name++)
+    {
+      if (strncasecmp(name, typed, tl) == 0)
+        {
+          return true;
+        }
+    }
+
+  return tl == 0;
+}
+
 static void cands_add(struct cands_s *c, const char *prefix, const char *name,
                       char suffix, const char *desc)
 {
   size_t len = strlen(name);
 
-  if (strncmp(name, prefix, strlen(prefix)) != 0)
+  if (!matches(c->mode, name, prefix))
     {
       return;
     }
@@ -340,7 +369,7 @@ static void complete_path(struct cands_s *c, const char *word)
           continue;
         }
 
-      if (strncmp(e->d_name, base, strlen(base)) != 0)
+      if (!matches(c->mode, e->d_name, base))
         {
           continue;
         }
@@ -379,23 +408,124 @@ static void spec_cand(void *ctx, const char *name, const char *desc)
   cands_add(sc->c, sc->word, name, dir ? '/' : ' ', desc);
 }
 
-int vs_complete(const char *line, int len, char *ins, int inslen,
+/* What the generators need to know about the word being completed. */
+
+struct gen_s
+{
+  const char *line;
+  int len;
+  const char *word;             /* unescaped */
+  const char *prev;             /* start of the blanks before the word */
+  bool is_cmd;                  /* in command position */
+  bool whole_word;              /* candidates stand for the whole word (variables, specs) */
+  bool by_spec;                 /* a spec answered: no looser matching */
+};
+
+static void generate(struct cands_s *c, struct gen_s *g)
+{
+  const char *word = g->word;
+
+  g->whole_word = false;
+  g->by_spec = false;
+  if (word[0] == '$')
+    {
+      /* $NAME or ${NAME: the names of the shell's variables */
+
+      bool brace = word[1] == '{';
+      const struct var_s *v;
+      char buf[160];
+
+      for (v = g_sh.vars; v != NULL; v = v->next)
+        {
+          if (v->value != NULL || v->arr != NULL)
+            {
+              snprintf(buf, sizeof(buf), brace ? "${%s}" : "$%s", v->name);
+              cands_add(c, word, buf, brace ? '\0' : ' ', NULL);
+            }
+        }
+
+      g->whole_word = true;
+    }
+  else if (g->is_cmd && strchr(word, '/') == NULL)
+    {
+      complete_command(c, word);
+    }
+  else
+    {
+      if (!g->is_cmd && c->mode == 0)
+        {
+          /* The command this word belongs to: from after the last | ; & ( */
+
+          const char *cs = g->prev;
+          char cmd[128];
+          size_t cl;
+
+          while (cs > g->line && strchr("|;&(", cs[-1]) == NULL)
+            {
+              cs--;
+            }
+
+          while (*cs == ' ' || *cs == '\t')
+            {
+              cs++;
+            }
+
+          cl = strcspn(cs, " \t");
+          if (cl > 0 && cl < sizeof(cmd))
+            {
+              struct spec_ctx_s sc = { c, word };
+              const char *lim = var_get("VS_COMPLETION_TIMEOUT");
+              long ms = lim != NULL ? strtol(lim, NULL, 10) : 300;
+              int r;
+
+              memcpy(cmd, cs, cl);
+              cmd[cl] = '\0';
+              g_sh.comp_expired = false;
+              g_sh.comp_deadline = ms > 0 ? vs_now_ms() + ms : 0;
+              r = vs_comp_from_spec(cmd, g->line, g->len, word, spec_cand, &sc);
+              g_sh.comp_deadline = 0;
+              if (g_sh.comp_expired)
+                {
+                  g_sh.unwind = UW_NONE;         /* what was running is abandoned; the candidates so far stay */
+                }
+
+              if ((r & VS_SPEC_FOUND) != 0 && (c->n > 0 || (r & VS_SPEC_EXCLUSIVE) != 0))
+                {
+                  g->whole_word = true;
+                  g->by_spec = true;
+                }
+            }
+        }
+
+      if (!g->whole_word)
+        {
+          complete_path(c, word);
+        }
+    }
+}
+
+/* Complete the word before the cursor. If nothing starts with it, names that
+ * start with it in another case are tried, then names that contain it (in either
+ * case): those replace what was typed, which is *del bytes before the cursor.
+ */
+
+int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
                 vs_comp_cand_f list, void *ctx)
 {
   struct cands_s c;
+  struct gen_s g;
   size_t have;
   char word[VS_PATH_MAX];
   const char *w = line + len;
-  const char *prev;
   size_t wlen;
-  bool is_cmd;
-  bool whole_word = false;
+  size_t base_off;
   int i;
   int u;
   int n;
 
   memset(&c, 0, sizeof(c));
   ins[0] = '\0';
+  *del = 0;
 
   /* The word under the cursor: back to the last unescaped space. */
 
@@ -438,88 +568,31 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
   /* Command position: first word, or right after | ; & ( */
 
-  prev = w;
-  while (prev > line && (prev[-1] == ' ' || prev[-1] == '\t'))
+  g.prev = w;
+  while (g.prev > line && (g.prev[-1] == ' ' || g.prev[-1] == '\t'))
     {
-      prev--;
+      g.prev--;
     }
 
-  is_cmd = prev == line || strchr("|;&(", prev[-1]) != NULL;
+  g.line = line;
+  g.len = len;
+  g.word = word;
+  g.is_cmd = g.prev == line || strchr("|;&(", g.prev[-1]) != NULL;
 
-  if (word[0] == '$')
+  for (c.mode = 0; c.mode < 3; c.mode++)
     {
-      /* $NAME or ${NAME: the names of the shell's variables */
-
-      bool brace = word[1] == '{';
-      const struct var_s *v;
-      char buf[160];
-
-      for (v = g_sh.vars; v != NULL; v = v->next)
+      generate(&c, &g);
+      if (c.n > 0 || g.by_spec)
         {
-          if (v->value != NULL || v->arr != NULL)
-            {
-              snprintf(buf, sizeof(buf), brace ? "${%s}" : "$%s", v->name);
-              cands_add(&c, word, buf, brace ? '\0' : ' ', NULL);
-            }
+          break;
         }
 
-      whole_word = true;                       /* the whole word is the candidate */
+      cands_free(&c);
     }
-  else if (is_cmd && strchr(word, '/') == NULL)
+
+  if (c.mode == 3)
     {
-      complete_command(&c, word);
-    }
-  else
-    {
-      if (!is_cmd)
-        {
-          /* The command this word belongs to: from after the last | ; & ( */
-
-          const char *cs = prev;
-          char cmd[128];
-          size_t cl;
-
-          while (cs > line && strchr("|;&(", cs[-1]) == NULL)
-            {
-              cs--;
-            }
-
-          while (*cs == ' ' || *cs == '\t')
-            {
-              cs++;
-            }
-
-          cl = strcspn(cs, " \t");
-          if (cl > 0 && cl < sizeof(cmd))
-            {
-              struct spec_ctx_s sc = { &c, word };
-
-              memcpy(cmd, cs, cl);
-              cmd[cl] = '\0';
-              const char *lim = var_get("VS_COMPLETION_TIMEOUT");
-              long ms = lim != NULL ? strtol(lim, NULL, 10) : 300;
-              int r;
-
-              g_sh.comp_expired = false;
-              g_sh.comp_deadline = ms > 0 ? vs_now_ms() + ms : 0;
-              r = vs_comp_from_spec(cmd, line, len, word, spec_cand, &sc);
-              g_sh.comp_deadline = 0;
-              if (g_sh.comp_expired)
-                {
-                  g_sh.unwind = UW_NONE;         /* what was running is abandoned; the candidates so far stay */
-                }
-
-              if ((r & VS_SPEC_FOUND) != 0 && (c.n > 0 || (r & VS_SPEC_EXCLUSIVE) != 0))
-                {
-                  whole_word = true;
-                }
-            }
-        }
-
-      if (!whole_word)
-        {
-          complete_path(&c, word);
-        }
+      c.mode = 2;
     }
 
   n = c.n;
@@ -543,11 +616,35 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
       c.n = n = u + 1;
     }
 
-  {
-    const char *base = strrchr(word, '/');
+  /* How much of the word the names are matched against: all of it, or what
+   * follows the last '/' when a path is completed.
+   */
 
-    have = strlen(base != NULL && !is_cmd && !whole_word ? base + 1 : word);
+  {
+    const char *slash = strrchr(word, '/');
+
+    base_off = slash != NULL && !g.whole_word ? (size_t)(slash + 1 - word) : 0;
+    have = wlen - base_off;
   }
+
+  if (c.mode > 0 && n > 0)
+    {
+      /* Looser matches replace the typed text: count its raw bytes (a "\ "
+       * is two) back from the cursor.
+       */
+
+      size_t left = have;
+      const char *r = line + len;
+
+      while (left > 0 && r > line)
+        {
+          r -= (r[-1] == ' ' && r - 1 > line && r[-2] == '\\') ? 2 : 1;
+          left--;
+        }
+
+      *del = (int)(line + len - r);
+      have = 0;
+    }
 
   if (n == 1)
     {
@@ -555,14 +652,14 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
       const char *full = c.e[0].full;
 
-      if (strlen(full) >= have && have <= strlen(full))
+      if (strlen(full) >= have)
         {
           snprintf(ins, (size_t)inslen, "%s", full + have);
         }
     }
   else if (n > 1)
     {
-      /* Longest common prefix of the (unescaped) names */
+      /* Longest common prefix of the (unescaped) names, when they all start with the word */
 
       size_t common = strlen(c.e[0].name);
 
@@ -578,7 +675,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
           common = k;
         }
 
-      if (common > have && common - have < (size_t)inslen - 1)
+      if (c.mode == 0 && common > have && common - have < (size_t)inslen - 1)
         {
           size_t o = 0;
           size_t k;
@@ -605,7 +702,6 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
   cands_free(&c);
   return n;
 }
-
 
 /* Does 'name' run something: a keyword, alias, function, builtin, a program in
  * the cached $PATH table, or a path to an executable file? For highlighting.
