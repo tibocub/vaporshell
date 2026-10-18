@@ -17,6 +17,10 @@ void vs_hist_add(const char *line);
 int vs_hist_count(void);
 const char *vs_hist_get(int i);            /* 0 is the oldest */
 
+/* The line with its `!` events expanded (malloc'd), NULL if it has none, "" if an event is unknown. */
+
+char *vs_hist_expand(const char *line);
+
 /* Append the entries not yet saved to HISTFILE. */
 
 void vs_hist_save(void);

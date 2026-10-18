@@ -89,6 +89,13 @@ static const struct
 
 #define NSIGS ((int)(sizeof(g_sigs) / sizeof(g_sigs[0])))
 
+/* The i-th signal name (HUP, INT, ...), NULL after the last: for completion. */
+
+const char *vs_signal_name(int i)
+{
+  return i >= 0 && i + 1 < NSIGS ? g_sigs[i + 1].name : NULL;
+}
+
 /* Accepts a number, NAME or SIGNAME; returns -1 if unknown. */
 
 static int sig_number(const char *s)

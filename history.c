@@ -8,6 +8,7 @@
  */
 
 #include <nuttx/config.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -373,6 +374,358 @@ int bi_history(int argc, char **argv)
         printf("%5ld  %s\n", g_base + i + 1, g_hist[i]);
       }
   }
+
+  return 0;
+}
+
+/* The word `spec` of an entry: $ last, ^ first argument, * all arguments, 0-9 the n-th.
+ * shortcut: words split on blanks, quotes are not understood.
+ */
+
+static bool pick_word(struct sbuf_s *o, const char *ev, char spec)
+{
+  int want = spec == '$' ? -1 : spec == '^' || spec == '*' ? 1 : spec - '0';
+  const char *ws = NULL;
+  const char *we = NULL;
+  const char *p = ev;
+  int k = 0;
+
+  for (; *p != '\0'; k++)
+    {
+      const char *b;
+
+      p += strspn(p, " \t");
+      if (*p == '\0')
+        {
+          break;
+        }
+
+      b = p;
+      p += strcspn(p, " \t");
+      if (want < 0 || k == want)
+        {
+          ws = b;
+          we = p;
+        }
+    }
+
+  if (spec == '*')
+    {
+      sb_adds(o, ws != NULL ? ws : "");
+      return true;
+    }
+
+  if (ws == NULL)
+    {
+      return false;
+    }
+
+  sb_addn(o, ws, (size_t)(we - ws));
+  return true;
+}
+
+/* The entry an event names: !! !n !-n !prefix !?text?; NULL if none. *len gets the event's length. */
+
+static const char *find_event(const char *p, size_t *len)
+{
+  const char *q = p + 1;
+  char *pat;
+  size_t n;
+  int i;
+
+  if (*q == '!')
+    {
+      *len = 2;
+      return g_n > 0 ? g_hist[g_n - 1] : NULL;
+    }
+
+  if (isdigit((unsigned char)*q) || (*q == '-' && isdigit((unsigned char)q[1])))
+    {
+      char *end;
+      long v = strtol(q, &end, 10);
+
+      *len = (size_t)(end - p);
+      v = v < 0 ? g_n + v : v - g_base - 1;
+      return v >= 0 && v < g_n ? g_hist[v] : NULL;
+    }
+
+  if (*q == '?')
+    {
+      const char *close = strchr(q + 1, '?');
+
+      n = close != NULL ? (size_t)(close - q - 1) : strlen(q + 1);
+      *len = n + (close != NULL ? 3 : 2);
+      q++;
+    }
+  else
+    {
+      n = strcspn(q, " \t\n;|&()<>'\"$^*:");
+      *len = n + 1;
+    }
+
+  pat = vs_xstrndup(q, n);
+  for (i = g_n - 1; n > 0 && i >= 0; i--)
+    {
+      if (p[1] == '?' ? strstr(g_hist[i], pat) != NULL : strncmp(g_hist[i], pat, n) == 0)
+        {
+          break;
+        }
+    }
+
+  free(pat);
+  return i >= 0 && n > 0 ? g_hist[i] : NULL;
+}
+
+/* bash's history expansion: !! !$ !^ !* !n !-n !prefix !?text? (each with :$ :^ :* :n) and
+ * ^old^new^. NULL when the line holds none; an unknown event prints an error and gives "".
+ * Single quotes and a backslash turn it off.
+ */
+
+char *vs_hist_expand(const char *line)
+{
+  struct sbuf_s o;
+  bool sq = false;
+  bool dq = false;
+  bool changed = false;
+  const char *p = line;
+
+  sb_init(&o);
+  if (line[0] == '^' && g_n > 0)
+    {
+      const char *mid = strchr(line + 1, '^');
+      const char *last = g_hist[g_n - 1];
+      char *old = mid != NULL ? vs_xstrndup(line + 1, (size_t)(mid - line - 1)) : NULL;
+      const char *at = old != NULL && *old != '\0' ? strstr(last, old) : NULL;
+
+      if (at == NULL)
+        {
+          vs_err("%s: substitution failed", line);
+          free(old);
+          return vs_xstrdup("");
+        }
+
+      sb_addn(&o, last, (size_t)(at - last));
+      sb_addn(&o, mid + 1, strcspn(mid + 1, "^"));
+      sb_adds(&o, at + strlen(old));
+      free(old);
+      return sb_take(&o);
+    }
+
+  while (*p != '\0')
+    {
+      char c = *p;
+      size_t len;
+      const char *ev;
+      char spec = 0;
+
+      if (c == '\\' && p[1] != '\0')
+        {
+          sb_addn(&o, p, 2);
+          p += 2;
+          continue;
+        }
+
+      if (c == '\'' && !dq)
+        {
+          sq = !sq;
+        }
+      else if (c == '"' && !sq)
+        {
+          dq = !dq;
+        }
+
+      if (c != '!' || sq || p[1] == '\0' || strchr(" \t=(", p[1]) != NULL)
+        {
+          sb_addc(&o, c);
+          p++;
+          continue;
+        }
+
+      if (strchr("$^*", p[1]) != NULL)
+        {
+          ev = g_n > 0 ? g_hist[g_n - 1] : NULL;
+          spec = p[1];
+          len = 2;
+        }
+      else
+        {
+          ev = find_event(p, &len);
+          if (ev != NULL && p[len] == ':' && strchr("$^*0123456789", p[len + 1]) != NULL && p[len + 1] != '\0')
+            {
+              spec = p[len + 1];
+              len += 2;
+            }
+        }
+
+      if (ev == NULL || (spec != 0 ? !pick_word(&o, ev, spec) : (sb_adds(&o, ev), false)))
+        {
+          vs_err("%.*s: %s", (int)len, p, ev == NULL ? "event not found" : "bad word specifier");
+          sb_free(&o);
+          return vs_xstrdup("");
+        }
+
+      changed = true;
+      p += len;
+    }
+
+  if (!changed)
+    {
+      sb_free(&o);
+      return NULL;
+    }
+
+  return sb_take(&o);
+}
+
+/* An entry named by number (negative: from the end) or by its first characters. */
+
+static int fc_ref(const char *a, int dflt, int end)
+{
+  char *e;
+  long n;
+  int i;
+
+  if (a == NULL)
+    {
+      return dflt;
+    }
+
+  n = strtol(a, &e, 10);
+  if (*e == '\0')
+    {
+      n = n < 0 ? end + n : n - g_base - 1;
+      return n < 0 ? 0 : n >= end ? end - 1 : (int)n;
+    }
+
+  for (i = end - 1; i >= 0; i--)
+    {
+      if (strncmp(g_hist[i], a, strlen(a)) == 0)
+        {
+          return i;
+        }
+    }
+
+  vs_err("fc: no command found");
+  return -1;
+}
+
+/* fc [-lnr] [first [last]] | fc -s [old=new] [cmd]. No editor: fc without -l or -s is refused.
+ * The fc line itself is already the newest entry; it is left out, and -s puts the command there.
+ */
+
+int bi_fc(int argc, char **argv)
+{
+  int end = g_n > 0 && strncmp(g_hist[g_n - 1], "fc", 2) == 0 ? g_n - 1 : g_n;
+  bool list = false;
+  bool nonum = false;
+  bool rev = false;
+  bool redo = false;
+  int i = 1;
+  int a;
+  int b;
+
+  for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0' && !isdigit((unsigned char)argv[i][1]); i++)
+    {
+      const char *o;
+
+      for (o = argv[i] + 1; *o != '\0'; o++)
+        {
+          switch (*o)
+            {
+              case 'l': list = true; break;
+              case 'n': nonum = true; break;
+              case 'r': rev = true; break;
+              case 's': redo = true; break;
+              default:
+                vs_err("fc: -%c: not supported (use -l or -s)", *o);
+                return 2;
+            }
+        }
+    }
+
+  if (end == 0)
+    {
+      vs_err("fc: no command found");
+      return 1;
+    }
+
+  if (redo)
+    {
+      const char *sub = i < argc && strchr(argv[i], '=') != NULL ? argv[i++] : NULL;
+      const char *eq = sub != NULL ? strchr(sub, '=') : NULL;
+      char *old = eq != NULL ? vs_xstrndup(sub, (size_t)(eq - sub)) : NULL;
+      const char *at;
+      struct sbuf_s o;
+      char *cmd;
+      int status;
+
+      a = fc_ref(i < argc ? argv[i] : NULL, end - 1, end);
+      if (a < 0)
+        {
+          free(old);
+          return 1;
+        }
+
+      sb_init(&o);
+      at = old != NULL && *old != '\0' ? strstr(g_hist[a], old) : NULL;
+      if (at != NULL)
+        {
+          sb_addn(&o, g_hist[a], (size_t)(at - g_hist[a]));
+          sb_adds(&o, eq + 1);
+          sb_adds(&o, at + strlen(old));
+        }
+      else
+        {
+          sb_adds(&o, g_hist[a]);
+        }
+
+      free(old);
+      cmd = sb_take(&o);
+      fprintf(stderr, "%s\n", cmd);
+      if (end < g_n)
+        {
+          free(g_hist[end]);
+          g_hist[end] = vs_xstrdup(cmd);
+        }
+
+      status = run_string(cmd, strlen(cmd));
+      free(cmd);
+      return status;
+    }
+
+  if (!list)
+    {
+      vs_err("fc: editing is not supported (use -l or -s)");
+      return 2;
+    }
+
+  a = fc_ref(i < argc ? argv[i] : NULL, end > 16 ? end - 16 : 0, end);
+  b = fc_ref(i + 1 < argc ? argv[i + 1] : NULL, end - 1, end);
+  if (a < 0 || b < 0)
+    {
+      return 1;
+    }
+
+  if (a > b)
+    {
+      int t = a;
+
+      a = b;
+      b = t;
+      rev = !rev;
+    }
+
+  for (i = rev ? b : a; i >= a && i <= b; i += rev ? -1 : 1)
+    {
+      if (nonum)
+        {
+          printf("\t%s\n", g_hist[i]);
+        }
+      else
+        {
+          printf("%ld\t%s\n", g_base + i + 1, g_hist[i]);
+        }
+    }
 
   return 0;
 }

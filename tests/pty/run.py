@@ -622,6 +622,57 @@ def _():
     s.close()
 
 
+@test("!! !$ !n !prefix ^old^new and fc -l / -s")
+def _():
+    s = shell(env={"VS_AUTOSUGGEST": "0", "VS_HIGHLIGHT": "0"})
+    s.type("echo alpha beta"); s.send(ENTER)
+    s.type("echo !$ !!"); s.send(ENTER)                 # beta, then the whole previous command
+    s.type("^beta^gamma"); s.send(ENTER)
+    s.type("!echo"); s.send(ENTER)
+    s.type("echo '!!' \\!!"); s.send(ENTER)               # quoted and escaped: left alone
+    s.type("!nosuch"); s.send(ENTER)
+    s.type("fc -s alpha=omega 'echo alpha'"); s.send(ENTER)
+    s.type("fc -ln 1 2"); s.send(ENTER)
+    scr = "\n".join(s.screen())
+    for want in ("echo beta echo alpha beta", "echo gamma echo alpha beta", "!nosuch: event not found",
+                 "echo omega beta", "!! !!"):
+        assert want in scr, (want, scr)
+    s.type("set +H"); s.send(ENTER)
+    s.type("echo !!"); s.send(ENTER)
+    assert s.screen()[-2].endswith("echo !!") or "!!" in s.screen()[-2], s.screen()
+    s.close()
+
+
+@test("~/.inputrc is read at startup")
+def _():
+    d = os.path.join(TMP, "rc"); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, ".inputrc"), "w").write('# a comment\nset editing-mode emacs\n"\\C-o": backward-kill-line\n')
+    s = shell(env={"HOME": d, "VS_AUTOSUGGEST": "0"})
+    s.type("echo gone"); s.send(CTRL("O")); s.type("echo ok"); s.send(ENTER)
+    scr = "\n".join(s.screen())
+    assert "$ echo gone" not in scr and "\nok" in "\n" + scr, scr
+    s.close()
+
+
+@test("kill -<Tab> offers signals; a # comment is grey")
+def _():
+    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s.type("kill -TER"); s.send("\t")
+    expect(s, ["$ kill -TERM"])
+    s.send(CTRL("U")); s.raw = b""
+    s.type("echo a #why")
+    assert "\x1b[90m#why\x1b[0m" in s.raw.decode().split("\x1b[J")[-1], repr(s.raw[-60:])
+    s.close()
+
+
+@test("an optional spec file completes git subcommands")
+def _():
+    s = shell(env={"VS_COMPLETION_PATH": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "completions"), "VS_AUTOSUGGEST": "0"})
+    s.type("git sta"); s.send("\t")
+    assert "stash" in s.screen()[-1] and "status" in s.screen()[-1], s.screen()
+    s.close()
+
+
 @test("Tab leaves $? alone, even when it loads a spec file")
 def _():
     d = os.path.join(TMP, "statspec"); os.makedirs(d, exist_ok=True)

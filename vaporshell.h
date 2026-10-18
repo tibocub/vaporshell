@@ -258,6 +258,8 @@ int bi_compgen(int argc, char **argv);                 /* compgen.c */
 int bi_complete(int argc, char **argv);                /* compgen.c: complete, compopt */
 int bi_compopt(int argc, char **argv);
 int bi_history(int argc, char **argv);                 /* history.c */
+const char *vs_signal_name(int i);                     /* traps.c */
+int bi_fc(int argc, char **argv);                      /* history.c */
 int bi_bind(int argc, char **argv);                    /* bind.c: accepted, ignored */
 bool builtin_is_enabled(const char *name);             /* false: enable -n disabled it */
 
@@ -381,6 +383,7 @@ struct shell_s
   bool opt_n;             /* set -n: read commands but do not run them */
   bool opt_v;             /* set -v: echo input lines as they are read */
   bool opt_pipefail;      /* set -o pipefail (bash) */
+  bool opt_noH;           /* set +H: no `!` history expansion in the line editor */
   int trap_depth;         /* inside a trap action */
   int in_subshell;        /* running in-process as a subshell (inproc.c) */
   bool force_inproc;      /* VS_INPROC: use in-process subshells even with fork() */

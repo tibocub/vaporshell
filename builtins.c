@@ -606,6 +606,7 @@ static int set_option(char flag, bool on)
       case 'a': g_sh.opt_a = on; return 0;
       case 'n': g_sh.opt_n = on; return 0;
       case 'v': g_sh.opt_v = on; return 0;
+      case 'H': g_sh.opt_noH = !on; return 0;
 
       /* Accepted, not implemented: monitor mode (no job control yet),
        * asynchronous notification, ignoreeof.
@@ -633,7 +634,7 @@ static const struct
   { "noexec", 'n', false },    { "noglob", 'f', false },
   { "nounset", 'u', false },   { "verbose", 'v', false },
   { "xtrace", 'x', false },    { "noclobber", 'C', false },
-  { "pipefail", 0, true }
+  { "pipefail", 0, true },     { "histexpand", 'H', true }
 };
 
 #define NNAMED ((int)(sizeof(g_named_opts) / sizeof(g_named_opts[0])))
@@ -650,6 +651,7 @@ static bool named_opt_state(int i)
       case 'v': return g_sh.opt_v;
       case 'x': return g_sh.opt_x;
       case 'C': return g_sh.opt_C;
+      case 'H': return !g_sh.opt_noH;
       default:  return g_sh.opt_pipefail;
     }
 }
@@ -2025,8 +2027,9 @@ const struct builtin_s g_vs_builtins[] =
   { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VS_M_BASH },
   { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VS_M_BASH },
   { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VS_M_BASH },
+  { "fc",       bi_fc,       false, "fc [-lnr] [first [last]] | fc -s [old=new] [cmd]: list or re-run history entries", VS_M_ALL },
   { "history",  bi_history,  false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history", VS_M_BASH },
-  { "bind",     bi_bind,     false, "bind [-p|-P|-l] [keyseq:cmd]: accepted and ignored (key bindings are not configurable yet)", VS_M_BASH },
+  { "bind",     bi_bind,     false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings", VS_M_BASH },
   { NULL, NULL, false, NULL, 0 }
 };
 

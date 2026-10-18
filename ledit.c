@@ -373,7 +373,7 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
  * Words with an expansion or an assignment in them are left alone.
  */
 
-enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH };
+enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH, HL_COMMENT };
 
 static bool path_exists(const char *word)
 {
@@ -463,6 +463,12 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
           continue;
         }
 
+      if (ch == '#')                  /* a word starting with # (others are eaten whole below) */
+        {
+          memset(st + i, HL_COMMENT, len - i);
+          break;
+        }
+
       if (strchr("|;&(", ch) != NULL)
         {
           at_cmd = true;
@@ -520,7 +526,7 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 
 static void set_style(struct sbuf_s *o, unsigned char from, unsigned char to)
 {
-  static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m" };
+  static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m", "\033[90m" };
 
   if (from != HL_NONE)
     {
@@ -2070,17 +2076,27 @@ char *vs_ledit_read(const char *prompt, bool continuation)
     {
       draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, true, NULL);
       put("\r\n");
-      size_t n = e.b.len;
+      char *x = continuation || g_sh.opt_noH ? NULL : vs_hist_expand(text(&e));
+      const char *t = x != NULL ? x : text(&e);
+      size_t n = x != NULL ? strlen(x) : e.b.len;
+
+      if (x != NULL && n > 0)
+        {
+          put(x);                         /* the line as it will run, like bash */
+          put("\r\n");
+        }
 
       result = vs_xmalloc(n + 2);
-      memcpy(result, text(&e), n);
+      memcpy(result, t, n);
       result[n] = '\n';
       result[n + 1] = '\0';
       if (!continuation)
         {
-          vs_hist_add(text(&e));
+          vs_hist_add(t);
           vs_hist_save();                 /* now, not at exit: a kill or a reset keeps the session */
         }
+
+      free(x);
     }
 
 done:
