@@ -1371,6 +1371,25 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_FWDWORD:
+        if (e->pos == e->b.len && suggestion(e) != NULL)
+          {
+            const char *sg = suggestion(e);
+            size_t n = 0;
+
+            while (sg[n] == ' ')            /* the next word of the suggestion */
+              {
+                n++;
+              }
+
+            while (sg[n] != '\0' && sg[n] != ' ')
+              {
+                n++;
+              }
+
+            snap(e);
+            insert(e, sg, n);
+          }
+
         e->pos = word_end(e, e->pos);
         break;
 

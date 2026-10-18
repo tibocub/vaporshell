@@ -508,6 +508,26 @@ def _():
     s.close()
 
 
+@test("autosuggestion: Alt-F takes one word")
+def _():
+    s = shell()
+    s.type("echo one two three"); s.send(ENTER)
+    s.type("echo"); s.send("\x1bf"); s.send(ENTER)
+    assert s.screen()[-2:] == ["one", "$"], s.screen()
+    s.close()
+
+
+@test("Tab completes ~/ paths")
+def _():
+    home = os.path.join(TMP, "tildehome"); os.makedirs(os.path.join(home, "Documents"), exist_ok=True)
+    s = shell(env={"HOME": home})
+    s.type("cd ~/Doc"); s.send("\t")
+    expect(s, ["$ cd ~/Documents/"])
+    s.send(CTRL("U")); s.type("echo ~"); s.send("\t")
+    expect(s, ["$ echo ~/"])
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

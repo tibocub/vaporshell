@@ -85,11 +85,11 @@ the status tables below in the same commit.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Autosuggestion from history (grey text; Right/End/Ctrl-F/Ctrl-E accepts) | ✓ | newest matching entry; `VS_AUTOSUGGEST=0` turns it off; accepting one word (Alt-F) ✗ |
+| Autosuggestion from history (grey text; Right/End/Ctrl-F/Ctrl-E accepts) | ✓ | newest matching entry; `VS_AUTOSUGGEST=0` turns it off; Alt-F / Ctrl-Right at the end takes one word of it |
 | Syntax highlighting while typing (valid command / path / quote / error) | ◐ | command words only: green runs something (keyword, alias, function, builtin, cached `$PATH`, executable path), red does not; `VS_HIGHLIGHT=0` turns it off. Paths, quotes and errors ✗ |
 | Completion menu: grid with selection, Shift-Tab, descriptions | ✓ | opens under the line when Tab adds nothing; Tab/Shift-Tab/arrows move (column-major like bash), Enter takes the choice without running the line, Esc drops it, any other key closes it; scrolls ("rows a-b of n") when it does not fit; descriptions switch it to one column. Checked on the RP2040 |
 | Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | any command with a `complete` spec (bash flags, or fish flags `-c -s -l -o -d -a -n -f -x -r -e`); specs load lazily from `$VS_COMPLETION_PATH` (`<cmd>.vsh`, default `~/.config/vaporshell/completions:/etc/vaporshell/completions`) the first time the command is completed, and the shell's own commands have built-in defaults (`cd` → directories, `unset` → variables, `help` → builtins ...). No specs ship for external tools yet. Fish-style specs (`compfish.c`): `-a` takes words (`word<TAB>text` gives a word its own description), not command substitutions; conditions are shell code run with `COMP_WORDS` set (slow lane); no `-k`, `--wraps` |
-| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ◐ | `$VAR` and `${VAR}` ✓; the rest ✗ |
+| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ◐ | `$VAR`, `${VAR}`, `~` and `~/path` ✓; `~user`, jobs, CDPATH, hostnames ✗ |
 | Case-insensitive and substring/fuzzy fallback matching | ✗ | |
 | Abbreviations (`abbr`) | ✗ | |
 | `..` / `...` / `cd -` / `autocd` | ✗ | |
@@ -131,6 +131,8 @@ Output is composed into one buffer per keystroke and written with a single
 current line plus a bounded history; there is no per-key allocation.
 
 ### Platform seam
+
+(NuttX: the console starts in canonical mode with echo, so its driver echoes keys, turns CR into LF and swallows backspace and delete. `vs_plat_tty_raw` clears ECHO, ICANON, ICRNL and ISIG through `tcsetattr`, which works without `CONFIG_SERIAL_TERMIOS`; that option only gates baud and VMIN/VTIME.)
 
 `platform.h` gains:
 
