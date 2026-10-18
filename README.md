@@ -1,14 +1,15 @@
 # vaporshell
 
-> The shell of [vaporOS](https://github.com/tibocub/vaporOS-nuttx)
+> The shell of [vaporOS](https://github.com/tibocub/vaporOS-nuttx) (also support linux/mac/bsd)
 
-A thin, scriptable interface over NuttX's own POSIX layer -- read a
-line, resolve a path, run a program. Doesn't reimplement anything the
-kernel already does; the design principle throughout is "expose what's
-already there comfortably" rather than build a shell's worth of new
-machinery. See `docs/design.md` for the full reasoning, feature list,
-and open questions -- this file is the short version.
+## TLDR
 
+Vaporshell is a lightweight and protable shell that aims to provide:
+- Bash compatiblity by default
+- POSIX sh compatibility (like bash does, with a "--posix" mode)
+- A fast and comfortable user experience inspired by fish (for instance, our autocompletion engine is much faster AND more advanced than bash's)
+
+All this while being small enought to run on an RP2040 or an ESP32 (using NuttX/VaporOS)
 
 ## GOALS
 
@@ -17,8 +18,9 @@ and open questions -- this file is the short version.
   actual `sh` language, not a look-alike. This is the priority; a
   correct, if incomplete, POSIX shell beats a shell that half-does
   POSIX and half-does something else.
-- Small and fast ("bash, but fast"). Every interactive feature is
-  switchable and its size cost measured; completion is native code plus
+- Small and fast ("bash, but fast"). Every interactive feature's size
+  cost is measured (no compile-time switches: what only some users
+  need is an optional `.vsh` file); completion is native code plus
   declarative, lazily loaded specs rather than shell functions that fork
   helpers. See `docs/interactive.md`.
 - Once that's solid: steal the bash/fish quality-of-life features that
@@ -58,6 +60,8 @@ vaporshell/
   util.c              allocation, string buffers, errors
   prompt.c            PS1/PS2/PS4 escapes, PROMPT_COMMAND
   ledit.c history.c   the line editor and history (own code, both platforms)
+  compgen.c compfish.c  compgen/complete builtins, fish-style specs
+  bind.c rcfile.c     key bindings (bind, inputrc), startup files
   complete.c          tab completion candidates
   platform.h          what differs between NuttX and a host OS
   platform_nuttx.c    NuttX: no fork, posix_spawnp, tbx fallback (dispatch.c)
@@ -129,6 +133,8 @@ make coverage               # regenerate docs/*-coverage.md from the probes
 vaporshell --posix          # POSIX mode (also -o posix, or invoked as sh)
 make check-smoosh           # the smoosh corpus in --posix mode, regressions named
 make check-asan             # same tests under ASan + UBSan
+make check-pty              # the line editor in a pseudo-terminal (tests/pty)
+make bench                  # Tab-completion timings (tests/bench)
 make strict                 # fortify off, -Werror (what Fedora sees)
 ```
 
@@ -159,9 +165,11 @@ redirections and here-documents/here-strings, pipelines, `&&`/`||`/`!`,
 `wait`/`disown`, no real terminal job control), `coproc`, `declare`/
 `typeset`, `mapfile`, `enable`/`compgen`, `$LINENO`, and the builtins in
 `help`. See the TODO list below for the itemised, honest version, including
-what's *not* done -- mainly the interactive layer (prompt escapes, line
-editor, history, rc files, rich completion). That is planned and tracked, with
-a status table, in [docs/interactive.md](docs/interactive.md).
+what's *not* done. The interactive layer (own line editor, prompt escapes,
+history with `!` expansion and `fc`, rc files and `~/.inputrc`, `bind`, menu
+completion with specs, autosuggestions, syntax highlighting) exists on Linux
+and vaporOS, including the RP2040; its status table, design and measured
+sizes and latencies are in [docs/interactive.md](docs/interactive.md).
 
 How close each mode is to its reference is measured, not claimed: see
 [docs/bash-coverage.md](docs/bash-coverage.md) (bash 5.3.0) and
@@ -189,12 +197,11 @@ dash.
 
 NuttX: built and run in the simulator against `releases/13.0` with the
 vaporOS `sim:nsh` configuration (`tests/nuttx-sim-smoke.py` drives it).
-Real-hardware targets have not been tried.
+Also run on a real RP2040 (Waveshare RP2040-Zero) over USB, including the line editor; latency and memory are measured in `docs/interactive.md`.
 
-Also worth knowing: `CONFIG_LINE_MAX` (vaporOS-nuttx's own build.sh)
-still needs to be raised from NuttX's default of 80 for interactive input,
-because `readline()` there truncates at exactly `LINE_MAX`. Script files
-and `-c` strings have no such limit.
+Also worth knowing: the line editor has no length limit of its own, but
+when input is not a terminal (or the editor cannot start) lines are read with
+a plain reader; script files and `-c` strings have no such limit either.
 
 ## TODO
 
@@ -355,37 +362,39 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [x] `enable` (turn builtins on/off), `compgen` (word-list generation
       -- genuinely useful outside interactive completion, since a
       script can call it directly)
-- [x] `complete`, `compopt`, `bind` -- accepted, but (beyond
-      `complete`'s own spec registry, which a script can query back)
-      inert: no line editor exists here for them to attach to yet (see
-      "Interactive quality-of-life" below)
-- [ ] `fc`, persistent `history` -- tracked with the interactive work,
-      since they're meaningless without a real line editor keeping a
-      history buffer in the first place
+- [x] `complete` (bash and fish flags), `compopt`, `bind` -- real, they
+      drive the line editor (see the interactive section below)
+- [x] `history` (persistent, `HISTFILE`), `fc -l` / `fc -s` (`fc` with an
+      editor is refused)
 
 ### Interactive quality-of-life (GOALS' own "once POSIX is solid" tier)
 
-The scripting language above is done; this section is next. None of
-it exists yet -- there is currently no line editor at all (raw
-`readline()`, no key handling beyond what the terminal driver itself
-gives for free), so every item here starts from zero.
+Done, in `ledit.c`, `history.c`, `complete.c`, `compgen.c`, `compfish.c`,
+`bind.c`, `prompt.c`, `rcfile.c` (details and measurements:
+[docs/interactive.md](docs/interactive.md)):
 
-- [ ] a real line editor: raw terminal mode, cursor movement, kill
-      ring, multi-line editing for an unfinished construct (`if` with
-      no matching `fi` yet, etc.)
-- [ ] tab completion -- `compgen`/`complete` already generate the word
-      lists; what's missing is the interactive UI that calls them as
-      the user types and renders the result (a fish-style inline
-      suggestion, or a bash-style listing, or both)
-- [ ] syntax highlighting as the user types (fish-style): needs the
-      lexer to run incrementally against an in-progress, possibly
-      unparseable line
-- [ ] reverse-search (`Ctrl-R`) -- some kind of "graphical"
-      (ncurses-ish) picker is the fish-like version of this, not just
-      readline's own line-at-a-time incremental search
-- [ ] persistent history across sessions, `fc`, `!!`/`!$`/`!N`-style
-      history expansion
-- [ ] `.bashrc`-style startup file
+- [x] a line editor: raw terminal mode, cursor movement, kill buffer, undo,
+      multi-line editing of an unfinished construct, bracketed paste,
+      `bind` / `~/.inputrc` key bindings
+- [x] tab completion with a selectable menu: commands (cached `$PATH`
+      table), paths, variables, jobs, `~user`, `CDPATH`, per-command specs
+      (bash `complete` and fish-style flags, lazy `.vsh` files), case-
+      insensitive and substring fallback matching
+- [x] fish-style autosuggestion from history and syntax highlighting
+      (command valid/invalid, quotes, existing paths, comments)
+- [x] reverse search (`Ctrl-R`)
+- [x] persistent history, `!!` / `!$` / `!n` / `!prefix` / `^a^b` expansion
+- [x] `.bashrc`-style startup (`~/.vaporshellrc`, `~/.vsh_profile`, `/etc/vaporshell/vsh.conf`)
+- [x] prompt escapes (`\u \h \w \$ ...`), `PROMPT_COMMAND`, `PROMPT_DIRTRIM`
+
+Not done (also tracked in docs/interactive.md):
+
+- [ ] `set -o vi` / `emacs` modes, kill ring (Alt-y), `HISTFILESIZE`/`HISTIGNORE`
+- [ ] `fc` with an editor, `!` word modifiers (`:s/a/b/`), quote-aware word designators
+- [ ] a graphical picker for Ctrl-R (it is readline-style incremental search)
+- [ ] abbreviations, `autocd`/`..`, right prompt, Alt-Enter newline
+- [ ] `$LINES`, Ctrl-C reaching a foreground child from inside the editor's raw mode
+- [ ] completion specs for more external tools (only `git` and `ssh` ship, as optional files), hostname completion built in
 
 ### File Test Operators
 - [x] `-e`, `-d`, `-f`

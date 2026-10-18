@@ -43,7 +43,7 @@ the status tables below in the same commit.
 | Line editing | own editor (`ledit.c`) on Linux and vaporOS; verified on the simulator and on the RP2040 over USB |
 | History | in-memory + `HISTFILE` (default `~/.vsh_history`); `history` builtin; `fc -l/-s`; `!` expansion (see below) |
 | Completion | `complete.c`: command names from a cached sorted `$PATH` table, paths, `$VARIABLES`, and per-command specs registered with `complete` (`-W -A -f -d -P -S -X` and `-F` functions); asks before listing more than 100; `compgen` works in scripts; `bind` is real (`bind.c`) |
-| Startup files | none read |
+| Startup files | `/etc/vaporshell/vsh.conf`, then `~/.inputrc`, then `~/.vaporshellrc` (`$VS_RC`); `~/.vsh_profile` for `--login`; `--norc`, `--rcfile` |
 | Job control | `jobs`/`fg`/`bg`/`wait`/`disown`; no Ctrl-Z (NuttX has no process groups) |
 
 ## Feature list and status
@@ -61,7 +61,7 @@ the status tables below in the same commit.
 | Editor core: insert/delete, cursor motion, UTF-8 aware, wide characters | ✓ (`ledit.c`) | `mb.c` already decodes characters |
 | Emacs keys (Ctrl-A/E/B/F/D/H/K/U/W/Y/T/L, Alt-B/F/D/U/L/C/Backspace) | ✓ | |
 | Arrows, Home/End/Delete, Ctrl/Alt-arrows | ✓ | |
-| Kill ring and undo | ◐ undo ✓ (24 steps); one kill buffer, no Alt-y ring | |
+| Kill ring and undo | ◐ undo ✓ (8 steps); one kill buffer, no Alt-y ring | |
 | Multi-line buffer (continuation lines, long lines wrapping) | ✓ wrapping and `Alt-Enter` newlines; Up/Down do not move between buffer lines yet | redraw handles wrap |
 | History: in-memory, `HISTSIZE`/`HISTFILE`/`HISTCONTROL` | ✓ (`history.c`); `HISTFILESIZE` and `HISTIGNORE` ✗; file is private (0600), appended on exit and rewritten to `HISTSIZE` lines when it grew past it | |
 | `history` and `fc` builtins | ✓ | `history [n] -c -d -a -w -r -s`; `fc -l [-nr] [first [last]]` and `fc -s [old=new] [cmd]` (an event is a number, a negative offset or a prefix); `fc` with an editor is refused |
