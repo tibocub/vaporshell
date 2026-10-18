@@ -21,4 +21,17 @@ bool vs_ledit_usable(void);
 
 char *vs_ledit_read(const char *prompt, bool continuation);
 
+/* `bind` (bind.c): add or remove a key binding, find a command by its readline
+ * name, and walk the bindings (user ones first, then the built-in table).
+ * 'seq' is the exact bytes the key sends. cmd 0 is no command; the shell
+ * command number for `bind -x` is vs_ledit_cmd_lookup("shell-command").
+ */
+
+int vs_ledit_bind(const char *seq, int len, int cmd, const char *shell);
+int vs_ledit_unbind(const char *seq, int len);
+int vs_ledit_cmd_lookup(const char *name);
+const char *vs_ledit_cmd_name(int i);       /* NULL: none by that number */
+int vs_ledit_ncmds(void);
+bool vs_ledit_binding(int idx, const char **seq, int *len, const char **name, const char **shell);
+
 #endif

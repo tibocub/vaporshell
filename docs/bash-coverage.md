@@ -10,16 +10,16 @@ releases a new version.
 
 ## Reference
 
-- bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
-- POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-23 by `tests/coverage/gen-docs.py`
+- bash-mode reference: `GNU bash, version 5.3.9(1)-release (x86_64-redhat-linux-gnu)`
+- POSIX-mode reference: `dash-0.5.13.1-3.fc44.x86_64`
+- generated: 2026-10-18 by `tests/coverage/gen-docs.py`
 
 
 The target is **bash 5.3**. Earlier measurements in `docs/modes.md` were made
 against bash 5.2.21; the differences found between the two are recorded in
 the release log below.
 
-Probes matching bash in bash mode: **480 of 482**.
+Probes matching bash in bash mode: **481 of 482**.
 
 
 ## How this is measured
@@ -326,7 +326,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (59/60)
+### POSIX builtins  (60/60)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -388,7 +388,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `special_kill_self` | ok |  |
 | `special_fg_bg` | ok |  |
 | `special_jobs` | ok |  |
-| `special_fc` | **differs** |  |
+| `special_fc` | ok |  |
 | `special_newgrp` | ok |  |
 
 ### echo  (14/14)
@@ -518,7 +518,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `trap_return_source` | ok |  |
 | `trap_case_insensitive` | ok |  |
 
-### Variables  (25/25)
+### Variables  (24/25)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -545,7 +545,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bash_rematch_cleared` | ok |  |
 | `funcname_stack` | ok |  |
 | `bash_source_top_level` | ok |  |
-| `bash_versinfo` | ok |  |
+| `bash_versinfo` | **differs** |  |
 | `SECONDS_starts_near_zero` | ok |  |
 
 ### Arrays  (28/28)
@@ -581,7 +581,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `assoc_unset_and_test` | ok |  |
 | `assoc_convert` | ok |  |
 
-### Bash builtins  (76/77)
+### Bash builtins  (77/77)
 
 | probe | bash mode | note |
 |---|---|---|
@@ -596,7 +596,7 @@ Each table lists probes for one area; the count is probes matching bash.
 | `bi_enable` | ok | bash enable |
 | `bi_caller` | ok | bash caller |
 | `bi_help` | ok | bash help |
-| `bi_history` | **differs** | bash history |
+| `bi_history` | ok | bash history |
 | `bi_compgen` | ok | bash compgen |
 | `bi_complete` | ok | bash complete |
 | `bi_disown` | ok | bash disown |
@@ -726,11 +726,11 @@ Each table lists probes for one area; the count is probes matching bash.
 Every builtin `compgen -b` reports in the reference bash, and whether
 vaporshell (bash mode) has it as a builtin.
 
-bash 5.3.0(1)-release has 61 builtins. vaporshell (bash mode) provides 56 of them.
+bash 5.3.9(1)-release has 61 builtins. vaporshell (bash mode) provides 57 of them.
 
-**Missing (5):** `caller` `fc` `history` `logout` `suspend`
+**Missing (4):** `caller` `fc` `logout` `suspend`
 
-**Provided (56):** `.` `:` `[` `alias` `bg` `bind` `break` `builtin` `cd` `command` `compgen` `complete` `compopt` `continue` `declare` `dirs` `disown` `echo` `enable` `eval` `exec` `exit` `export` `false` `fg` `getopts` `hash` `help` `jobs` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
+**Provided (57):** `.` `:` `[` `alias` `bg` `bind` `break` `builtin` `cd` `command` `compgen` `complete` `compopt` `continue` `declare` `dirs` `disown` `echo` `enable` `eval` `exec` `exit` `export` `false` `fg` `getopts` `hash` `help` `history` `jobs` `kill` `let` `local` `mapfile` `popd` `printf` `pushd` `pwd` `read` `readarray` `readonly` `return` `set` `shift` `shopt` `source` `test` `times` `trap` `true` `type` `typeset` `ulimit` `umask` `unalias` `unset` `wait`
 
 
 ## Known deliberate differences

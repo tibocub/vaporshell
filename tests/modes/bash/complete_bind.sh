@@ -1,5 +1,5 @@
-# complete, compopt, bind: there is no line editor in this shell for these to attach to, so they
-# are accepted but (beyond complete's own spec registry, which a script can query back) inert.
+# complete, compopt, bind: outside an interactive session there is no completion to drive, so
+# complete is its spec registry (which a script can query back) and bind only has to accept a key binding.
 # register function spec
 ( complete -F _foo mycmd; echo rc=$?
 )
@@ -18,7 +18,7 @@
 # compopt outside completion errors
 ( compopt -o nospace 2>/dev/null; echo rc=$?
 )
-# bind basic warns but succeeds
+# bind accepts a key binding
 ( bind "\C-l:clear-screen" 2>/dev/null; echo rc=$?
 )
 # multiple names one spec
