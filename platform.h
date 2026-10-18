@@ -28,7 +28,12 @@ void vs_plat_state_destroy(void);
  * call the shell makes on a user-supplied path.
  */
 
-#define VS_PATH_MAX 512
+#ifdef VAPORSHELL_POSIX
+#  define VS_PATH_MAX 512
+#else
+#  include <limits.h>
+#  define VS_PATH_MAX PATH_MAX            /* NuttX's own limit: these buffers sit on a small stack */
+#endif
 
 const char *vs_plat_fspath(const char *path, char *buf, size_t n);
 

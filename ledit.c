@@ -41,7 +41,7 @@
 #endif
 
 #define ESC_TIMEOUT_MS 40               /* a lone ESC vs. the start of a sequence */
-#define UNDO_DEPTH     24
+#define UNDO_DEPTH     8
 #define SEQ_MAX        16
 
 /* ---- Commands and the key table -------------------------------------------- */
@@ -121,9 +121,11 @@ struct snap_s
 
 struct menu_s                   /* the completion menu under the line */
 {
-  char **name;                  /* what is listed */
-  char **tail;                  /* what completes the word with it */
+  char **name;                  /* what is listed (we own these strings) */
   char **desc;                  /* one line about it, or NULL; any: one column */
+  char *suffix;                 /* what follows the name once chosen */
+  size_t skip;                  /* of its text, the bytes already typed */
+  bool failed;                  /* memory ran out while it was filled */
   bool has_desc;
   int n;
   int cap;
@@ -140,6 +142,8 @@ struct menu_s                   /* the completion menu under the line */
 struct ed_s
 {
   struct menu_s menu;
+  struct sbuf_s out;            /* what one redraw writes: kept between redraws, so no malloc per key */
+  const char *sug;              /* the suggestion shown by the last refresh (points into the history) */
   struct sbuf_s b;              /* the line; b.s is NULL until something is typed */
   size_t pos;                   /* cursor, a byte offset */
   const char *prompt;
@@ -498,7 +502,8 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len) : NULL;
   unsigned char cur = HL_NONE;
 
-  sb_init(&o);
+  o = e->out;                       /* the buffer from the last redraw, emptied */
+  o.len = 0;
   if (e->cur_row > 0)
     {
       snprintf(t, sizeof(t), "\033[%dA", e->cur_row);
@@ -616,7 +621,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
       (void)w;
     }
 
-  sb_free(&o);
+  e->out = o;
 }
 
 /* The newest history entry that starts with what is typed: the rest of it is
@@ -656,7 +661,8 @@ static void refresh(struct ed_s *e)
 {
   char *menu = e->menu.n > 0 ? menu_text(e) : NULL;
 
-  draw(e, e->prompt, text(e), e->b.len, e->pos, e->menu.n > 0 ? NULL : suggestion(e), true, menu);
+  e->sug = e->menu.n > 0 ? NULL : suggestion(e);
+  draw(e, e->prompt, text(e), e->b.len, e->pos, e->sug, true, menu);
   free(menu);
 }
 
@@ -1058,34 +1064,57 @@ static void menu_free(struct ed_s *e)
   for (i = 0; i < e->menu.n; i++)
     {
       free(e->menu.name[i]);
-      free(e->menu.tail[i]);
       free(e->menu.desc[i]);
     }
 
   free(e->menu.name);
-  free(e->menu.tail);
+  free(e->menu.suffix);
   free(e->menu.desc);
   free(e->menu.orig);
   memset(&e->menu, 0, sizeof(e->menu));
 }
 
-static void cand_cb(void *ctx, const char *name, const char *tail, const char *desc)
+static void cand_cb(void *ctx, char *name, char *desc, char suffix)
 {
   struct menu_s *m = ctx;
   int w = str_width(name);
 
-  if (m->n == m->cap)
+  if (m->n == m->cap && !m->failed)
     {
-      m->cap = m->cap > 0 ? m->cap * 2 : 16;
-      m->name = vs_xrealloc(m->name, (size_t)m->cap * sizeof(char *));
-      m->tail = vs_xrealloc(m->tail, (size_t)m->cap * sizeof(char *));
-      m->desc = vs_xrealloc(m->desc, (size_t)m->cap * sizeof(char *));
+      int cap = m->cap > 0 ? m->cap * 2 : 16;
+      char **nn = realloc(m->name, (size_t)cap * sizeof(char *));
+      char **dd = nn != NULL ? realloc(m->desc, (size_t)cap * sizeof(char *)) : NULL;
+      char *ss = dd != NULL ? realloc(m->suffix, (size_t)cap) : NULL;
+
+      m->name = nn != NULL ? nn : m->name;                 /* whatever grew stays valid */
+      m->desc = dd != NULL ? dd : m->desc;
+      m->suffix = ss != NULL ? ss : m->suffix;
+      if (ss == NULL)
+        {
+          m->failed = true;
+        }
+      else
+        {
+          m->cap = cap;
+        }
     }
 
-  m->name[m->n] = vs_xstrdup(name);
-  m->desc[m->n] = desc != NULL && *desc != '\0' ? vs_xstrdup(desc) : NULL;
+  if (m->failed)
+    {
+      free(name);
+      free(desc);
+      return;
+    }
+
+  m->name[m->n] = name;
+  m->desc[m->n] = desc != NULL && *desc != '\0' ? desc : NULL;
+  if (m->desc[m->n] != desc)
+    {
+      free(desc);
+    }
+
   m->has_desc = m->has_desc || m->desc[m->n] != NULL;
-  m->tail[m->n++] = vs_xstrdup(tail);
+  m->suffix[m->n++] = suffix;
   if (w > m->maxw)
     {
       m->maxw = w;
@@ -1222,8 +1251,17 @@ static void menu_choose(struct ed_s *e, int sel)
 
   erase(e, m->at, m->at + m->inslen, false, false);
   e->pos = m->at;
-  insert(e, m->tail[sel], strlen(m->tail[sel]));
-  m->inslen = strlen(m->tail[sel]);
+  {
+    char *tail = vs_comp_tail(m->name[sel], m->suffix[sel], m->skip);
+
+    m->inslen = tail != NULL ? strlen(tail) : 0;
+    if (tail != NULL)
+      {
+        insert(e, tail, m->inslen);
+        free(tail);
+      }
+  }
+
   m->sel = sel;
   if (sel % rows < m->top)
     {
@@ -1248,6 +1286,7 @@ static void complete(struct ed_s *e, int dir)
 {
   char ins[128];
   int del;
+  size_t skip;
   int n;
 
   if (e->menu.n > 0)
@@ -1256,7 +1295,13 @@ static void complete(struct ed_s *e, int dir)
       return;
     }
 
-  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, cand_cb, &e->menu);
+  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, &skip, cand_cb, &e->menu);
+  if (e->menu.failed)
+    {
+      menu_free(e);                    /* too many candidates for the memory there is */
+      return;
+    }
+
   if (n == 1 && del > 0)
     {
       snap(e);
@@ -1274,6 +1319,7 @@ static void complete(struct ed_s *e, int dir)
       e->menu.at = e->pos;
       e->menu.sel = -1;
       e->menu.del = (size_t)del;
+      e->menu.skip = skip;
     }
   else
     {
@@ -1606,10 +1652,10 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_EOL:
-        if (suggestion(e) != NULL)
+        if (e->sug != NULL)
           {
             snap(e);
-            insert(e, suggestion(e), strlen(suggestion(e)));
+            insert(e, e->sug, strlen(e->sug));
           }
 
         e->pos = e->b.len;
@@ -1624,10 +1670,10 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
           {
             e->pos = next_char(s, e->b.len, e->pos);
           }
-        else if (suggestion(e) != NULL)
+        else if (e->sug != NULL)
           {
             snap(e);
-            insert(e, suggestion(e), strlen(suggestion(e)));
+            insert(e, e->sug, strlen(e->sug));
           }
 
         break;
@@ -1637,9 +1683,9 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_FWDWORD:
-        if (e->pos == e->b.len && suggestion(e) != NULL)
+        if (e->pos == e->b.len && e->sug != NULL)
           {
-            const char *sg = suggestion(e);
+            const char *sg = e->sug;
             size_t n = 0;
 
             while (sg[n] == ' ')            /* the next word of the suggestion */
@@ -1892,6 +1938,7 @@ static void ed_free(struct ed_s *e)
   int i;
 
   menu_free(e);
+  sb_free(&e->out);
   sb_free(&e->b);
   sb_free(&e->kill);
   free(e->hsaved);

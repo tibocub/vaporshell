@@ -32,7 +32,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all help bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
+.PHONY: all help small bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -53,6 +53,10 @@ check: $(BIN)
 BENCH_OBJS := $(filter-out $(BUILDDIR)/vaporshell_main.o,$(OBJS))
 $(BUILDDIR)/complete_bench: tests/bench/complete_bench.c $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $< $(BENCH_OBJS) $(LDLIBS)
+
+# The size the device build has (vaporOS compiles for size): build-small/vaporshell.
+small:
+	$(MAKE) -f posix.mk BUILDDIR=build-small EXTRA_CFLAGS=-Os
 
 bench: $(BUILDDIR)/complete_bench
 	@$(BUILDDIR)/complete_bench "$(or $(LINE),g)"
@@ -82,6 +86,7 @@ help:
 	@echo
 	@echo "  all              build build/vaporshell (default)"
 	@echo "  check            all suites on the Linux build     (ONLY=name filters)"
+	@echo "  small            build-small/vaporshell, built with -Os like the device build"
 	@echo "  check-pty        the line editor, driven through a pseudo-terminal"
 	@echo "  check-asan       the same under ASan + UBSan"
 	@echo "  check-smoosh     the smoosh POSIX corpus"

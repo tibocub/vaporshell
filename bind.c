@@ -24,71 +24,57 @@
 #include "exec.h"
 #include "ledit.h"
 
-/* The bytes for a key written the readline way: \C-x \M-x \e \t \\ \" \nnn \xHH. */
+/* The bytes for a key written the readline way: \C-x \M-x \d, and the usual
+ * backslash escapes (\e \t \nnn \xHH ...), which the interpreter decodes.
+ */
 
 static int parse_keys(const char *s, size_t n, char *out, int max)
 {
-  int len = 0;
-  size_t i;
+  struct sbuf_s b;
+  bool stop = false;
+  size_t i = 0;
+  int len;
 
-  for (i = 0; i < n && len < max; i++)
+  sb_init(&b);
+  while (i < n)
     {
-      int c = (unsigned char)s[i];
-
-      if (c == '\\' && i + 1 < n)
+      if (s[i] != '\\' || i + 1 >= n)
         {
-          c = (unsigned char)s[++i];
-          if ((c == 'C' || c == 'M') && i + 2 < n && s[i + 1] == '-')
-            {
-              int k = (unsigned char)s[i + 2];
-
-              i += 2;
-              if (c == 'C')
-                {
-                  c = k == '?' ? 0x7f : k & 0x1f;
-                }
-              else
-                {
-                  out[len++] = '\033';          /* meta: ESC first */
-                  c = k;
-                }
-            }
-          else if (c == 'e' || c == 'E')
-            {
-              c = '\033';
-            }
-          else if (c == 'a') c = '\a';
-          else if (c == 'b') c = '\b';
-          else if (c == 'd') c = 0x7f;
-          else if (c == 'f') c = '\f';
-          else if (c == 'n') c = '\n';
-          else if (c == 'r') c = '\r';
-          else if (c == 't') c = '\t';
-          else if (c == 'v') c = '\v';
-          else if (c >= '0' && c <= '7')
-            {
-              int v = c - '0';
-              int d;
-
-              for (d = 0; d < 2 && i + 1 < n && s[i + 1] >= '0' && s[i + 1] <= '7'; d++)
-                {
-                  v = v * 8 + (s[++i] - '0');
-                }
-
-              c = v & 0xff;
-            }
-          else if (c == 'x' && i + 1 < n && isxdigit((unsigned char)s[i + 1]))
-            {
-              char hex[3] = { s[i + 1], i + 2 < n && isxdigit((unsigned char)s[i + 2]) ? s[i + 2] : '\0', '\0' };
-
-              c = (int)strtol(hex, NULL, 16);
-              i += hex[1] != '\0' ? 2 : 1;
-            }
+          sb_addc(&b, s[i++]);
+          continue;
         }
 
-      out[len++] = (char)c;
+      i++;
+      if ((s[i] == 'C' || s[i] == 'M') && i + 2 < n && s[i + 1] == '-')
+        {
+          int k = (unsigned char)s[i + 2];
+
+          if (s[i] == 'M')
+            {
+              sb_addc(&b, '\033');                  /* meta: ESC first */
+            }
+
+          sb_addc(&b, s[i] == 'M' ? (char)k : (char)(k == '?' ? 0x7f : k & 0x1f));
+          i += 3;
+        }
+      else if (s[i] == 'd')
+        {
+          sb_addc(&b, 0x7f);
+          i++;
+        }
+      else
+        {
+          i += vs_esc_one(s + i, ESC_OCT_PLAIN | ESC_HEXU | ESC_E, &b, &stop);
+        }
     }
 
+  len = b.s == NULL ? 0 : (int)b.len < max ? (int)b.len : max;
+  if (len > 0)
+    {
+      memcpy(out, b.s, (size_t)len);
+    }
+
+  sb_free(&b);
   return len;
 }
 

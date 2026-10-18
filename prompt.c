@@ -223,7 +223,6 @@ char *vs_prompt_decode(const char *ps)
             break;
 
           case 'j':  add_number(&out, (long)g_sh.njobs); break;
-          case 'l':  sb_adds(&out, "tty"); break;
           case 's':  add_literal(&out, g_sh.profile == VS_PROFILE_POSIX ? "sh" : "vaporshell"); break;
           case 'u':
             {
