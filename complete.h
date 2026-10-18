@@ -17,6 +17,8 @@ typedef void (*vs_comp_list_f)(void *ctx, const char *name);
 bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                        vs_comp_list_f sink, void *ctx);
 
+bool vs_is_command(const char *name);
+
 int vs_complete(const char *line, int len, char *ins, int inslen,
                 vs_comp_list_f list, void *ctx);
 

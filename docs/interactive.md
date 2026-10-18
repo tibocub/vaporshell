@@ -78,17 +78,17 @@ the status tables below in the same commit.
 | `--rcfile FILE` (`--init-file`), `--norc` | ✓ | a failing rc file does not end the session; POSIX mode reads none |
 | `~/.bashrc` | ✓ by design: never read implicitly | opt in with `source ~/.bashrc` from the rc file |
 | `bind` for real (`bind '"\C-x": cmd'`, `bind -x`, `-l -p -P`), `~/.inputrc` subset | ◐ | currently inert |
-| `$VS_*` look-and-feel variables (colors, suggestions on/off) | ✗ | plain variables |
+| `$VS_*` look-and-feel variables (colors, suggestions on/off) | ◐ | `VS_AUTOSUGGEST`, `VS_HIGHLIGHT`, `VS_BRACKETED_PASTE`, `VS_COMPLETION_PATH`, `VS_RC`; colors are fixed |
 | `set -o emacs` / `set -o vi` | ✗ | vi last |
 
 ### Tier 3: fish/zsh quality of life
 
 | Feature | Status | Notes |
 |---|---|---|
-| Autosuggestion from history (grey text; Right/End accepts, Alt-F one word) | ✗ | biggest value for least code |
-| Syntax highlighting while typing (valid command / path / quote / error) | ✗ | reuses `wordscan.c` and the command hash; no fork |
+| Autosuggestion from history (grey text; Right/End/Ctrl-F/Ctrl-E accepts) | ✓ | newest matching entry; `VS_AUTOSUGGEST=0` turns it off; accepting one word (Alt-F) ✗ |
+| Syntax highlighting while typing (valid command / path / quote / error) | ◐ | command words only: green runs something (keyword, alias, function, builtin, cached `$PATH`, executable path), red does not; `VS_HIGHLIGHT=0` turns it off. Paths, quotes and errors ✗ |
 | Completion menu: grid with selection, Shift-Tab, descriptions | ✗ | |
-| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | works for any command with a `complete` spec (rc file or sourced script); no specs ship yet, and fish-style `-s/-l/-d/-n` flags are not implemented |
+| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | any command with a `complete` spec; specs load lazily from `$VS_COMPLETION_PATH` (`<cmd>.vsh`, default `~/.config/vaporshell/completions:/etc/vaporshell/completions`) the first time the command is completed, and the shell's own commands have built-in defaults (`cd` → directories, `unset` → variables, `help` → builtins ...). No specs ship for external tools yet; fish-style `-s/-l/-d/-n` flags ✗ |
 | Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ◐ | `$VAR` and `${VAR}` ✓; the rest ✗ |
 | Case-insensitive and substring/fuzzy fallback matching | ✗ | |
 | Abbreviations (`abbr`) | ✗ | |
@@ -199,7 +199,7 @@ claims, `tests/bench/`:
 | Metric | Target |
 |---|---|
 | Interpreter only (before this work, Linux x86-64, -O2) | 239.5 KB text |
-| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB). Over the limit: the next features must pay for themselves |
+| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB), then lazy specs, suggestions and highlighting: **272.7 KB** in all (+33 KB over the interpreter; the budget was +25 minimal, +20 for suggestions/highlighting/menu). Everything is switched by a variable at run time, not compiled out yet |
 | + autosuggest, highlighting, menu | ≤ +20 KB, each separately switchable |
 | Time to first prompt (no rc) | ≤ bash's, measured |
 | Tab on `$PATH` command prefix, warm cache | < 1 ms. **Measured 2026-10-18: 0.07–0.11 ms** (`make -f posix.mk bench LINE=ec`), was 1.5–2.0 ms before the cache; 30 `$PATH` directories, 4,500 names |

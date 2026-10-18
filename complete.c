@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 
 #include "complete.h"
+#include "parse.h"
 
 #include "vaporshell.h"
 #include "exec.h"
@@ -347,8 +348,12 @@ struct spec_ctx_s
 static void spec_cand(void *ctx, const char *name)
 {
   struct spec_ctx_s *sc = ctx;
+  char fbuf[VS_PATH_MAX];
+  struct stat st;
+  bool dir = name[0] != '-' && name[0] != '$' &&
+             stat(vs_plat_fspath(name, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode);
 
-  cands_add(sc->c, sc->word, name, ' ');
+  cands_add(sc->c, sc->word, name, dir ? '/' : ' ');
 }
 
 int vs_complete(const char *line, int len, char *ins, int inslen,
@@ -561,3 +566,49 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
   return n;
 }
 
+
+/* Does 'name' run something: a keyword, alias, function, builtin, a program in
+ * the cached $PATH table, or a path to an executable file? For highlighting.
+ */
+
+bool vs_is_command(const char *name)
+{
+  struct stat st;
+  int lo = 0;
+  int hi;
+
+  if (vs_parser_reserved_word(name) || alias_find(name) != NULL ||
+      func_find(name) != NULL || builtin_find(name) != NULL)
+    {
+      return true;
+    }
+
+  if (strchr(name, '/') != NULL)
+    {
+      return stat(VS_FS(name), &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & 0111) != 0;
+    }
+
+  refresh_commands();
+  hi = g_ncmds;
+  while (lo < hi)
+    {
+      int mid = (lo + hi) / 2;
+      int r = strcmp(g_cmds[mid], name);
+
+      if (r == 0)
+        {
+          return true;
+        }
+
+      if (r < 0)
+        {
+          lo = mid + 1;
+        }
+      else
+        {
+          hi = mid;
+        }
+    }
+
+  return false;
+}

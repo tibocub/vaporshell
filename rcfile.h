@@ -17,6 +17,12 @@
  * ~/.bashrc is never read implicitly: `source ~/.bashrc` from the rc file.
  */
 
+/* Run a file as the shell's own startup code (an rc file, a completion spec): its
+ * errors are reported but do not end the session. False if it is not a readable file.
+ */
+
+bool vs_rc_source(const char *path);
+
 void vs_rc_load(bool login, bool norc, const char *rcfile);
 
 #endif
