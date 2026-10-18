@@ -604,6 +604,23 @@ def _():
     s.close()
 
 
+@test("highlighting: quotes are yellow, existing paths are underlined")
+def _():
+    d = os.path.join(TMP, "hlpaths"); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "realfile"), "w").close()
+    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s.raw = b""
+    s.type("echo 'hi there' realfile nofile \"q\" -n")
+    raw = s.raw.decode().split("\x1b[J")[-1]               # the last redraw
+    assert "\x1b[33m'hi there'\x1b[0m" in raw, repr(raw)
+    assert "\x1b[4mrealfile\x1b[0m" in raw, repr(raw)
+    assert "nofile \x1b[33m\"q\"\x1b[0m -n" in raw, repr(raw)   # missing file, plain; option not checked
+    s.send(CTRL("U")); s.raw = b""
+    s.type("echo 'open")
+    assert s.raw.decode().split("\x1b[J")[-1].endswith("\x1b[33m'open\x1b[0m"), repr(s.raw[-80:])
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()
