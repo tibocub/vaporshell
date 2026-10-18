@@ -561,6 +561,26 @@ def _():
     s.close()
 
 
+@test("bind: a command, shell code (-x), -r, -p, -l")
+def _():
+    rc = os.path.join(TMP, "bind.rc")
+    open(rc, "w").write("bind '\"\\C-o\": kill-line'\n"
+                        "bind -x '\"\\C-g\": READLINE_LINE=\"echo $READLINE_LINE!\"; READLINE_POINT=${#READLINE_LINE}'\n"
+                        "bind '\"\\e[1;5A\": beginning-of-line'\n")
+    s = shell(args=["--rcfile", rc], env={"VS_AUTOSUGGEST": "0"})
+    s.type("abc"); s.send(CTRL("A")); s.send(CTRL("O"))          # Ctrl-O is kill-line now
+    expect(s, ["$"])
+    s.type("hi"); s.send(CTRL("G"))                               # the shell code rewrote the line
+    assert s.screen()[-1] == "$ echo hi!", s.screen()
+    s.send(CTRL("U")); s.type("xy"); s.send("\x1b[1;5A"); s.type("Q")
+    assert s.screen()[-1] == "$ Qxy", s.screen()
+    s.send(END); s.send(CTRL("U")); s.type("bind -r '\\C-o'; bind -p | head -3"); s.send(ENTER)
+    assert any(l.startswith('"\\C-g"') for l in s.screen()) or any('"\\e[1;5A": beginning-of-line' in l for l in s.screen()), s.screen()
+    s.type("bind -l | head -2"); s.send(ENTER)
+    assert "accept-line" in s.screen() or "backward-char" in " ".join(s.screen()), s.screen()
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

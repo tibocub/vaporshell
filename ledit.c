@@ -27,6 +27,7 @@
 
 #include "vaporshell.h"
 #include "complete.h"
+#include "exec.h"
 #include "history.h"
 #include "ledit.h"
 #include "platform.h"
@@ -51,7 +52,29 @@ enum cmd_e
   C_KILL_WORD_BACK_WS, C_KILL_WORD, C_KILL_WORD_BACK, C_YANK, C_TRANSPOSE,
   C_CLEAR, C_PREV, C_NEXT, C_PSEARCH_BACK, C_PSEARCH_FWD, C_RSEARCH,
   C_INTERRUPT, C_COMPLETE, C_UPCASE, C_DOWNCASE, C_CAPITALIZE, C_UNDO,
-  C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST, C_COMPLETE_BACK, C_CANCEL
+  C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST, C_COMPLETE_BACK, C_CANCEL,
+  C_SHELL, C_NCMD
+};
+
+/* readline's names for the commands, by number (NULL: not bindable). */
+
+static const char *const g_cmd_names[C_NCMD] =
+{
+  [C_SELF] = "self-insert", [C_ACCEPT] = "accept-line", [C_BOL] = "beginning-of-line",
+  [C_EOL] = "end-of-line", [C_BACK] = "backward-char", [C_FWD] = "forward-char",
+  [C_BACKWORD] = "backward-word", [C_FWDWORD] = "forward-word", [C_DELETE] = "delete-char",
+  [C_DELETE_OR_EOF] = "delete-char-or-eof", [C_BACKSPACE] = "backward-delete-char",
+  [C_KILL_EOL] = "kill-line", [C_KILL_BOL] = "backward-kill-line",
+  [C_KILL_WORD_BACK_WS] = "unix-word-rubout", [C_KILL_WORD] = "kill-word",
+  [C_KILL_WORD_BACK] = "backward-kill-word", [C_YANK] = "yank",
+  [C_TRANSPOSE] = "transpose-chars", [C_CLEAR] = "clear-screen",
+  [C_PREV] = "previous-history", [C_NEXT] = "next-history",
+  [C_PSEARCH_BACK] = "history-search-backward", [C_PSEARCH_FWD] = "history-search-forward",
+  [C_RSEARCH] = "reverse-search-history", [C_INTERRUPT] = "abort", [C_COMPLETE] = "complete",
+  [C_UPCASE] = "upcase-word", [C_DOWNCASE] = "downcase-word", [C_CAPITALIZE] = "capitalize-word",
+  [C_UNDO] = "undo", [C_PASTE] = "bracketed-paste-begin", [C_NEWLINE] = "insert-newline",
+  [C_HIST_FIRST] = "beginning-of-history", [C_HIST_LAST] = "end-of-history",
+  [C_COMPLETE_BACK] = "menu-complete-backward", [C_SHELL] = "shell-command"
 };
 
 static const struct
@@ -1211,9 +1234,134 @@ static int read_key(char *seq, int *len)
   return 1;
 }
 
-static int lookup(const char *seq, int len)
+/* Bindings made with `bind`, tried before the table above. */
+
+struct ubind_s
+{
+  struct ubind_s *next;
+  char seq[SEQ_MAX];
+  int len;
+  int cmd;
+  char *shell;                  /* C_SHELL: the code to run (bind -x) */
+};
+
+static struct ubind_s *g_ubinds;
+static const char *g_shell;     /* the shell code of the binding lookup() found */
+
+int vs_ledit_bind(const char *seq, int len, int cmd, const char *shell)
+{
+  struct ubind_s *b;
+
+  if (len <= 0 || len >= SEQ_MAX || cmd <= C_NONE || cmd >= C_NCMD)
+    {
+      return -1;
+    }
+
+  vs_ledit_unbind(seq, len);
+  b = vs_xmalloc(sizeof(*b));
+  memcpy(b->seq, seq, (size_t)len);
+  b->len = len;
+  b->cmd = cmd;
+  b->shell = shell != NULL ? vs_xstrdup(shell) : NULL;
+  b->next = g_ubinds;
+  g_ubinds = b;
+  return 0;
+}
+
+int vs_ledit_unbind(const char *seq, int len)
+{
+  struct ubind_s **p;
+
+  for (p = &g_ubinds; *p != NULL; p = &(*p)->next)
+    {
+      if ((*p)->len == len && memcmp((*p)->seq, seq, (size_t)len) == 0)
+        {
+          struct ubind_s *dead = *p;
+
+          *p = dead->next;
+          free(dead->shell);
+          free(dead);
+          return 0;
+        }
+    }
+
+  return -1;
+}
+
+int vs_ledit_cmd_lookup(const char *name)
 {
   int i;
+
+  for (i = 1; i < C_NCMD; i++)
+    {
+      if (g_cmd_names[i] != NULL && strcmp(g_cmd_names[i], name) == 0)
+        {
+          return i;
+        }
+    }
+
+  return -1;
+}
+
+int vs_ledit_ncmds(void)
+{
+  return C_NCMD;
+}
+
+const char *vs_ledit_cmd_name(int i)
+{
+  return i >= 0 && i < C_NCMD ? g_cmd_names[i] : NULL;
+}
+
+/* The idx-th binding, user ones first and then the built-in table; false past the end. */
+
+bool vs_ledit_binding(int idx, const char **seq, int *len, const char **name, const char **shell)
+{
+  const struct ubind_s *b;
+  int cmd;
+
+  for (b = g_ubinds; b != NULL; b = b->next, idx--)
+    {
+      if (idx == 0)
+        {
+          *seq = b->seq;
+          *len = b->len;
+          cmd = b->cmd;
+          *shell = b->shell;
+          *name = cmd == C_SHELL ? NULL : g_cmd_names[cmd];
+          return true;
+        }
+    }
+
+  for (cmd = 0; g_keys[cmd].seq != NULL; cmd++, idx--)
+    {
+      if (idx == 0 && g_cmd_names[g_keys[cmd].cmd] != NULL)
+        {
+          *seq = g_keys[cmd].seq;
+          *len = (int)strlen(g_keys[cmd].seq);
+          *name = g_cmd_names[g_keys[cmd].cmd];
+          *shell = NULL;
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static int lookup(const char *seq, int len)
+{
+  const struct ubind_s *b;
+  int i;
+
+  g_shell = NULL;
+  for (b = g_ubinds; b != NULL; b = b->next)
+    {
+      if (b->len == len && memcmp(b->seq, seq, (size_t)len) == 0)
+        {
+          g_shell = b->shell;
+          return b->cmd;
+        }
+    }
 
   for (i = 0; g_keys[i].seq != NULL; i++)
     {
@@ -1553,6 +1701,35 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
       case C_COMPLETE:
       case C_COMPLETE_BACK:
         complete(e, cmd == C_COMPLETE ? 1 : -1);
+        break;
+
+      case C_SHELL:                      /* bind -x: the code sees and may change the line */
+        if (g_shell != NULL)
+          {
+            char num[16];
+            const char *v;
+            char *code = vs_xstrdup(g_shell);
+
+            snap(e);
+            var_set("READLINE_LINE", text(e));
+            snprintf(num, sizeof(num), "%zu", e->pos);
+            var_set("READLINE_POINT", num);
+            vs_plat_tty_raw(false);              /* the code may print or read */
+            put("\r\n");
+            e->cur_row = 0;
+            run_string(code, strlen(code));
+            vs_plat_tty_raw(true);
+            free(code);
+            v = var_get("READLINE_LINE");
+            set_text(e, v != NULL ? v : "");
+            v = var_get("READLINE_POINT");
+            e->pos = v != NULL ? (size_t)strtoul(v, NULL, 10) : e->b.len;
+            if (e->pos > e->b.len)
+              {
+                e->pos = e->b.len;
+              }
+          }
+
         break;
 
       case C_PASTE:

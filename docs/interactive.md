@@ -9,10 +9,13 @@ the status tables below in the same commit.
 
 ## Principles
 
-1. **Small.** Every feature sits behind a Kconfig/`make` switch and its cost is
-   measured (`size`, see "Budget"). The minimal tier must stay a few KB on top
-   of the interpreter; nothing is on by default that a 264 KB RP2040 cannot
-   afford.
+1. **Small.** Every feature's cost is measured (`size`, see "Budget") and
+   anything useful to only some users is an optional `.vsh` file, not code.
+   Behaviours that cost run time switch off with a variable (`VS_AUTOSUGGEST`,
+   `VS_HIGHLIGHT`, ...). There are no compile-time switches: the whole editor,
+   completion and fish specs are 17 + 6 + 3 KB of flash, and nothing allocates
+   until it is used, while the constraint on the RP2040 is its 264 KB of RAM,
+   not its flash. Add switches only if flash ever gets tight.
 2. **Fast.** "Bash, but fast" is about the *interactive* path more than the
    interpreter: bash's completion is slow because it is shell code that forks
    `sed`/`grep`/`git`; fish's is fast because it is data plus native code.
@@ -39,7 +42,7 @@ the status tables below in the same commit.
 | Prompt | escapes, promptvars, `PROMPT_COMMAND`, `PROMPT_DIRTRIM` (Tier 1) |
 | Line editing | own editor (`ledit.c`) on Linux and vaporOS; verified on the simulator and on the RP2040 over USB |
 | History | in-memory + `HISTFILE` (default `~/.vsh_history`); `history` builtin; no `fc`, no `!!` |
-| Completion | `complete.c`: command names from a cached sorted `$PATH` table, paths, `$VARIABLES`, and per-command specs registered with `complete` (`-W -A -f -d -P -S -X` and `-F` functions); asks before listing more than 100; `compgen` works in scripts; `bind` is accepted and ignored |
+| Completion | `complete.c`: command names from a cached sorted `$PATH` table, paths, `$VARIABLES`, and per-command specs registered with `complete` (`-W -A -f -d -P -S -X` and `-F` functions); asks before listing more than 100; `compgen` works in scripts; `bind` is real (`bind.c`) |
 | Startup files | none read |
 | Job control | `jobs`/`fg`/`bg`/`wait`/`disown`; no Ctrl-Z (NuttX has no process groups) |
 
@@ -77,7 +80,7 @@ the status tables below in the same commit.
 | Login shell (`-l`, `--login`, or argv[0] starting with `-`) and `~/.vsh_profile` | ✓ | |
 | `--rcfile FILE` (`--init-file`), `--norc` | ✓ | a failing rc file does not end the session; POSIX mode reads none |
 | `~/.bashrc` | ✓ by design: never read implicitly | opt in with `source ~/.bashrc` from the rc file |
-| `bind` for real (`bind '"\C-x": cmd'`, `bind -x`, `-l -p -P`), `~/.inputrc` subset | ◐ | currently inert |
+| `bind` for real (`bind '"\C-x": kill-line'`, `bind -x '"\C-g": code'` with `READLINE_LINE`/`READLINE_POINT`, `-r -l -p`) | ✓ (`bind.c`) | keys are single keys or escape sequences, no chords, no macros; `~/.inputrc` is not read: put `bind` in the rc file. 36 editor commands under readline's names |
 | `$VS_*` look-and-feel variables (colors, suggestions on/off) | ◐ | `VS_AUTOSUGGEST`, `VS_HIGHLIGHT`, `VS_BRACKETED_PASTE`, `VS_COMPLETION_PATH`, `VS_COMPLETION_TIMEOUT`, `VS_RC`; colors are fixed |
 | `set -o emacs` / `set -o vi` | ✗ | vi last |
 
@@ -201,7 +204,7 @@ claims, `tests/bench/`:
 | Metric | Target |
 |---|---|
 | Interpreter only (before this work, Linux x86-64, -O2) | 239.5 KB text |
-| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB), then lazy specs, suggestions and highlighting: **278.6 KB** in all (+39 KB over the interpreter; the budget was +25 minimal, +20 for suggestions/highlighting/menu). Everything is switched by a variable at run time, not compiled out yet |
+| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB), then lazy specs, suggestions and highlighting: **278.6 KB** in all (+39 KB over the interpreter; the budget was +25 minimal, +20 for suggestions/highlighting/menu). Compile-time switches were considered and dropped (see Principles); later additions: tbx option table, spec time limit and `bind` brought it to 285.5 KB (+46 KB: past the 45 KB combined budget) |
 | + autosuggest, highlighting, menu | ≤ +20 KB, each separately switchable |
 | Time to first prompt (no rc) | ≤ bash's, measured |
 | Tab on `$PATH` command prefix, warm cache | < 1 ms. **Measured 2026-10-18: 0.07–0.11 ms** (`make -f posix.mk bench LINE=ec`), was 1.5–2.0 ms before the cache; 30 `$PATH` directories, 4,500 names |

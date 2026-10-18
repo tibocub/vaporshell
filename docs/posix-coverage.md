@@ -10,12 +10,12 @@ chosen for it, and where POSIX itself asks for something dash lacks.
 
 ## Reference
 
-- bash-mode reference: `GNU bash, version 5.3.0(1)-release (x86_64-pc-linux-gnu)`
-- POSIX-mode reference: `dash 0.5.12-6ubuntu5`
-- generated: 2026-09-23 by `tests/coverage/gen-docs.py`
+- bash-mode reference: `GNU bash, version 5.3.9(1)-release (x86_64-redhat-linux-gnu)`
+- POSIX-mode reference: `dash-0.5.13.1-3.fc44.x86_64`
+- generated: 2026-10-18 by `tests/coverage/gen-docs.py`
 
 
-Probes matching dash in POSIX mode: **474 of 482**. POSIX utilities not provided as builtins: **0**.
+Probes matching dash in POSIX mode: **463 of 482**. POSIX utilities not provided as builtins: **0**.
 
 
 POSIX mode is modelled on dash rather than on `bash --posix` because the two
@@ -70,7 +70,7 @@ in `tests/modes/posix/` or a probe below.
 
 Each table lists probes for one area; the count is probes matching dash.
 
-### Quoting  (9/9)
+### Quoting  (7/9)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -78,13 +78,13 @@ Each table lists probes for one area; the count is probes matching dash.
 | `quote_double` | ok |  |
 | `quote_backslash_newline` | ok |  |
 | `quote_dquote_nested_cmdsub` | ok |  |
-| `quote_ansi_c` | ok | bash $'...' strings |
+| `quote_ansi_c` | **differs** | bash $'...' strings |
 | `quote_locale` | ok | bash $"..." translation |
-| `ansi_c_quote` | ok |  |
+| `ansi_c_quote` | **differs** |  |
 | `ansi_c_control` | ok |  |
 | `locale_dq` | ok |  |
 
-### Parameter expansion  (35/35)
+### Parameter expansion  (34/35)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -121,7 +121,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `param_positional_trim` | ok | dash and bash differ here: dash trims the joined string, bash each parameter |
 | `mb_length_and_substring` | ok |  |
 | `mb_case_conversion` | ok |  |
-| `mb_invalid_bytes` | ok |  |
+| `mb_invalid_bytes` | **differs** |  |
 | `param_ext_leading_blanks_split` | ok |  |
 
 ### Other expansions  (26/26)
@@ -165,7 +165,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `split_quoted` | ok |  |
 | `split_ifs_whitespace_mix` | ok |  |
 
-### Pathname expansion  (25/25)
+### Pathname expansion  (24/25)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -189,7 +189,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `extglob_case_and_path` | ok |  |
 | `extglob_always_in_dbracket` | ok |  |
 | `glob_collation` | ok | ordering follows the collation locale (LC_ALL/LC_COLLATE/LANG) |
-| `glob_collation_assign` | ok |  |
+| `glob_collation_assign` | **differs** |  |
 | `mb_pattern_question_mark` | ok | dash counts bytes even in UTF-8; the standard and bash --posix count characters |
 | `mb_pattern_question_mark_bash` | ok |  |
 | `mb_pattern_brackets` | ok |  |
@@ -221,7 +221,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `herestring` | ok |  |
 | `herestring_expansion` | ok |  |
 
-### Compound commands, functions, pipelines  (45/45)
+### Compound commands, functions, pipelines  (44/45)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -242,7 +242,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `subshell` | ok |  |
 | `group` | ok |  |
 | `pipeline_status` | ok |  |
-| `pipefail` | ok | bash set -o pipefail |
+| `pipefail` | **differs** | bash set -o pipefail |
 | `pipestatus` | ok | bash PIPESTATUS array |
 | `function_basic` | ok |  |
 | `function_return` | ok |  |
@@ -288,7 +288,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `test_regex_bracket` | ok | bash [ -v var ] |
 | `test_stat_ext` | ok | bash [ -N file ] [ -O file ] |
 
-### POSIX builtins  (60/60)
+### POSIX builtins  (57/60)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -308,13 +308,13 @@ Each table lists probes for one area; the count is probes matching dash.
 | `special_set_e` | ok |  |
 | `special_set_x` | ok |  |
 | `special_set_o` | ok |  |
-| `special_set_o_pipefail` | ok | bash pipefail; dash lacks it |
+| `special_set_o_pipefail` | **differs** | bash pipefail; dash lacks it |
 | `special_shift_error` | ok |  |
 | `special_break_outside` | ok |  |
 | `special_return_outside` | ok |  |
 | `special_trap_exit` | ok |  |
 | `special_trap_list` | ok |  |
-| `special_trap_in_subshell` | ok | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
+| `special_trap_in_subshell` | **differs** | bash lists the parent's traps inside $(...); dash and vaporshell print nothing |
 | `special_trap_reset` | ok |  |
 | `special_trap_ignore` | ok |  |
 | `special_trap_signal` | ok |  |
@@ -336,7 +336,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `special_command_p` | ok |  |
 | `special_type` | ok |  |
 | `special_type_missing` | ok |  |
-| `special_type_t` | ok | bash type -t |
+| `special_type_t` | **differs** | bash type -t |
 | `special_read_basic` | ok |  |
 | `special_read_r` | ok |  |
 | `special_read_eof` | ok |  |
@@ -353,7 +353,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `special_fc` | ok |  |
 | `special_newgrp` | ok |  |
 
-### echo  (14/14)
+### echo  (13/14)
 
 | probe | POSIX mode | note |
 |---|---|---|
@@ -366,7 +366,7 @@ Each table lists probes for one area; the count is probes matching dash.
 | `echo_\c` | ok |  |
 | `echo_\0nnn` | ok |  |
 | `echo_\nnn` | ok |  |
-| `echo_\xHH` | ok |  |
+| `echo_\xHH` | **differs** |  |
 | `echo_\e` | ok |  |
 | `echo_--_x` | ok |  |
 | `echo_-z` | ok |  |
@@ -428,12 +428,12 @@ Each table lists probes for one area; the count is probes matching dash.
 | `hash_nosuch` | ok |  |
 | `hash_-r` | ok |  |
 
-### alias  (5/5)
+### alias  (3/5)
 
 | probe | POSIX mode | note |
 |---|---|---|
-| `alias_print` | ok |  |
-| `alias_one` | ok |  |
+| `alias_print` | **differs** |  |
+| `alias_one` | **differs** |  |
 | `alias_expand_eval` | ok |  |
 | `unalias` | ok |  |
 | `alias_noninter` | ok |  |
@@ -712,7 +712,7 @@ them as builtins, next to dash.
 | `cd` | builtin | builtin |
 | `command` | builtin | builtin |
 | `false` | builtin | builtin |
-| `fc` | missing | missing |
+| `fc` | external | external |
 | `fg` | builtin | builtin |
 | `getopts` | builtin | builtin |
 | `hash` | builtin | builtin |
