@@ -25,6 +25,7 @@
 #include "mode.h"
 #include "complete.h"
 #include "rcfile.h"
+#include "compfish.h"
 
 static const char *const KEYWORDS[] =
 {
@@ -44,7 +45,7 @@ struct cg_s
 
 /* When set, candidates go here instead of to stdout (vs_comp_from_spec). */
 
-static void (*g_sink)(void *ctx, const char *word);
+static void (*g_sink)(void *ctx, const char *word, const char *desc);
 static void *g_sink_ctx;
 
 /* One candidate, a+b+c (any may be NULL): to the sink if set, else a line on stdout. */
@@ -59,7 +60,7 @@ static void out3(const char *a, const char *b, const char *c)
       sb_adds(&w, a != NULL ? a : "");
       sb_adds(&w, b);
       sb_adds(&w, c != NULL ? c : "");
-      g_sink(g_sink_ctx, w.s);
+      g_sink(g_sink_ctx, w.s, NULL);
       sb_free(&w);
     }
   else
@@ -503,11 +504,17 @@ static void print_spec(const struct complete_spec_s *s)
 
 int bi_complete(int argc, char **argv)
 {
+  int fish = vs_complete_fish(argc, argv);
   bool list = false;
   bool remove = false;
   struct sbuf_s opts;
   int i = 1;
   int nnames = 0;
+
+  if (fish >= 0)
+    {
+      return fish;
+    }
 
   sb_init(&opts);
   for (; i < argc; i++)
@@ -686,7 +693,7 @@ static int split_opts(const char *o, char **v, int max)
 
 /* bash's COMP_WORDS / COMP_CWORD / COMP_LINE / COMP_POINT for a complete -F function. */
 
-static void set_comp_vars(const char *line, int point)
+void vs_set_comp_vars(const char *line, int point)
 {
   struct arr_s *words = arr_new();
   int i = 0;
@@ -777,7 +784,7 @@ static const struct complete_spec_s *spec_for(const char *cmd)
   struct sbuf_s dflt;
   size_t i;
 
-  if (s != NULL)
+  if (s != NULL || vs_fish_known(cmd))
     {
       return s;
     }
@@ -808,10 +815,14 @@ static const struct complete_spec_s *spec_for(const char *cmd)
       if (vs_rc_source(file.s))
         {
           s = find_spec(cmd);
+          if (s == NULL && !vs_fish_known(cmd))
+            {
+              vs_fish_mark(cmd);                /* sourced: do not run it again */
+            }
         }
 
       sb_free(&file);
-      if (s != NULL)
+      if (s != NULL || vs_fish_known(cmd))
         {
           sb_free(&dflt);
           return s;
@@ -832,19 +843,20 @@ static const struct complete_spec_s *spec_for(const char *cmd)
   return NULL;
 }
 
-bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
-                       vs_comp_list_f sink, void *ctx)
+int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                      vs_comp_list_f sink, void *ctx)
 {
   const struct complete_spec_s *spec = spec_for(cmd);
   char *ov[48];
   char *av[52];
   const char *func = NULL;
+  int found = vs_comp_fish(cmd, line, point, word, sink, ctx);
   int n;
   int i;
 
   if (spec == NULL)
     {
-      return false;
+      return found;
     }
 
   n = split_opts(spec->opts, ov, 48);
@@ -871,7 +883,7 @@ bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char 
       const struct arr_s *r;
       long k;
 
-      set_comp_vars(line, point);
+      vs_set_comp_vars(line, point);
       var_unset("COMPREPLY");
       fa[0] = (char *)func;
       fa[1] = (char *)cmd;
@@ -885,7 +897,7 @@ bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char 
 
           if (e != NULL)
             {
-              sink(ctx, e);
+              sink(ctx, e, NULL);
             }
         }
     }
@@ -895,5 +907,5 @@ bool vs_comp_from_spec(const char *cmd, const char *line, int point, const char 
       free(ov[i]);
     }
 
-  return true;
+  return found | VS_SPEC_FOUND;
 }

@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "vaporshell.h"
+#include "compfish.h"
 #include "expand.h"
 #include "ast.h"
 #include "platform.h"
@@ -768,6 +769,8 @@ void shell_init(const char *arg0)
 void shell_fini(void)
 {
   int i;
+
+  vs_fish_free();
 
   while (g_sh.vars != NULL)
     {

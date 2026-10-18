@@ -34,6 +34,7 @@ struct ent_s
 {
   char *name;                   /* what gets listed */
   char *full;                   /* what the word becomes (name + '/' or ' ') */
+  char *desc;                   /* one line about it, or NULL */
 };
 
 struct cands_s
@@ -51,6 +52,7 @@ static void cands_free(struct cands_s *c)
     {
       free(c->e[i].name);
       free(c->e[i].full);
+      free(c->e[i].desc);
     }
 
   free(c->e);
@@ -63,7 +65,7 @@ static void cands_free(struct cands_s *c)
  */
 
 static void cands_add(struct cands_s *c, const char *prefix, const char *name,
-                      char suffix)
+                      char suffix, const char *desc)
 {
   size_t len = strlen(name);
 
@@ -79,6 +81,7 @@ static void cands_add(struct cands_s *c, const char *prefix, const char *name,
     }
 
   c->e[c->n].name = strdup(name);
+  c->e[c->n].desc = desc != NULL ? strdup(desc) : NULL;
   c->e[c->n].full = malloc(len * 2 + 2);
   if (c->e[c->n].name == NULL || c->e[c->n].full == NULL)
     {
@@ -254,12 +257,12 @@ static void complete_command(struct cands_s *c, const char *prefix)
 
   for (b = g_vs_builtins; b->name != NULL; b++)
     {
-      cands_add(c, prefix, b->name, ' ');
+      cands_add(c, prefix, b->name, ' ', NULL);
     }
 
   for (i = 0; g_tbx_commands[i] != NULL; i++)
     {
-      cands_add(c, prefix, g_tbx_commands[i], ' ');
+      cands_add(c, prefix, g_tbx_commands[i], ' ', NULL);
     }
 
   refresh_commands();
@@ -280,7 +283,7 @@ static void complete_command(struct cands_s *c, const char *prefix)
 
   for (i = lo; i < g_ncmds && strncmp(g_cmds[i], prefix, pl) == 0; i++)
     {
-      cands_add(c, prefix, g_cmds[i], ' ');
+      cands_add(c, prefix, g_cmds[i], ' ', NULL);
     }
 }
 
@@ -335,7 +338,7 @@ static void complete_path(struct cands_s *c, const char *word)
             }
         }
 
-      cands_add(c, base, e->d_name, suffix);
+      cands_add(c, base, e->d_name, suffix, NULL);
     }
 
   closedir(d);
@@ -347,7 +350,7 @@ struct spec_ctx_s
   const char *word;
 };
 
-static void spec_cand(void *ctx, const char *name)
+static void spec_cand(void *ctx, const char *name, const char *desc)
 {
   struct spec_ctx_s *sc = ctx;
   char fbuf[VS_PATH_MAX];
@@ -355,13 +358,14 @@ static void spec_cand(void *ctx, const char *name)
   bool dir = name[0] != '-' && name[0] != '$' &&
              stat(vs_plat_fspath(name, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode);
 
-  cands_add(sc->c, sc->word, name, dir ? '/' : ' ');
+  cands_add(sc->c, sc->word, name, dir ? '/' : ' ', desc);
 }
 
 int vs_complete(const char *line, int len, char *ins, int inslen,
-                vs_comp_list_f list, void *ctx)
+                vs_comp_cand_f list, void *ctx)
 {
   struct cands_s c;
+  size_t have;
   char word[VS_PATH_MAX];
   const char *w = line + len;
   const char *prev;
@@ -437,7 +441,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
           if (v->value != NULL || v->arr != NULL)
             {
               snprintf(buf, sizeof(buf), brace ? "${%s}" : "$%s", v->name);
-              cands_add(&c, word, buf, brace ? '\0' : ' ');
+              cands_add(&c, word, buf, brace ? '\0' : ' ', NULL);
             }
         }
 
@@ -474,7 +478,9 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
               memcpy(cmd, cs, cl);
               cmd[cl] = '\0';
-              if (vs_comp_from_spec(cmd, line, len, word, spec_cand, &sc) && c.n > 0)
+              int r = vs_comp_from_spec(cmd, line, len, word, spec_cand, &sc);
+
+              if ((r & VS_SPEC_FOUND) != 0 && (c.n > 0 || (r & VS_SPEC_EXCLUSIVE) != 0))
                 {
                   whole_word = true;
                 }
@@ -497,6 +503,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
             {
               free(c.e[i].name);
               free(c.e[i].full);
+              free(c.e[i].desc);
             }
           else
             {
@@ -507,12 +514,16 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
       c.n = n = u + 1;
     }
 
+  {
+    const char *base = strrchr(word, '/');
+
+    have = strlen(base != NULL && !is_cmd && !whole_word ? base + 1 : word);
+  }
+
   if (n == 1)
     {
       /* full[0] still has the whole name; insert the part after the word */
 
-      const char *base = strrchr(word, '/');
-      size_t have = strlen(base != NULL && !is_cmd && !whole_word ? base + 1 : word);
       const char *full = c.e[0].full;
 
       if (strlen(full) >= have && have <= strlen(full))
@@ -524,8 +535,6 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
     {
       /* Longest common prefix of the (unescaped) names */
 
-      const char *base = strrchr(word, '/');
-      size_t have = strlen(base != NULL && !is_cmd && !whole_word ? base + 1 : word);
       size_t common = strlen(c.e[0].name);
 
       for (i = 1; i < n; i++)
@@ -560,7 +569,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
       for (i = 0; i < n; i++)
         {
-          list(ctx, c.e[i].name);
+          list(ctx, c.e[i].name, strlen(c.e[i].full) >= have ? c.e[i].full + have : "", c.e[i].desc);
         }
     }
 

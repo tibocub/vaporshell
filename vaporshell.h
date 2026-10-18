@@ -143,6 +143,8 @@ struct complete_spec_s
   char *opts;
 };
 
+struct fspec_s;
+
 struct hash_s
 {
   struct hash_s *next;
@@ -457,6 +459,7 @@ struct shell_s
   struct alias_s *aliases;
   struct disabled_s *disabled_builtins;   /* enable -n */
   struct complete_spec_s *complete_specs; /* complete's registry */
+  struct fspec_s *fspecs;                 /* fish-style specs (compfish.c); not saved by subshells */
   struct hash_s *hash;
   int getopts_pos;            /* getopts: index inside a clustered option arg */
   char getopts_last[24];      /* OPTIND as getopts last stored it */
