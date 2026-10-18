@@ -36,11 +36,8 @@ bool vs_rc_source(const char *path)
 
   run_file(path);
   g_sh.unwind = UW_NONE;
-  g_sh.last_status = 0;
   return true;
 }
-
-#define source(path) vs_rc_source(path)
 
 static char *in_home(const char *name)
 {
@@ -61,7 +58,7 @@ static char *in_home(const char *name)
   return path;
 }
 
-void vs_rc_load(bool login, bool norc, const char *rcfile)
+static void load(bool login, bool norc, const char *rcfile)
 {
   char *path;
 
@@ -70,7 +67,7 @@ void vs_rc_load(bool login, bool norc, const char *rcfile)
       path = in_home(".vsh_profile");
       if (path != NULL)
         {
-          source(path);
+          vs_rc_source(path);
           free(path);
         }
     }
@@ -82,21 +79,27 @@ void vs_rc_load(bool login, bool norc, const char *rcfile)
 
   if (rcfile != NULL)
     {
-      source(rcfile);
+      vs_rc_source(rcfile);
       return;
     }
 
-  source(SYSTEM_RC);
+  vs_rc_source(SYSTEM_RC);
   if (var_get("VS_RC") != NULL && *var_get("VS_RC") != '\0')
     {
-      source(var_get("VS_RC"));
+      vs_rc_source(var_get("VS_RC"));
       return;
     }
 
   path = in_home(".vaporshellrc");
   if (path != NULL)
     {
-      source(path);
+      vs_rc_source(path);
       free(path);
     }
+}
+
+void vs_rc_load(bool login, bool norc, const char *rcfile)
+{
+  load(login, norc, rcfile);
+  g_sh.last_status = 0;                /* the first prompt starts clean whatever the files ended with */
 }

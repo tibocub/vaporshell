@@ -23,6 +23,7 @@
 #include "exec.h"
 #include "expand.h"
 #include "mode.h"
+#include "platform.h"
 #include "complete.h"
 #include "rcfile.h"
 #include "compfish.h"
@@ -120,51 +121,15 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
                                 : vs_xstrdup("");
   const char *leaf = slash != NULL ? slash + 1 : c->pfx;
   size_t leaflen = strlen(leaf);
-  const char *norm;            /* dirpart with a leading "./" (however many) peeled off */
-  char *open_path;
+  char fbuf[VS_PATH_MAX];
   DIR *d;
   struct dirent *de;
 
-  /* NuttX's opendir() (and even its own `ls`) rejects "." and "./" wherever
-   * they appear in a path, absolute or not; resolve to a plain absolute
-   * path with any leading "./" removed to open, while still printing
-   * entries with the original, unmodified 'dirpart' prefix bash would.
+  /* NuttX's opendir() rejects "." and "./" in a path: the platform gives one it
+   * accepts, while entries are still printed with the original 'dirpart'.
    */
 
-  norm = dirpart;
-  while (norm[0] == '.' && norm[1] == '/')
-    {
-      norm += 2;
-    }
-
-  if (norm[0] == '/')
-    {
-      open_path = vs_xstrdup(norm);
-    }
-  else
-    {
-      char cwd[1024];
-
-      if (getcwd(cwd, sizeof(cwd)) != NULL)
-        {
-          if (norm[0] == '\0')
-            {
-              open_path = vs_xstrdup(cwd);
-            }
-          else
-            {
-              open_path = vs_xmalloc(strlen(cwd) + 1 + strlen(norm) + 1);
-              sprintf(open_path, "%s/%s", cwd, norm);
-            }
-        }
-      else
-        {
-          open_path = vs_xstrdup(dirpart);
-        }
-    }
-
-  d = opendir(open_path);
-  free(open_path);
+  d = opendir(vs_plat_fspath(dirpart[0] != '\0' ? dirpart : ".", fbuf, sizeof(fbuf)));
   if (d == NULL)
     {
       free(dirpart);
@@ -183,7 +148,7 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
         }
 
       snprintf(full, sizeof(full), "%s%s", dirpart, de->d_name);
-      if (dirs_only && (stat(full, &st) != 0 || !S_ISDIR(st.st_mode)))
+      if (dirs_only && (stat(vs_plat_fspath(full, fbuf, sizeof(fbuf)), &st) != 0 || !S_ISDIR(st.st_mode)))
         {
           continue;
         }
@@ -214,11 +179,23 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
  * and functions, since a plain command word can resolve to any of them.
  */
 
+struct emit_s
+{
+  struct cg_s *c;
+  const char *pre;
+  const char *suf;
+};
+
+static void emit_name(const char *name, void *arg)
+{
+  struct emit_s *em = arg;
+
+  emit(em->c, name, em->pre, em->suf);
+}
+
 static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
 {
-  const char *path = var_get("PATH");
-  char *copy;
-  char *dir;
+  struct emit_s em = { c, pre, suf };
   const struct builtin_s *b;
   struct func_s *f;
 
@@ -235,35 +212,7 @@ static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
       emit(c, f->name, pre, suf);
     }
 
-  if (path == NULL || path[0] == '\0')
-    {
-      return;
-    }
-
-  copy = vs_xstrdup(path);
-  dir = strtok(copy, ":");
-  while (dir != NULL)
-    {
-      DIR *d = opendir(dir[0] != '\0' ? dir : ".");
-      struct dirent *de;
-
-      if (d != NULL)
-        {
-          while ((de = readdir(d)) != NULL)
-            {
-              if (de->d_name[0] != '.')
-                {
-                  emit(c, de->d_name, pre, suf);
-                }
-            }
-
-          closedir(d);
-        }
-
-      dir = strtok(NULL, ":");
-    }
-
-  free(copy);
+  vs_each_path_command(emit_name, &em);
 }
 
 static void gen_action(struct cg_s *c, const char *action, const char *pre, const char *suf)
