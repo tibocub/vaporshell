@@ -26,6 +26,9 @@
 #include "complete.h"
 #include "rcfile.h"
 #include "compfish.h"
+#ifndef VAPORSHELL_POSIX                /* the options of the tbx commands: there are none on a host */
+#  include "comp_defaults.h"
+#endif
 
 static const char *const KEYWORDS[] =
 {
@@ -856,6 +859,40 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
 
   if (spec == NULL)
     {
+      /* A word that starts with '-' on a command whose options are known
+       * (comp_defaults.h): files are still offered after anything else.
+       */
+
+#ifndef VAPORSHELL_POSIX
+      if (found == 0 && word[0] == '-')
+        {
+          for (i = 0; i < (int)(sizeof(g_comp_defaults) / sizeof(g_comp_defaults[0])); i++)
+            {
+              if (strcmp(g_comp_defaults[i].cmd, cmd) == 0)
+                {
+                  const char *o = g_comp_defaults[i].opts;
+
+                  while (*o != '\0')
+                    {
+                      size_t n = strcspn(o, " ");
+                      char opt[40];
+
+                      if (n < sizeof(opt))
+                        {
+                          memcpy(opt, o, n);
+                          opt[n] = '\0';
+                          sink(ctx, opt, NULL);
+                        }
+
+                      o += n + (o[n] == ' ');
+                    }
+
+                  return VS_SPEC_FOUND;
+                }
+            }
+        }
+#endif
+
       return found;
     }
 
