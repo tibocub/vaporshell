@@ -34,8 +34,8 @@ extern const char *const g_tbx_commands[];      /* dispatch.c */
 struct ent_s
 {
   char *name;                   /* what gets listed */
-  char *full;                   /* what the word becomes (name + '/' or ' ') */
   char *desc;                   /* one line about it, or NULL */
+  char suffix;                  /* ' ' or '/' after the inserted name, or 0 */
 };
 
 struct cands_s
@@ -44,6 +44,7 @@ struct cands_s
   struct ent_s *e;
   int cap;
   int n;
+  bool oom;                     /* memory ran out: the list is not to be trusted */
 };
 
 static void cands_free(struct cands_s *c)
@@ -53,7 +54,6 @@ static void cands_free(struct cands_s *c)
   for (i = 0; i < c->n; i++)
     {
       free(c->e[i].name);
-      free(c->e[i].full);
       free(c->e[i].desc);
     }
 
@@ -96,52 +96,81 @@ static bool matches(int mode, const char *name, const char *typed)
 static void cands_add(struct cands_s *c, const char *prefix, const char *name,
                       char suffix, const char *desc)
 {
-  size_t len = strlen(name);
+  struct ent_s *e;
 
-  if (!matches(c->mode, name, prefix))
+  if (c->oom || !matches(c->mode, name, prefix))
     {
       return;
     }
 
   if (c->n == c->cap)
     {
+      /* A long list must not take the shell down with it: plain realloc, not vs_xrealloc. */
+
+      e = realloc(c->e, (size_t)(c->cap > 0 ? c->cap * 2 : 32) * sizeof(c->e[0]));
+      if (e == NULL)
+        {
+          c->oom = true;
+          return;
+        }
+
+      c->e = e;
       c->cap = c->cap > 0 ? c->cap * 2 : 32;
-      c->e = vs_xrealloc(c->e, (size_t)c->cap * sizeof(c->e[0]));
     }
 
-  c->e[c->n].name = strdup(name);
-  c->e[c->n].desc = desc != NULL ? strdup(desc) : NULL;
-  c->e[c->n].full = malloc(len * 2 + 2);
-  if (c->e[c->n].name == NULL || c->e[c->n].full == NULL)
+  e = &c->e[c->n];
+  e->name = strdup(name);
+  e->desc = desc != NULL ? strdup(desc) : NULL;
+  e->suffix = suffix;
+  if (e->name == NULL || (desc != NULL && e->desc == NULL))
     {
-      free(c->e[c->n].name);
-      free(c->e[c->n].full);
+      free(e->name);
+      free(e->desc);
+      c->oom = true;
       return;
     }
 
-  {
-    char *d = c->e[c->n].full;
-    const char *s;
-
-    for (s = name; *s != '\0'; s++)
-      {
-        if (*s == ' ')
-          {
-            *d++ = '\\';
-          }
-
-        *d++ = *s;
-      }
-
-    if (suffix != '\0')
-      {
-        *d++ = suffix;
-      }
-
-    *d = '\0';
-  }
-
   c->n++;
+}
+
+/* The text that completes a word with `name`: spaces escaped, the suffix after
+ * it, and the first `skip` bytes (what was already typed) left off. malloc()'d,
+ * NULL if memory ran out.
+ */
+
+char *vs_comp_tail(const char *name, char suffix, size_t skip)
+{
+  char *full = malloc(strlen(name) * 2 + 2);
+  char *d = full;
+
+  if (full == NULL)
+    {
+      return NULL;
+    }
+
+  for (; *name != '\0'; name++)
+    {
+      if (*name == ' ')
+        {
+          *d++ = '\\';
+        }
+
+      *d++ = *name;
+    }
+
+  if (suffix != '\0')
+    {
+      *d++ = suffix;
+    }
+
+  *d = '\0';
+  if (skip > (size_t)(d - full))
+    {
+      skip = (size_t)(d - full);
+    }
+
+  memmove(full, full + skip, (size_t)(d - full) - skip + 1);
+  return full;
 }
 
 static int cmp_names(const void *a, const void *b)
@@ -158,12 +187,18 @@ static int cmp_names(const void *a, const void *b)
  */
 
 static char *g_sig;
-static char **g_cmds;
+static char *g_pool;            /* every name, one after another, each ending in '\0' */
+static size_t g_poolcap;
+static size_t g_poollen;
+static unsigned *g_off;         /* where each name starts in g_pool, sorted by name */
 static int g_ncmds;
+static int g_offcap;
 
-static int cmp_str(const void *a, const void *b)
+#define CMD(i) (g_pool + g_off[i])
+
+static int cmp_off(const void *a, const void *b)
 {
-  return strcmp(*(char *const *)a, *(char *const *)b);
+  return strcmp(g_pool + *(const unsigned *)a, g_pool + *(const unsigned *)b);
 }
 
 /* Call fn(dir) for /bin and each directory of $PATH. */
@@ -223,15 +258,40 @@ static void scan_dir(const char *dir, void *arg)
 
   while ((e = readdir(d)) != NULL)
     {
-      if (e->d_name[0] != '.')
+      size_t n = strlen(e->d_name) + 1;
+
+      if (e->d_name[0] == '.')
         {
-          if (g_ncmds % 256 == 0)
+          continue;
+        }
+
+      if (g_poollen + n > g_poolcap || g_ncmds == g_offcap)
+        {
+          size_t pcap = g_poolcap > 0 ? g_poolcap * 2 : 1024;
+          int ocap = g_offcap > 0 ? g_offcap * 2 : 64;
+          char *p;
+          unsigned *o;
+
+          while (pcap < g_poollen + n)
             {
-              g_cmds = vs_xrealloc(g_cmds, (size_t)(g_ncmds + 256) * sizeof(char *));
+              pcap *= 2;
             }
 
-          g_cmds[g_ncmds++] = vs_xstrdup(e->d_name);
+          p = realloc(g_pool, pcap);                    /* out of memory: keep what we have */
+          g_pool = p != NULL ? p : g_pool;
+          g_poolcap = p != NULL ? pcap : g_poolcap;
+          o = realloc(g_off, (size_t)ocap * sizeof(unsigned));
+          g_off = o != NULL ? o : g_off;
+          g_offcap = o != NULL ? ocap : g_offcap;
+          if (g_poollen + n > g_poolcap || g_ncmds == g_offcap)
+            {
+              break;
+            }
         }
+
+      memcpy(g_pool + g_poollen, e->d_name, n);
+      g_off[g_ncmds++] = (unsigned)g_poollen;
+      g_poollen += n;
     }
 
   closedir(d);
@@ -251,29 +311,61 @@ static void refresh_commands(void)
       return;
     }
 
-  for (i = 0; i < g_ncmds; i++)
-    {
-      free(g_cmds[i]);
-    }
-
   g_ncmds = 0;
+  g_poollen = 0;
   free(g_sig);
   g_sig = sig.s != NULL ? sb_take(&sig) : vs_xstrdup("");
   each_path_dir(scan_dir, NULL);
-  qsort(g_cmds, (size_t)g_ncmds, sizeof(char *), cmp_str);
+  qsort(g_off, (size_t)g_ncmds, sizeof(unsigned), cmp_off);
   for (i = 1, u = 0; i < g_ncmds; i++)          /* the same name in several directories */
     {
-      if (strcmp(g_cmds[i], g_cmds[u]) == 0)
+      if (strcmp(CMD(i), CMD(u)) != 0)
         {
-          free(g_cmds[i]);
-        }
-      else
-        {
-          g_cmds[++u] = g_cmds[i];
+          g_off[++u] = g_off[i];
         }
     }
 
   g_ncmds = g_ncmds > 0 ? u + 1 : 0;
+
+  /* Keep only what is used: the names that survived, in order, in a block of
+   * exactly their size (the scan left duplicates and spare room behind).
+   */
+
+  {
+    size_t total = 0;
+    char *pool;
+    unsigned *off;
+    size_t at = 0;
+
+    for (i = 0; i < g_ncmds; i++)
+      {
+        total += strlen(CMD(i)) + 1;
+      }
+
+    pool = malloc(total > 0 ? total : 1);
+    off = realloc(g_off, (size_t)(g_ncmds > 0 ? g_ncmds : 1) * sizeof(unsigned));
+    g_off = off != NULL ? off : g_off;
+    if (pool != NULL && off != NULL)
+      {
+        for (i = 0; i < g_ncmds; i++)
+          {
+            size_t n = strlen(CMD(i)) + 1;
+
+            memcpy(pool + at, CMD(i), n);
+            g_off[i] = (unsigned)at;
+            at += n;
+          }
+
+        free(g_pool);
+        g_pool = pool;
+        g_poolcap = g_poollen = total;
+        g_offcap = g_ncmds;
+      }
+    else
+      {
+        free(pool);
+      }
+  }
 }
 
 /* Call fn for every name in the (refreshed) $PATH table, sorted, once each. */
@@ -285,7 +377,7 @@ void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg)
   refresh_commands();
   for (i = 0; i < g_ncmds; i++)
     {
-      fn(g_cmds[i], arg);
+      fn(CMD(i), arg);
     }
 }
 
@@ -325,7 +417,7 @@ static void complete_command(struct cands_s *c, const char *prefix)
     {
       int mid = (lo + hi) / 2;
 
-      if (strcmp(g_cmds[mid], prefix) < 0)
+      if (strcmp(CMD(mid), prefix) < 0)
         {
           lo = mid + 1;
         }
@@ -335,9 +427,9 @@ static void complete_command(struct cands_s *c, const char *prefix)
         }
     }
 
-  for (i = lo; i < g_ncmds && strncmp(g_cmds[i], prefix, pl) == 0; i++)
+  for (i = lo; i < g_ncmds && strncmp(CMD(i), prefix, pl) == 0; i++)
     {
-      cands_add(c, prefix, g_cmds[i], ' ', NULL);
+      cands_add(c, prefix, CMD(i), ' ', NULL);
     }
 }
 
@@ -543,7 +635,7 @@ static void generate(struct cands_s *c, struct gen_s *g)
  */
 
 int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
-                vs_comp_cand_f list, void *ctx)
+                size_t *skip, vs_comp_cand_f list, void *ctx)
 {
   struct cands_s c;
   struct gen_s g;
@@ -559,6 +651,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
   memset(&c, 0, sizeof(c));
   ins[0] = '\0';
   *del = 0;
+  *skip = 0;
 
   /* The word under the cursor: back to the last unescaped space. */
 
@@ -628,6 +721,12 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
       c.mode = 2;
     }
 
+  if (c.oom)                               /* too many for the memory there is: offer none */
+    {
+      cands_free(&c);
+      return 0;
+    }
+
   n = c.n;
   if (n > 1)
     {
@@ -637,7 +736,6 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
           if (strcmp(c.e[i].name, c.e[u].name) == 0)
             {
               free(c.e[i].name);
-              free(c.e[i].full);
               free(c.e[i].desc);
             }
           else
@@ -681,13 +779,12 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
 
   if (n == 1)
     {
-      /* full[0] still has the whole name; insert the part after the word */
+      char *tail = vs_comp_tail(c.e[0].name, c.e[0].suffix, have);
 
-      const char *full = c.e[0].full;
-
-      if (strlen(full) >= have)
+      if (tail != NULL)
         {
-          snprintf(ins, (size_t)inslen, "%s", full + have);
+          snprintf(ins, (size_t)inslen, "%s", tail);
+          free(tail);
         }
     }
   else if (n > 1)
@@ -726,9 +823,11 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
           ins[o] = '\0';
         }
 
-      for (i = 0; i < n; i++)
+      *skip = have;
+      for (i = 0; i < n; i++)               /* the callback keeps the strings */
         {
-          list(ctx, c.e[i].name, strlen(c.e[i].full) >= have ? c.e[i].full + have : "", c.e[i].desc);
+          list(ctx, c.e[i].name, c.e[i].desc, c.e[i].suffix);
+          c.e[i].name = c.e[i].desc = NULL;
         }
     }
 
@@ -766,7 +865,7 @@ bool vs_is_command(const char *name)
   while (lo < hi)
     {
       int mid = (lo + hi) / 2;
-      int r = strcmp(g_cmds[mid], name);
+      int r = strcmp(CMD(mid), name);
 
       if (r == 0)
         {

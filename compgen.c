@@ -817,27 +817,36 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
         {
           for (i = 0; i < (int)(sizeof(g_comp_defaults) / sizeof(g_comp_defaults[0])); i++)
             {
-              if (strcmp(g_comp_defaults[i].cmd, cmd) == 0)
+              const char *o;
+              char opt[40];
+
+              if (strcmp(g_comp_defaults[i].cmd, cmd) != 0)
                 {
-                  const char *o = g_comp_defaults[i].opts;
-
-                  while (*o != '\0')
-                    {
-                      size_t n = strcspn(o, " ");
-                      char opt[40];
-
-                      if (n < sizeof(opt))
-                        {
-                          memcpy(opt, o, n);
-                          opt[n] = '\0';
-                          sink(ctx, opt, NULL);
-                        }
-
-                      o += n + (o[n] == ' ');
-                    }
-
-                  return VS_SPEC_FOUND;
+                  continue;
                 }
+
+              for (o = g_comp_defaults[i].shorts; *o != '\0'; o++)
+                {
+                  opt[0] = '-';
+                  opt[1] = *o;
+                  opt[2] = '\0';
+                  sink(ctx, opt, NULL);
+                }
+
+              for (o = g_comp_defaults[i].longs; *o != '\0'; o += strcspn(o, " ") + (o[strcspn(o, " ")] == ' '))
+                {
+                  size_t n = strcspn(o, " ");
+
+                  if (n + 3 < sizeof(opt))
+                    {
+                      opt[0] = opt[1] = '-';
+                      memcpy(opt + 2, o, n);
+                      opt[n + 2] = '\0';
+                      sink(ctx, opt, NULL);
+                    }
+                }
+
+              return VS_SPEC_FOUND;
             }
         }
 #endif
