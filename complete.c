@@ -442,7 +442,6 @@ static void complete_path(struct cands_s *c, const char *word)
   char child[VS_PATH_MAX];
   DIR *d;
   struct dirent *e;
-  struct stat st;
   size_t dlen = slash != NULL ? (size_t)(slash - word) + 1 : 0;
 
   if (dlen >= sizeof(dir))
@@ -495,8 +494,7 @@ static void complete_path(struct cands_s *c, const char *word)
         {
           memcpy(child, dir, dlen);
           strcpy(child + dlen, e->d_name);
-          if (stat(dlen > 0 ? vs_plat_fspath(child, fbuf, sizeof(fbuf))
-                            : e->d_name, &st) == 0 && S_ISDIR(st.st_mode))
+          if (vs_dirent_isdir(e, child))
             {
               suffix = '/';
             }
@@ -517,12 +515,26 @@ struct spec_ctx_s
 static void spec_cand(void *ctx, const char *name, const char *desc)
 {
   struct spec_ctx_s *sc = ctx;
-  char fbuf[VS_PATH_MAX];
-  struct stat st;
-  bool dir = name[0] != '-' && name[0] != '$' &&
-             stat(vs_plat_fspath(name, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode);
+  size_t n = strlen(name);
 
-  cands_add(sc->c, sc->word, name, dir ? '/' : ' ', desc);
+  /* compgen's file generators end a directory's name in '/' (it knows from the
+   * directory entry, with no stat): that becomes the suffix.
+   */
+
+  if (n > 1 && name[n - 1] == '/')
+    {
+      char *bare = strndup(name, n - 1);
+
+      if (bare != NULL)
+        {
+          cands_add(sc->c, sc->word, bare, '/', desc);
+          free(bare);
+        }
+
+      return;
+    }
+
+  cands_add(sc->c, sc->word, name, ' ', desc);
 }
 
 struct word_ctx_s
