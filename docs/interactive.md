@@ -37,9 +37,9 @@ the status tables below in the same commit.
 |---|---|
 | Interpreter (bash + POSIX modes) | essentially complete, see the coverage docs |
 | Prompt | escapes, promptvars, `PROMPT_COMMAND`, `PROMPT_DIRTRIM` (Tier 1) |
-| Line editing | own editor (`ledit.c`) on Linux; on vaporOS under `CONFIG_VAPOROS_VAPORSHELL_LEDIT` (default y), with NuttX readline as the fallback |
+| Line editing | own editor (`ledit.c`) on Linux and vaporOS; verified on the simulator and on the RP2040 over USB |
 | History | in-memory + `HISTFILE` (default `~/.vsh_history`); `history` builtin; no `fc`, no `!!` |
-| Completion | `complete.c`: command names + paths, rescans `$PATH` every Tab, 64 candidates max (to be replaced, see "Completion"); `compgen` works in scripts; `complete`/`compopt` registry stores specs but nothing consults them interactively; `bind` is inert |
+| Completion | `complete.c`: command names + paths, rescans `$PATH` every Tab, no candidate cap (to be replaced by the cached table, see "Completion"); `compgen` works in scripts; `complete`/`compopt` registry stores specs but nothing consults them interactively; `bind` is accepted and ignored |
 | Startup files | none read |
 | Job control | `jobs`/`fg`/`bg`/`wait`/`disown`; no Ctrl-Z (NuttX has no process groups) |
 
@@ -60,12 +60,12 @@ the status tables below in the same commit.
 | Arrows, Home/End/Delete, Ctrl/Alt-arrows | ✓ | |
 | Kill ring and undo | ◐ undo ✓ (24 steps); one kill buffer, no Alt-y ring | |
 | Multi-line buffer (continuation lines, long lines wrapping) | ✓ wrapping and `Alt-Enter` newlines; Up/Down do not move between buffer lines yet | redraw handles wrap |
-| History: in-memory, `HISTSIZE`/`HISTFILE`/`HISTCONTROL` | ✓ (`history.c`); `HISTFILESIZE` and `HISTIGNORE` ✗; file is appended on exit, never truncated | |
+| History: in-memory, `HISTSIZE`/`HISTFILE`/`HISTCONTROL` | ✓ (`history.c`); `HISTFILESIZE` and `HISTIGNORE` ✗; file is private (0600), appended on exit and rewritten to `HISTSIZE` lines when it grew past it | |
 | `history` and `fc` builtins | ◐ | `history [n] -c -d -a -w -r -s` ✓; `fc` ✗ |
 | Up/Down and prefix-search (PageUp/Down, Alt-p/n) | ✓ | |
 | Ctrl-R incremental search | ✓ (Ctrl-S inside a search only; a non-search key ends it and is not re-run) | |
 | `!!`, `!$`, `!n`, `^a^b^` history expansion | ✗ | interactive only; `set +H` |
-| Ctrl-C at the prompt; Ctrl-C reaches the foreground child | ◐ prompt ✓; child ✗ (editor is out of raw mode while it runs, so the tty sends SIGINT as usual on Linux) | needs care without process groups |
+| Ctrl-C at the prompt; Ctrl-C reaches the foreground child | ◐ prompt ✓ (at a `>` continuation prompt it drops the whole command, like bash); child ✗ (editor is out of raw mode while it runs, so the tty sends SIGINT as usual on Linux) | needs care without process groups |
 | `COLUMNS`/`LINES`, SIGWINCH | ◐ | width is re-read on every redraw, so a resize heals at the next key; `$COLUMNS` fallback; no `$LINES` |
 | Bracketed paste | ✓ (on by default on Linux; `VS_BRACKETED_PASTE=1` on vaporOS, off until verified there) | |
 
@@ -216,7 +216,7 @@ completer rescans `$PATH` on every Tab; replacing it is the next big item).
 - The editor is tested through a pseudo-terminal: `tests/pty/run.py` (`make -f
   posix.mk check-pty`, also part of `check-all`) drives the real binary with
   keystrokes and asserts on the screen, rendered through a small VT model
-  (`tests/pty/ptytest.py`). 29 tests today. The NuttX simulator is covered by
+  (`tests/pty/ptytest.py`). 33 tests today. The NuttX simulator is covered by
   `tests/nuttx-sim-smoke.py`, which runs through the same editor (it
   understands the editor's redraws); the pty tests do not run against the
   simulator or the RP2040 yet.

@@ -2629,10 +2629,15 @@ static int run_loop(struct parser_s *p, bool recover, int status)
 
       if (r == PARSE_ERR)
         {
-          vs_err("%s", p->err);
+          if (!g_sh.input_aborted)
+            {
+              vs_err("%s", p->err);
+            }
+
           g_sh.syntax_error = true;
-          status = 2;
-          g_sh.last_status = 2;
+          status = g_sh.input_aborted ? 130 : 2;
+          g_sh.last_status = status;
+          g_sh.input_aborted = false;
           arena_release(arena);
           if (!recover)
             {

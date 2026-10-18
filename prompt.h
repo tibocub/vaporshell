@@ -26,10 +26,4 @@ char *vs_prompt_expand(const char *ps);
 
 void vs_prompt_strip(char *s);
 
-/* Display width of the prompt's last line; *lines gets the number of line
- * breaks before it.
- */
-
-size_t vs_prompt_width(const char *s, int *lines);
-
 #endif

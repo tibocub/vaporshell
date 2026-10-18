@@ -4,5 +4,5 @@
  * includes this first; on a real NuttX build the genuine header is
  * found instead, since posix/ is never on that build's include path.
  * Deliberately empty: nothing in vaporshell reads a CONFIG_* value
- * outside the NuttX-only readline calls that #if-guard themselves.
+ * outside the NuttX-only code that #if-guards itself.
  */

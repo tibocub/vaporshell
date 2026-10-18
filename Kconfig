@@ -17,14 +17,6 @@ config VAPOROS_VAPORSHELL_PRIORITY
 	int "priority"
 	default 100
 
-config VAPOROS_VAPORSHELL_LEDIT
-	bool "vaporshell's own line editor"
-	default y
-	---help---
-		Line editing, history and tab completion implemented by vaporshell
-		itself (ledit.c), the same code as on Linux. When disabled the
-		prompt goes through NuttX's apps/system/readline instead.
-
 config VAPOROS_VAPORSHELL_STACKSIZE
 	int "stack size"
 	default DEFAULT_TASK_STACKSIZE
