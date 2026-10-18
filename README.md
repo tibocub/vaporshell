@@ -61,8 +61,8 @@ vaporshell/
   complete.c          tab completion candidates
   platform.h          what differs between NuttX and a host OS
   platform_nuttx.c    NuttX: no fork, posix_spawnp, tbx fallback (dispatch.c)
-  posix/              standalone build only: platform.c (fork, PATH, spawn),
-                      readline.c, and stand-in <nuttx/...> headers
+  posix/              standalone build only: platform.c (fork, PATH, spawn)
+                      and stand-in <nuttx/...> headers
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
   docs/interactive.md the interactive-shell plan + status (prompt, editor, history, completion, rc files)

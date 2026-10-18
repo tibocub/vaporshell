@@ -5,7 +5,9 @@ Each test starts a fresh shell with prompt "$ ", types keys and checks the
 screen (what a terminal would display) or the output of what was run.
 """
 
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -20,6 +22,7 @@ ENTER = "\r"
 
 VS = None
 TMP = tempfile.mkdtemp(prefix="vs-pty-")
+atexit.register(shutil.rmtree, TMP, True)
 results = []
 
 
@@ -350,6 +353,54 @@ def _():
     s = shell(args=["--rcfile", rc])
     s.type("echo alive"); s.send(ENTER)
     assert "alive" in s.screen(), s.screen()
+    s.close()
+
+
+@test("Tab lists every candidate, not just the first 64")
+def _():
+    d = os.path.join(TMP, "many"); os.makedirs(d, exist_ok=True)
+    for i in range(100):
+        open(os.path.join(d, "f%03d" % i), "w").close()
+    open(os.path.join(d, "fz"), "w").close()
+    s = shell(cwd=d, rows=40)
+    s.type("echo f"); s.send("\t")
+    names = " ".join(s.screen()[1:-1]).split()
+    assert len(names) == 101 and "f000" in names and "fz" in names, names
+    assert s.screen()[-1] == "$ echo f", s.screen()[-1]
+    s.close()
+
+
+@test("Ctrl-C at a continuation prompt drops the command; Ctrl-D reports it")
+def _():
+    s = shell()
+    s.type("echo 'a"); s.send(ENTER); s.send(CTRL("C"))
+    s.type("echo ok"); s.send(ENTER)
+    expect(s, ["$ echo 'a", "> ^C", "$ echo ok", "ok", "$"])
+    s.type("echo 'b"); s.send(ENTER); s.send(CTRL("D"))
+    assert any("unexpected end of file" in l for l in s.screen()), s.screen()
+    s.close()
+
+
+@test("HISTFILE is private and trimmed to HISTSIZE")
+def _():
+    hf = os.path.join(TMP, "private")
+    if os.path.exists(hf):
+        os.unlink(hf)
+    for n in range(4):
+        s = shell(env={"HISTFILE": hf, "HISTSIZE": "2"})
+        s.type("echo %d" % n); s.send(ENTER); s.send(CTRL("D"), settle=False)
+        time.sleep(0.3); s.close()
+    assert oct(os.stat(hf).st_mode & 0o777) == "0o600", oct(os.stat(hf).st_mode)
+    assert len(open(hf).read().splitlines()) <= 3, open(hf).read()
+
+
+@test("HISTCONTROL=ignoreboth skips leading-space and repeated lines")
+def _():
+    s = shell(env={"HISTCONTROL": "ignoreboth"})
+    for line in ("echo a", "echo a", " echo hidden", "history"):
+        s.type(line); s.send(ENTER)
+    out = [l for l in s.screen() if l.startswith("    ")]
+    assert [l.split(None, 1)[1] for l in out] == ["echo a", "history"], out
     s.close()
 
 

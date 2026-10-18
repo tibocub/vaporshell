@@ -30,6 +30,7 @@ static int g_n;
 static int g_cap;
 static long g_base;             /* entries dropped from the front: numbering continues */
 static int g_saved;             /* g_hist[0..g_saved) are in HISTFILE already */
+static bool g_rewrite;          /* the file is longer than HISTSIZE: rewrite it on save */
 
 static long limit_var(const char *name, long dflt)
 {
@@ -93,6 +94,7 @@ void vs_hist_init(void)
   char *line = NULL;
   size_t cap = 0;
   ssize_t len;
+  long nread = 0;
 
   if (file == NULL && home != NULL && *home != '\0')
     {
@@ -119,12 +121,14 @@ void vs_hist_init(void)
       if (len > 0)
         {
           push(vs_xstrdup(line));
+          nread++;
         }
     }
 
   free(line);
   fclose(f);
   g_saved = g_n;
+  g_rewrite = nread > limit_var("HISTSIZE", HIST_DEFAULT_SIZE);
 }
 
 /* HISTCONTROL: ignorespace, ignoredups, ignoreboth, erasedups. */
@@ -187,7 +191,8 @@ const char *vs_hist_get(int i)
 
 static int write_entries(const char *file, int from, bool truncate)
 {
-  FILE *f = fopen(file, truncate ? "w" : "a");
+  int fd = open(file, O_WRONLY | O_CREAT | (truncate ? O_TRUNC : O_APPEND), 0600);
+  FILE *f = fd >= 0 ? fdopen(fd, "w") : NULL;       /* typed commands often hold secrets: owner only */
   int i;
 
   if (f == NULL)
@@ -208,9 +213,11 @@ void vs_hist_save(void)
 {
   const char *file = histfile();
 
-  if (file != NULL && *file != '\0' && write_entries(file, g_saved, false) == 0)
+  if (file != NULL && *file != '\0' &&
+      write_entries(file, g_rewrite ? 0 : g_saved, g_rewrite) == 0)
     {
       g_saved = g_n;
+      g_rewrite = false;
     }
 }
 
@@ -246,8 +253,9 @@ int bi_history(int argc, char **argv)
                 free(g_hist[i]);
               }
 
-            g_base += g_n;
+            g_base = 0;                  /* bash starts numbering again */
             g_n = g_saved = 0;
+            g_sh.hist_num = 0;
             return 0;
 
           case 'd':

@@ -112,7 +112,6 @@ struct ed_s
   int last;                     /* the previous command */
   bool bracketed;               /* terminal paste markers are on */
   bool eof;
-  bool fresh;                   /* the first draw (the cursor starts at column 0) */
 };
 
 static const char *text(const struct ed_s *e)
@@ -384,7 +383,6 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
     }
 
   e->cur_row = at.row;
-  e->fresh = false;
   if (o.s != NULL)
     {
       ssize_t w = write(ED_OUT, o.s, o.len);
@@ -624,7 +622,7 @@ static void hist_move(struct ed_s *e, int dir, bool prefix)
 
 /* ---- Incremental search ----------------------------------------------------- */
 
-static int read_key(struct ed_s *e, char *seq, int *len);
+static int read_key(char *seq, int *len);
 
 static int find_hist(const char *needle, int from, int dir, const char **hit)
 {
@@ -686,7 +684,7 @@ static bool search(struct ed_s *e)
         }
 
       sb_free(&pr);
-      if (read_key(e, seq, &len) <= 0)
+      if (read_key(seq, &len) <= 0)
         {
           break;
         }
@@ -893,13 +891,12 @@ static void complete(struct ed_s *e)
  * escape sequence. Returns 1, or <= 0 at end of input.
  */
 
-static int read_key(struct ed_s *e, char *seq, int *len)
+static int read_key(char *seq, int *len)
 {
   unsigned char c;
   int r;
   int n = 0;
 
-  (void)e;
   r = vs_plat_tty_read(&c, -1);
   if (r <= 0)
     {
@@ -1293,7 +1290,6 @@ char *vs_ledit_read(const char *prompt, bool continuation)
   sb_init(&e.kill);
   e.prompt = prompt;
   e.hi = vs_hist_count();
-  e.fresh = true;
   e.last = C_NONE;
 
   if (!vs_plat_tty_raw(true))
@@ -1320,7 +1316,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
 
       e.cols = cols > 0 ? cols : (cv != NULL && atoi(cv) > 0) ? atoi(cv) : 80;
       refresh(&e);
-      if (read_key(&e, seq, &len) <= 0)
+      if (read_key(seq, &len) <= 0)
         {
           e.eof = e.b.len == 0;
           break;
@@ -1338,7 +1334,8 @@ char *vs_ledit_read(const char *prompt, bool continuation)
           draw(&e, e.prompt, text(&e), e.b.len, e.b.len);
           put("^C\r\n");
           g_sh.last_status = 130;
-          result = vs_xstrdup("\n");
+          g_sh.input_aborted = continuation;
+          result = continuation ? NULL : vs_xstrdup("\n");   /* NULL: the parser drops the half-typed command */
           goto done;
         }
 
@@ -1351,6 +1348,11 @@ char *vs_ledit_read(const char *prompt, bool continuation)
     }
 
   /* Leave the line on screen, the cursor on the next row. */
+
+  if (e.eof && continuation)
+    {
+      put("\r\n");                       /* the parser's error goes on its own line */
+    }
 
   if (!e.eof)
     {

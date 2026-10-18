@@ -252,7 +252,7 @@ int bi_compgen(int argc, char **argv);                 /* compgen.c */
 int bi_complete(int argc, char **argv);                /* compgen.c: complete, compopt */
 int bi_compopt(int argc, char **argv);
 int bi_history(int argc, char **argv);                 /* history.c */
-int bi_bind(int argc, char **argv);                    /* bind.c: no-op -- no line editor here */
+int bi_bind(int argc, char **argv);                    /* bind.c: accepted, ignored */
 bool builtin_is_enabled(const char *name);             /* false: enable -n disabled it */
 
 bool is_valid_name(const char *s, size_t len);
@@ -382,6 +382,7 @@ struct shell_s
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */
   bool interactive;
+  bool input_aborted;     /* Ctrl-C at a continuation prompt: drop the half-typed command quietly */
   long hist_num;          /* \! in a prompt: commands in the history so far */
   long cmd_num;           /* \#: commands run by this shell */
   int last_status;        /* $? */

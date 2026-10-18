@@ -1,8 +1,6 @@
 /*
- * complete.c -- interactive tab completion for the NuttX readline front end.
- *
- * Registered with readline_completer() (a vaporOS patch to NuttX's
- * system/readline, see vaporOS/patches/nuttx-apps). At command position the
+ * complete.c -- tab completion candidates for the line editor (ledit.c). At
+ * command position the
  * word is completed against shell builtins, tbx applets and the executables
  * in /bin and $PATH; anywhere else it is completed as a file name, with a
  * trailing '/' on directories. Quoting is only minimally understood (a
@@ -29,12 +27,11 @@ static const char *const g_tbx_commands[] = { NULL };     /* no multicall table 
 extern const char *const g_tbx_commands[];      /* dispatch.c */
 #endif
 
-#define MAX_CANDS 64
-
 struct cands_s
 {
-  char *name[MAX_CANDS];        /* what gets listed */
-  char *full[MAX_CANDS];        /* what the word becomes (name + '/' or ' ') */
+  char **name;                  /* what gets listed */
+  char **full;                  /* what the word becomes (name + '/' or ' ') */
+  int cap;
   int n;
 };
 
@@ -48,7 +45,10 @@ static void cands_free(struct cands_s *c)
       free(c->full[i]);
     }
 
-  c->n = 0;
+  free(c->name);
+  free(c->full);
+  c->name = c->full = NULL;
+  c->n = c->cap = 0;
 }
 
 /* Add `name` (completing `prefix`) unless it is a duplicate or the table is
@@ -61,7 +61,7 @@ static void cands_add(struct cands_s *c, const char *prefix, const char *name,
   size_t len = strlen(name);
   int i;
 
-  if (strncmp(name, prefix, strlen(prefix)) != 0 || c->n >= MAX_CANDS)
+  if (strncmp(name, prefix, strlen(prefix)) != 0)
     {
       return;
     }
@@ -72,6 +72,13 @@ static void cands_add(struct cands_s *c, const char *prefix, const char *name,
         {
           return;
         }
+    }
+
+  if (c->n == c->cap)
+    {
+      c->cap = c->cap > 0 ? c->cap * 2 : 32;
+      c->name = vs_xrealloc(c->name, (size_t)c->cap * sizeof(char *));
+      c->full = vs_xrealloc(c->full, (size_t)c->cap * sizeof(char *));
     }
 
   c->name[c->n] = strdup(name);
@@ -124,7 +131,7 @@ static void add_dir_commands(struct cands_s *c, const char *dir,
       return;
     }
 
-  while ((e = readdir(d)) != NULL && c->n < MAX_CANDS)
+  while ((e = readdir(d)) != NULL)
     {
       if (e->d_name[0] != '.')
         {
@@ -153,7 +160,7 @@ static void complete_command(struct cands_s *c, const char *prefix)
 
   add_dir_commands(c, "/bin", prefix);
 
-  while (path != NULL && *path != '\0' && c->n < MAX_CANDS)
+  while (path != NULL && *path != '\0')
     {
       size_t len = strcspn(path, ":");
       char dir[VS_PATH_MAX];
@@ -199,7 +206,7 @@ static void complete_path(struct cands_s *c, const char *word)
       return;
     }
 
-  while ((e = readdir(d)) != NULL && c->n < MAX_CANDS)
+  while ((e = readdir(d)) != NULL)
     {
       char suffix = ' ';
 

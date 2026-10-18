@@ -19,14 +19,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef VAPORSHELL_POSIX
-#  define VS_LEDIT 1
-#elif defined(CONFIG_VAPOROS_VAPORSHELL_LEDIT)
-#  define VS_LEDIT 1
-#endif
-
-#include "system/readline.h"
-
 #include "vaporshell.h"
 #include "exec.h"
 #include "mode.h"
@@ -37,43 +29,33 @@
 #include "prompt.h"
 #include "rcfile.h"
 
-/* readline() never prints the prompt itself (confirmed against NuttX's
- * readline_fd.c): write it first, then tell readline what to redraw.
+/* The line editor when standard input is a terminal; else (a forced -i with
+ * a pipe) the prompt is written and a plain line read.
  */
 
 static char *read_prompted(const char *prompt, bool continuation)
 {
-#ifdef VS_LEDIT
+  char *plain;
+  ssize_t n;
+
   if (vs_ledit_usable())
     {
       return vs_ledit_read(prompt, continuation);
     }
-#endif
 
-  {
-    char *plain = vs_xstrdup(prompt);
-    char *line;
+  plain = vs_xstrdup(prompt);
+  vs_prompt_strip(plain);
 
-    vs_prompt_strip(plain);
+  /* Prompts go to stderr on a host, like other shells, so stdout stays clean. */
+
 #ifdef VAPORSHELL_POSIX
-    /* Prompts go to stderr, like other shells, so stdout stays clean. */
-
-    ssize_t n = write(STDERR_FILENO, plain, strlen(plain));
+  n = write(STDERR_FILENO, plain, strlen(plain));
 #else
-    ssize_t n = write(STDOUT_FILENO, plain, strlen(plain));
+  n = write(STDOUT_FILENO, plain, strlen(plain));
 #endif
-
-    (void)n;
-#if defined(CONFIG_READLINE_TABCOMPLETION) || defined(CONFIG_READLINE_EDIT)
-    readline_prompt(plain);
-#endif
-#ifdef CONFIG_READLINE_TABCOMPLETION
-    readline_completer(vs_complete);
-#endif
-    line = readline(plain);
-    free(plain);
-    return line;
-  }
+  (void)n;
+  free(plain);
+  return read_stream_line(stdin);
 }
 
 #ifdef VAPORSHELL_POSIX
