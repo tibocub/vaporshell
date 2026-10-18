@@ -581,6 +581,29 @@ def _():
     s.close()
 
 
+@test("looser matches: other case, then containing the word; they replace what was typed")
+def _():
+    d = os.path.join(TMP, "loose"); os.makedirs(os.path.join(d, "Documents"), exist_ok=True)
+    for n in ("my-report-final.txt", "alpha-test", "beta-test", "prog"):
+        open(os.path.join(d, n), "w").close()
+    os.chmod(os.path.join(d, "prog"), 0o755)
+    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s.type("cd doc"); s.send("\t")
+    expect(s, ["$ cd Documents/"])
+    s.send(CTRL("U")); s.type("cat port"); s.send("\t")
+    expect(s, ["$ cat my-report-final.txt"])
+    s.send(CTRL("U")); s.type("ls test"); s.send("\t")                 # two matches: a menu, line untouched
+    assert s.screen()[0] == "$ ls test" and s.screen()[1].split() == ["alpha-test", "beta-test"], s.screen()
+    s.send("\t"); assert s.screen()[0] == "$ ls alpha-test", s.screen()
+    s.send("\t"); assert s.screen()[0] == "$ ls beta-test", s.screen()
+    s.send("\x1b"); assert s.screen()[0] == "$ ls test", s.screen()      # Esc puts the typed word back
+    s.send(CTRL("U")); s.type("ECH"); s.send("\t")
+    expect(s, ["$ echo"])
+    s.send(CTRL("U")); s.type("./pr"); s.send("\t")                    # path in command position
+    expect(s, ["$ ./prog"])
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

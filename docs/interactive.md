@@ -93,7 +93,7 @@ the status tables below in the same commit.
 | Completion menu: grid with selection, Shift-Tab, descriptions | ✓ | opens under the line when Tab adds nothing; Tab/Shift-Tab/arrows move (column-major like bash), Enter takes the choice without running the line, Esc drops it, any other key closes it; scrolls ("rows a-b of n") when it does not fit; descriptions switch it to one column. Checked on the RP2040 |
 | Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | any command with a `complete` spec (bash flags, or fish flags `-c -s -l -o -d -a -n -f -x -r -e`); specs load lazily from `$VS_COMPLETION_PATH` (`<cmd>.vsh`, default `~/.config/vaporshell/completions:/etc/vaporshell/completions`) the first time the command is completed, and the shell's own commands have built-in defaults (`cd` → directories, `unset` → variables, `help` → builtins ...). The commands vaporOS runs through tbx (`ls`, `grep`, `sed`, `find` ... 52 of them) complete their options (`ls -<Tab>`): the option names are compiled in from `comp_defaults.h` (about 3 KB, NuttX build only), and `vaporOS-coreutils/completions/*.vsh` has the same with a description per option, for `$VS_COMPLETION_PATH`. Both are generated from toybox's own help text by `vaporOS-coreutils/scripts/gen-completions.py`. Anything useful only to some users (git, ...) is meant to be an optional `.vsh` file, not code in the binary. Fish-style specs (`compfish.c`): `-a` takes words (`word<TAB>text` gives a word its own description), not command substitutions; conditions are shell code run with `COMP_WORDS` set (slow lane: a function or condition is cut off after `$VS_COMPLETION_TIMEOUT` ms, default 300, checked between commands, so one long external program still blocks); no `-k`, `--wraps` |
 | Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ◐ | `$VAR`, `${VAR}`, `~` and `~/path` ✓; `~user`, jobs, CDPATH, hostnames ✗ |
-| Case-insensitive and substring/fuzzy fallback matching | ✗ | |
+| Case-insensitive and substring/fuzzy fallback matching | ✓ | when nothing starts with the word: names that start with it in another case, then names that contain it; they replace what was typed (the menu puts it back on Esc). Commands, files, directories and variables; not the candidates of a `complete` spec, which a spec filters itself. 0.2 ms worst case for a command |
 | Abbreviations (`abbr`) | ✗ | |
 | `..` / `...` / `cd -` / `autocd` | ✗ | |
 | Multi-line paste and Alt-Enter newline | ✗ | |
@@ -204,7 +204,7 @@ claims, `tests/bench/`:
 | Metric | Target |
 |---|---|
 | Interpreter only (before this work, Linux x86-64, -O2) | 239.5 KB text |
-| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB), then lazy specs, suggestions and highlighting: **278.6 KB** in all (+39 KB over the interpreter; the budget was +25 minimal, +20 for suggestions/highlighting/menu). Compile-time switches were considered and dropped (see Principles); later additions: tbx option table, spec time limit and `bind` brought it to 285.5 KB (+46 KB: past the 45 KB combined budget) |
+| + minimal editor, history, prompt escapes, rc files | ≤ +25 KB. Measured 2026-10-18: **+25.4 KB** (ledit 12.6, history 3.6, prompt 3.7, rcfile 0.9, complete 3.0 which was not built on Linux before) → 264.9 KB; the completion work above added 4 KB more (268.9 KB), then lazy specs, suggestions and highlighting: **278.6 KB** in all (+39 KB over the interpreter; the budget was +25 minimal, +20 for suggestions/highlighting/menu). Compile-time switches were considered and dropped (see Principles); later additions: tbx option table, spec time limit and `bind` brought it to 285.5 KB (+46 KB: past the 45 KB combined budget), loose matching to 287.3 KB (+48 KB) |
 | + autosuggest, highlighting, menu | ≤ +20 KB, each separately switchable |
 | Time to first prompt (no rc) | ≤ bash's, measured |
 | Tab on `$PATH` command prefix, warm cache | < 1 ms. **Measured 2026-10-18: 0.07–0.11 ms** (`make -f posix.mk bench LINE=ec`), was 1.5–2.0 ms before the cache; 30 `$PATH` directories, 4,500 names |
@@ -220,7 +220,7 @@ Not yet measured: time to first prompt, and Tab latency on the RP2040's filesyst
 - The editor is tested through a pseudo-terminal: `tests/pty/run.py` (`make -f
   posix.mk check-pty`, also part of `check-all`) drives the real binary with
   keystrokes and asserts on the screen, rendered through a small VT model
-  (`tests/pty/ptytest.py`). 42 tests today. The NuttX simulator is covered by
+  (`tests/pty/ptytest.py`). 48 tests today. The NuttX simulator is covered by
   `tests/nuttx-sim-smoke.py`, which runs through the same editor (it
   understands the editor's redraws); the pty tests do not run against the
   simulator or the RP2040 yet.

@@ -131,6 +131,9 @@ struct menu_s                   /* the completion menu under the line */
   int top;                      /* first row shown */
   size_t at;                    /* where the tails go in the line */
   size_t inslen;                /* bytes of the chosen tail now in the line */
+  size_t del;                   /* typed bytes before 'at' that the first choice replaces */
+  char *orig;                   /* ...and what they were, to put back */
+  bool replaced;                /* they are gone from the line */
 };
 
 struct ed_s
@@ -971,6 +974,7 @@ static void menu_free(struct ed_s *e)
   free(e->menu.name);
   free(e->menu.tail);
   free(e->menu.desc);
+  free(e->menu.orig);
   memset(&e->menu, 0, sizeof(e->menu));
 }
 
@@ -1115,6 +1119,16 @@ static void menu_choose(struct ed_s *e, int sel)
   int vis = menu_visible(e);
 
   sel = (sel % m->n + m->n) % m->n;
+  if (m->del > 0 && !m->replaced)
+    {
+      m->orig = vs_xmalloc(m->del + 1);               /* a looser match: the typed word goes */
+      memcpy(m->orig, e->b.s + m->at - m->del, m->del);
+      m->orig[m->del] = '\0';
+      erase(e, m->at - m->del, m->at, false, false);
+      m->at -= m->del;
+      m->replaced = true;
+    }
+
   erase(e, m->at, m->at + m->inslen, false, false);
   e->pos = m->at;
   insert(e, m->tail[sel], strlen(m->tail[sel]));
@@ -1142,6 +1156,7 @@ static void menu_move(struct ed_s *e, int delta)
 static void complete(struct ed_s *e, int dir)
 {
   char ins[128];
+  int del;
   int n;
 
   if (e->menu.n > 0)
@@ -1150,7 +1165,13 @@ static void complete(struct ed_s *e, int dir)
       return;
     }
 
-  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), cand_cb, &e->menu);
+  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, cand_cb, &e->menu);
+  if (n == 1 && del > 0)
+    {
+      snap(e);
+      erase(e, e->pos - (size_t)del, e->pos, false, false);   /* a looser match replaces the word */
+    }
+
   if (ins[0] != '\0')
     {
       snap(e);
@@ -1161,6 +1182,7 @@ static void complete(struct ed_s *e, int dir)
     {
       e->menu.at = e->pos;
       e->menu.sel = -1;
+      e->menu.del = (size_t)del;
     }
   else
     {
@@ -1451,6 +1473,11 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
           case C_CANCEL:
             erase(e, e->menu.at, e->menu.at + e->menu.inslen, false, false);
             e->pos = e->menu.at;
+            if (e->menu.replaced)
+              {
+                insert(e, e->menu.orig, strlen(e->menu.orig));
+              }
+
             menu_free(e);
             return false;
           case C_ACCEPT:

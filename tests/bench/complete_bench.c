@@ -13,11 +13,12 @@
 
 static int g_seen;
 
-static void count(void *ctx, const char *name, const char *tail)
+static void count(void *ctx, const char *name, const char *tail, const char *desc)
 {
   (void)ctx;
   (void)name;
   (void)tail;
+  (void)desc;
   g_seen++;
 }
 
@@ -37,16 +38,17 @@ int main(int argc, char **argv)
   double t0;
   double first;
   int n = 0;
+  int del;
   int i;
 
   shell_init("bench");
   t0 = now_ms();
-  n = vs_complete(line, (int)strlen(line), ins, sizeof(ins), count, NULL);
+  n = vs_complete(line, (int)strlen(line), ins, sizeof(ins), &del, count, NULL);
   first = now_ms() - t0;
   t0 = now_ms();
   for (i = 0; i < rounds; i++)
     {
-      vs_complete(line, (int)strlen(line), ins, sizeof(ins), count, NULL);
+      vs_complete(line, (int)strlen(line), ins, sizeof(ins), &del, count, NULL);
     }
 
   printf("\"%s\": %d candidates, first %.2f ms, then %.3f ms each (%d rounds)\n",
