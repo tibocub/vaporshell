@@ -2327,6 +2327,13 @@ int exec_node(struct node_s *n)
       return 0;                    /* set -n: read, do not run */
     }
 
+  if (g_sh.comp_deadline != 0 && vs_now_ms() > g_sh.comp_deadline)
+    {
+      g_sh.comp_expired = true;            /* a completion function or condition ran too long */
+      g_sh.unwind = UW_RETURN;
+      return 1;
+    }
+
   procsub_at = procsub_mark();
 
   switch (n->type)

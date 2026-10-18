@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 #include "vaporshell.h"
@@ -229,4 +230,12 @@ int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n)
     }
 
   return 0;
+}
+
+long long vs_now_ms(void)
+{
+  struct timespec t;
+
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }

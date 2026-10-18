@@ -33,6 +33,7 @@ char *vs_xstrndup(const char *s, size_t n);
 /* "vaporshell: <message>\n" on stderr. */
 
 void vs_err(const char *fmt, ...);
+long long vs_now_ms(void);                 /* monotonic clock */
 
 /* Lexical path normalization: see util.c. */
 
@@ -384,6 +385,8 @@ struct shell_s
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */
   bool interactive;
+  long long comp_deadline;   /* completion running shell code: stop it after this many ms on the monotonic clock (0: no limit) */
+  bool comp_expired;         /* ...and it was stopped */
   bool input_aborted;     /* Ctrl-C at a continuation prompt: drop the half-typed command quietly */
   long hist_num;          /* \! in a prompt: commands in the history so far */
   long cmd_num;           /* \#: commands run by this shell */

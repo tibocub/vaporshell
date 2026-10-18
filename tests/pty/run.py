@@ -546,6 +546,21 @@ def _():
     s.close()
 
 
+@test("a completion function or condition that never ends is stopped")
+def _():
+    rc = os.path.join(TMP, "slow.rc")
+    open(rc, "w").write("_slow() { while true; do :; done; }\n"
+                        "complete -F _slow slowcmd\n"
+                        "complete -c slow2 -n 'while true; do :; done' -a never\n")
+    s = shell(args=["--rcfile", rc], env={"VS_COMPLETION_TIMEOUT": "200"})
+    for line in ("slowcmd x", "slow2 x"):
+        s.type(line); s.send("\t")
+        s.send("Z")                                     # the prompt answered: the loop was cut off
+        assert s.screen()[-1] == "$ " + line + "Z", s.screen()
+        s.send(CTRL("U"))
+    s.close()
+
+
 @test("Tab completes variable names")
 def _():
     s = shell()

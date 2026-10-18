@@ -496,7 +496,18 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
               memcpy(cmd, cs, cl);
               cmd[cl] = '\0';
-              int r = vs_comp_from_spec(cmd, line, len, word, spec_cand, &sc);
+              const char *lim = var_get("VS_COMPLETION_TIMEOUT");
+              long ms = lim != NULL ? strtol(lim, NULL, 10) : 300;
+              int r;
+
+              g_sh.comp_expired = false;
+              g_sh.comp_deadline = ms > 0 ? vs_now_ms() + ms : 0;
+              r = vs_comp_from_spec(cmd, line, len, word, spec_cand, &sc);
+              g_sh.comp_deadline = 0;
+              if (g_sh.comp_expired)
+                {
+                  g_sh.unwind = UW_NONE;         /* what was running is abandoned; the candidates so far stay */
+                }
 
               if ((r & VS_SPEC_FOUND) != 0 && (c.n > 0 || (r & VS_SPEC_EXCLUSIVE) != 0))
                 {
