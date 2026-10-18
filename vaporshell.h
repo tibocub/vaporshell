@@ -246,6 +246,7 @@ void job_reap(void);                                   /* WNOHANG poll of every 
 struct job_s *job_find_id(int id);
 struct job_s *job_find_spec(const char *spec, bool *bad_spec);  /* %1, %+, %-, %%, a bare pid, or NULL: %+/current */
 void job_remove(struct job_s *j);
+void vs_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg);
 int bi_jobs(int argc, char **argv);
 int bi_fg(int argc, char **argv);
 int bi_bg(int argc, char **argv);
