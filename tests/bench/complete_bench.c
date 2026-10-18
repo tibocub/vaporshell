@@ -13,10 +13,11 @@
 
 static int g_seen;
 
-static void count(void *ctx, const char *name)
+static void count(void *ctx, const char *name, const char *tail)
 {
   (void)ctx;
   (void)name;
+  (void)tail;
   g_seen++;
 }
 

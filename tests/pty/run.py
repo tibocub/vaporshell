@@ -363,25 +363,46 @@ def _():
         open(os.path.join(d, "f%03d" % i), "w").close()
     open(os.path.join(d, "fz"), "w").close()
     s = shell(cwd=d, rows=40)
-    s.type("echo f"); s.send("\t"); s.send("y")      # 101 > 100: it asks first
-    names = " ".join(s.screen()[2:-1]).split()
+    s.type("echo f"); s.send("\t")
+    names = " ".join(s.screen()[1:]).split()
     assert len(names) == 101 and "f000" in names and "fz" in names, names
-    assert s.screen()[-1] == "$ echo f", s.screen()[-1]
+    assert s.screen()[0] == "$ echo f", s.screen()[0]
     s.close()
 
 
-@test("more than 100 candidates ask first")
+@test("menu: Tab and Shift-Tab walk it, Enter takes the choice, Esc drops it")
+def _():
+    d = os.path.join(TMP, "menu"); os.makedirs(d, exist_ok=True)
+    for n in ("m1", "m2", "m3"):
+        open(os.path.join(d, n), "w").close()
+    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s.type("echo m"); s.send("\t")
+    assert s.screen()[0] == "$ echo m" and s.screen()[1].split() == ["m1", "m2", "m3"], s.screen()
+    s.send("\t"); assert s.screen()[0] == "$ echo m1", s.screen()
+    s.send("\t"); assert s.screen()[0] == "$ echo m2", s.screen()
+    s.send("\x1b[Z"); assert s.screen()[0] == "$ echo m1", s.screen()
+    s.send(DOWN); assert s.screen()[0] == "$ echo m2", s.screen()
+    s.send(ENTER)                                   # takes m2, does not run the line
+    expect(s, ["$ echo m2"])
+    s.send(ENTER)
+    expect(s, ["$ echo m2", "m2", "$"])
+    s.type("echo m"); s.send("\t"); s.send("\t"); s.send("\x1b")
+    expect(s, ["$ echo m2", "m2", "$ echo m"])
+    s.close()
+
+
+@test("menu scrolls when it does not fit")
 def _():
     d = os.path.join(TMP, "lots"); os.makedirs(d, exist_ok=True)
     for i in range(150):
         open(os.path.join(d, "g%03d" % i), "w").close()
-    s = shell(cwd=d, rows=60)
+    s = shell(cwd=d, rows=10)
     s.type("echo g"); s.send("\t")
-    assert "Display all 150 possibilities? (y or n)" in s.screen(), s.screen()
-    s.send("n")
-    assert s.screen()[-1] == "$ echo g" and "g149" not in " ".join(s.screen()), s.screen()
-    s.send("\t"); s.send("y")
-    assert "g149" in " ".join(s.screen()), s.screen()
+    assert any("rows 1-5 of 12" in l for l in s.screen()), s.screen()
+    for _ in range(80):
+        s.send("\t", settle=False)
+    s.settle()
+    assert s.screen()[0].startswith("$ echo g0") and any("of 12" in l for l in s.screen()), s.screen()
     s.close()
 
 
@@ -408,7 +429,7 @@ def _():
     s.type("mycmd be"); s.send("\t")
     expect(s, ["$ mycmd beta"])
     s.send(CTRL("U")); s.type("mycmd b"); s.send("\t")
-    assert s.screen()[-1] == "$ mycmd b" and "beta" in " ".join(s.screen()) and "bravo" in " ".join(s.screen()), s.screen()
+    assert s.screen()[0] == "$ mycmd b" and s.screen()[1].split() == ["beta", "bravo"], s.screen()
     s.send(CTRL("U")); s.type("echo x; fcmd tw"); s.send("\t")
     assert s.screen()[-1] == "$ echo x; fcmd two", s.screen()
     s.close()
@@ -462,6 +483,28 @@ def _():
     s.raw = b""
     s.type("echo hi")
     assert "\x1b[32m" not in s.raw.decode()
+    s.close()
+
+
+@test("fish-style complete: options with descriptions, conditions, exclusive")
+def _():
+    d = os.path.join(TMP, "fishspecs"); os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "fcmd.vsh"), "w").write(
+        "complete -c fcmd -s h -l help -d 'Show help'\n"
+        "complete -c fcmd -l verbose -d 'More output'\n"
+        "complete -c fcmd -n '[[ ${#COMP_WORDS[@]} -le 2 ]]' -a 'add commit' -d 'a subcommand'\n"
+        "complete -c fcmd -n '[[ ${COMP_WORDS[1]} == add ]]' -x -a 'staged unstaged'\n")
+    work = os.path.join(TMP, "fishwork"); os.makedirs(work, exist_ok=True)
+    open(os.path.join(work, "sa-file"), "w").close()
+    s = shell(env={"VS_COMPLETION_PATH": d, "VS_AUTOSUGGEST": "0"}, cwd=work)
+    s.type("fcmd -"); s.send("\t")
+    scr = s.screen()
+    assert scr[0] == "$ fcmd -" and any("--help" in l and "Show help" in l for l in scr) \
+        and any("--verbose" in l and "More output" in l for l in scr), scr
+    s.send(CTRL("U")); s.type("fcmd a"); s.send("\t")
+    expect(s, ["$ fcmd add"])
+    s.type("s"); s.send("\t")                                 # -x: "sa-file" is not offered
+    expect(s, ["$ fcmd add staged"])
     s.close()
 
 

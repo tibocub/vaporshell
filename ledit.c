@@ -51,7 +51,7 @@ enum cmd_e
   C_KILL_WORD_BACK_WS, C_KILL_WORD, C_KILL_WORD_BACK, C_YANK, C_TRANSPOSE,
   C_CLEAR, C_PREV, C_NEXT, C_PSEARCH_BACK, C_PSEARCH_FWD, C_RSEARCH,
   C_INTERRUPT, C_COMPLETE, C_UPCASE, C_DOWNCASE, C_CAPITALIZE, C_UNDO,
-  C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST
+  C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST, C_COMPLETE_BACK, C_CANCEL
 };
 
 static const struct
@@ -83,7 +83,7 @@ static const struct
   { "\033[1;5C", C_FWDWORD }, { "\033[1;5D", C_BACKWORD },
   { "\033[1;3C", C_FWDWORD }, { "\033[1;3D", C_BACKWORD },
   { "\033[5~", C_PSEARCH_BACK }, { "\033[6~", C_PSEARCH_FWD },
-  { "\033[200~", C_PASTE },
+  { "\033[200~", C_PASTE }, { "\033[Z", C_COMPLETE_BACK }, { "\033", C_CANCEL },
   { NULL, C_NONE }
 };
 
@@ -95,8 +95,24 @@ struct snap_s
   size_t pos;
 };
 
+struct menu_s                   /* the completion menu under the line */
+{
+  char **name;                  /* what is listed */
+  char **tail;                  /* what completes the word with it */
+  char **desc;                  /* one line about it, or NULL; any: one column */
+  bool has_desc;
+  int n;
+  int cap;
+  int maxw;
+  int sel;                      /* the chosen one, -1: none yet */
+  int top;                      /* first row shown */
+  size_t at;                    /* where the tails go in the line */
+  size_t inslen;                /* bytes of the chosen tail now in the line */
+};
+
 struct ed_s
 {
+  struct menu_s menu;
   struct sbuf_s b;              /* the line; b.s is NULL until something is typed */
   size_t pos;                   /* cursor, a byte offset */
   const char *prompt;
@@ -304,7 +320,7 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
 /* Draw 'prompt' + 's' and leave the cursor at byte 'cursor' of s. */
 
 static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
-                 size_t cursor, const char *ghost, bool hilite)
+                 size_t cursor, const char *ghost, bool hilite, const char *menu)
 {
   struct sbuf_s o;
   struct cursor_s c = { 0, 0 };
@@ -458,6 +474,16 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
         }
     }
 
+  while (menu != NULL && *menu != '\0')
+    {
+      size_t n = strcspn(menu, "\n");
+
+      sb_adds(&o, "\r\n");          /* one row of the menu */
+      sb_addn(&o, menu, n);
+      c.row++;
+      menu += n + (menu[n] == '\n');
+    }
+
   /* From the end of the text back to the cursor. */
 
   if (c.row > at.row || c.col != at.col)
@@ -506,9 +532,15 @@ static const char *suggestion(const struct ed_s *e)
   return NULL;
 }
 
+static void menu_free(struct ed_s *e);
+static char *menu_text(const struct ed_s *e);
+
 static void refresh(struct ed_s *e)
 {
-  draw(e, e->prompt, text(e), e->b.len, e->pos, suggestion(e), true);
+  char *menu = e->menu.n > 0 ? menu_text(e) : NULL;
+
+  draw(e, e->prompt, text(e), e->b.len, e->pos, e->menu.n > 0 ? NULL : suggestion(e), true, menu);
+  free(menu);
 }
 
 static void put(const char *s)
@@ -789,11 +821,11 @@ static bool search(struct ed_s *e)
         {
           const char *h = vs_hist_get(idx);
 
-          draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0, NULL, false);
+          draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0, NULL, false, NULL);
         }
       else
         {
-          draw(e, pr.s, "", 0, 0, NULL, false);
+          draw(e, pr.s, "", 0, 0, NULL, false, NULL);
         }
 
       sb_free(&pr);
@@ -888,14 +920,6 @@ static bool search(struct ed_s *e)
 
 /* ---- Completion --------------------------------------------------------------- */
 
-struct clist_s
-{
-  char **v;
-  int n;
-  int cap;
-  int maxw;
-};
-
 static int str_width(const char *s)
 {
   int w = 0;
@@ -910,66 +934,133 @@ static int str_width(const char *s)
   return w;
 }
 
-static void list_cb(void *ctx, const char *name)
+static void menu_free(struct ed_s *e)
 {
-  struct clist_s *l = ctx;
-  int w = str_width(name);
+  int i;
 
-  if (l->n == l->cap)
+  for (i = 0; i < e->menu.n; i++)
     {
-      l->cap = l->cap > 0 ? l->cap * 2 : 16;
-      l->v = vs_xrealloc(l->v, (size_t)l->cap * sizeof(char *));
+      free(e->menu.name[i]);
+      free(e->menu.tail[i]);
+      free(e->menu.desc[i]);
     }
 
-  l->v[l->n++] = vs_xstrdup(name);
-  if (w > l->maxw)
+  free(e->menu.name);
+  free(e->menu.tail);
+  free(e->menu.desc);
+  memset(&e->menu, 0, sizeof(e->menu));
+}
+
+static void cand_cb(void *ctx, const char *name, const char *tail, const char *desc)
+{
+  struct menu_s *m = ctx;
+  int w = str_width(name);
+
+  if (m->n == m->cap)
     {
-      l->maxw = w;
+      m->cap = m->cap > 0 ? m->cap * 2 : 16;
+      m->name = vs_xrealloc(m->name, (size_t)m->cap * sizeof(char *));
+      m->tail = vs_xrealloc(m->tail, (size_t)m->cap * sizeof(char *));
+      m->desc = vs_xrealloc(m->desc, (size_t)m->cap * sizeof(char *));
+    }
+
+  m->name[m->n] = vs_xstrdup(name);
+  m->desc[m->n] = desc != NULL && *desc != '\0' ? vs_xstrdup(desc) : NULL;
+  m->has_desc = m->has_desc || m->desc[m->n] != NULL;
+  m->tail[m->n++] = vs_xstrdup(tail);
+  if (w > m->maxw)
+    {
+      m->maxw = w;
     }
 }
 
-static void show_list(struct ed_s *e, struct clist_s *l)
+/* Columns of the menu, column by column like bash lists them: entry k is on
+ * row k % rows. 'rows' is how many rows the whole list takes.
+ */
+
+static int menu_rows(const struct ed_s *e)
 {
-  int colw = l->maxw + 2;
-  int per = e->cols / colw;
-  int rows;
+  int per = e->menu.has_desc ? 1 : e->cols / (e->menu.maxw + 2);
+
+  per = per < 1 ? 1 : per;
+  return (e->menu.n + per - 1) / per;
+}
+
+/* How many rows of the menu fit under the line. */
+
+static int menu_visible(const struct ed_s *e)
+{
+  int r = vs_plat_rows();
+  int vis = (r > 0 ? r : 24) / 2;
+
+  vis = vis < 3 ? 3 : vis;
+  return menu_rows(e) < vis ? menu_rows(e) : vis;
+}
+
+/* The menu as text for draw(): rows separated by '\n', the chosen entry in
+ * reverse video, and a note when rows are scrolled out of view.
+ */
+
+static char *menu_text(const struct ed_s *e)
+{
+  const struct menu_s *m = &e->menu;
+  int rows = menu_rows(e);
+  int vis = menu_visible(e);
+  int colw = m->maxw + 2;
   int r;
   int k;
   struct sbuf_s o;
 
-  if (per < 1)
-    {
-      per = 1;
-    }
-
-  rows = (l->n + per - 1) / per;
-  draw(e, e->prompt, text(e), e->b.len, e->b.len, NULL, true);
-  if (l->n > 100)                       /* bash's completion-query-items */
-    {
-      char q[64];
-      char key[SEQ_MAX];
-      int klen;
-
-      snprintf(q, sizeof(q), "\r\nDisplay all %d possibilities? (y or n)", l->n);
-      put(q);
-      if (read_key(key, &klen) <= 0 || (key[0] != 'y' && key[0] != 'Y' && key[0] != ' '))
-        {
-          put("\r\n");
-          e->cur_row = 0;
-          return;
-        }
-    }
-
   sb_init(&o);
-  sb_adds(&o, "\r\n");
-  for (r = 0; r < rows; r++)
+  for (r = m->top; r < m->top + vis; r++)
     {
-      for (k = r; k < l->n; k += rows)
+      for (k = r; k < m->n; k += rows)
         {
-          int pad = colw - str_width(l->v[k]);
+          int pad = colw - str_width(m->name[k]);
 
-          sb_adds(&o, l->v[k]);
-          if (k + rows < l->n)
+          if (k == m->sel)
+            {
+              sb_adds(&o, "\033[7m");
+            }
+
+          sb_adds(&o, m->name[k]);
+          if (k == m->sel)
+            {
+              sb_adds(&o, "\033[0m");
+            }
+
+          if (m->desc[k] != NULL)              /* the description, in grey, cut to the line */
+            {
+              size_t dl = strlen(m->desc[k]);
+              size_t j = 0;
+              int room = e->cols - colw - 1;
+
+              sb_adds(&o, "\033[90m");
+              while (pad-- > 0)
+                {
+                  sb_addc(&o, ' ');
+                }
+
+              while (j < dl && room > 0)
+                {
+                  size_t n = next_char(m->desc[k], dl, j) - j;
+                  int w = (unsigned char)m->desc[k][j] < 0x80 ? 1 : cwidth(u8decode(m->desc[k] + j, n));
+
+                  if (w > room)
+                    {
+                      break;
+                    }
+
+                  sb_addn(&o, m->desc[k] + j, n);
+                  room -= w;
+                  j += n;
+                }
+
+              sb_adds(&o, "\033[0m");
+              pad = 0;
+            }
+
+          if (k + rows < m->n)
             {
               while (pad-- > 0)
                 {
@@ -978,23 +1069,65 @@ static void show_list(struct ed_s *e, struct clist_s *l)
             }
         }
 
-      sb_adds(&o, "\r\n");
+      sb_addc(&o, '\n');
     }
 
-  put(o.s);
-  sb_free(&o);
-  e->cur_row = 0;                       /* the next draw starts on a fresh line */
+  if (vis < rows)
+    {
+      char t[48];
+
+      snprintf(t, sizeof(t), "\033[90mrows %d-%d of %d\033[0m", m->top + 1, m->top + vis, rows);
+      sb_adds(&o, t);
+    }
+
+  return o.s != NULL ? sb_take(&o) : vs_xstrdup("");
 }
 
-static void complete(struct ed_s *e)
+/* Choose entry 'sel' (wrapping): its tail replaces the previous choice's. */
+
+static void menu_choose(struct ed_s *e, int sel)
 {
-  struct clist_s l;
+  struct menu_s *m = &e->menu;
+  int rows = menu_rows(e);
+  int vis = menu_visible(e);
+
+  sel = (sel % m->n + m->n) % m->n;
+  erase(e, m->at, m->at + m->inslen, false, false);
+  e->pos = m->at;
+  insert(e, m->tail[sel], strlen(m->tail[sel]));
+  m->inslen = strlen(m->tail[sel]);
+  m->sel = sel;
+  if (sel % rows < m->top)
+    {
+      m->top = sel % rows;
+    }
+  else if (sel % rows >= m->top + vis)
+    {
+      m->top = sel % rows - vis + 1;
+    }
+}
+
+static void menu_move(struct ed_s *e, int delta)
+{
+  menu_choose(e, e->menu.sel < 0 ? (delta > 0 ? 0 : e->menu.n - 1) : e->menu.sel + delta);
+}
+
+/* Tab: insert what all candidates share; if that adds nothing, open the menu.
+ * With the menu open, Tab / Shift-Tab (dir +1 / -1) walk through it.
+ */
+
+static void complete(struct ed_s *e, int dir)
+{
   char ins[128];
-  int i;
   int n;
 
-  memset(&l, 0, sizeof(l));
-  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), list_cb, &l);
+  if (e->menu.n > 0)
+    {
+      menu_move(e, dir);
+      return;
+    }
+
+  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), cand_cb, &e->menu);
   if (ins[0] != '\0')
     {
       snap(e);
@@ -1003,15 +1136,13 @@ static void complete(struct ed_s *e)
 
   if (n > 1 && ins[0] == '\0')
     {
-      show_list(e, &l);
+      e->menu.at = e->pos;
+      e->menu.sel = -1;
     }
-
-  for (i = 0; i < l.n; i++)
+  else
     {
-      free(l.v[i]);
+      menu_free(e);
     }
-
-  free(l.v);
 }
 
 /* ---- Keys ---------------------------------------------------------------- */
@@ -1151,6 +1282,44 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
 {
   const char *s = text(e);
   bool kill = false;
+
+  if (e->menu.n > 0)
+    {
+      /* The menu is open: arrows and Tab move in it, Enter takes the choice
+       * (without running the line), Esc drops it, anything else closes the
+       * menu and acts as usual.
+       */
+
+      int rows = menu_rows(e);
+
+      switch (cmd)
+        {
+          case C_COMPLETE: menu_move(e, 1); return false;
+          case C_COMPLETE_BACK: menu_move(e, -1); return false;
+          case C_NEXT: menu_move(e, 1); return false;
+          case C_PREV: menu_move(e, -1); return false;
+          case C_FWD: menu_move(e, rows); return false;
+          case C_BACK: menu_move(e, -rows); return false;
+          case C_CANCEL:
+            erase(e, e->menu.at, e->menu.at + e->menu.inslen, false, false);
+            e->pos = e->menu.at;
+            menu_free(e);
+            return false;
+          case C_ACCEPT:
+            if (e->menu.sel >= 0)
+              {
+                menu_free(e);
+                return false;
+              }
+
+            /* fall through */
+
+          default:
+            menu_free(e);
+            s = text(e);
+            break;
+        }
+    }
 
   switch (cmd)
     {
@@ -1363,7 +1532,8 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_COMPLETE:
-        complete(e);
+      case C_COMPLETE_BACK:
+        complete(e, cmd == C_COMPLETE ? 1 : -1);
         break;
 
       case C_PASTE:
@@ -1407,6 +1577,7 @@ static void ed_free(struct ed_s *e)
 {
   int i;
 
+  menu_free(e);
   sb_free(&e->b);
   sb_free(&e->kill);
   free(e->hsaved);
@@ -1471,7 +1642,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
 
       if (cmd == C_INTERRUPT)
         {
-          draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, false);
+          draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, false, NULL);
           put("^C\r\n");
           g_sh.last_status = 130;
           g_sh.input_aborted = continuation;
@@ -1496,7 +1667,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
 
   if (!e.eof)
     {
-      draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, true);
+      draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, true, NULL);
       put("\r\n");
       size_t n = e.b.len;
 
