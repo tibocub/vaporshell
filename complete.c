@@ -24,7 +24,9 @@
 
 #ifdef VAPORSHELL_POSIX
 static const char *const g_tbx_commands[] = { NULL };     /* no multicall table here */
+#  define is_tbx_command(name) false
 #else
+bool is_tbx_command(const char *name);          /* dispatch.c */
 extern const char *const g_tbx_commands[];      /* dispatch.c */
 #endif
 
@@ -578,7 +580,7 @@ bool vs_is_command(const char *name)
   int hi;
 
   if (vs_parser_reserved_word(name) || alias_find(name) != NULL ||
-      func_find(name) != NULL || builtin_find(name) != NULL)
+      func_find(name) != NULL || builtin_find(name) != NULL || is_tbx_command(name))
     {
       return true;
     }
