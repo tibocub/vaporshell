@@ -20,9 +20,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <poll.h>
-#ifdef CONFIG_SERIAL_TERMIOS
-#  include <termios.h>
-#endif
+#include <termios.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
@@ -169,19 +167,17 @@ int vs_plat_rows(void)
   return -1;
 }
 
-/* A NuttX serial console hands over bytes as they arrive and echoes nothing
- * unless termios says so, so without CONFIG_SERIAL_TERMIOS there is nothing
- * to switch.
+/* A NuttX console starts out in canonical mode with echo: the serial driver
+ * itself echoes what is typed, swallows backspace and delete, and turns CR into
+ * LF. The editor does all of that, so they are switched off while it runs. The
+ * flags are the driver's own, kept whether or not CONFIG_SERIAL_TERMIOS is set.
  */
 
-#ifdef CONFIG_SERIAL_TERMIOS
 static struct termios g_cooked;
 static bool g_is_raw;
-#endif
 
 bool vs_plat_tty_raw(bool on)
 {
-#ifdef CONFIG_SERIAL_TERMIOS
   struct termios t;
 
   if (!on)
@@ -208,15 +204,11 @@ bool vs_plat_tty_raw(bool on)
   t = g_cooked;
   t.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
   t.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-  t.c_cc[VMIN] = 1;
-  t.c_cc[VTIME] = 0;
   if (tcsetattr(STDIN_FILENO, TCSADRAIN, &t) == 0)
     {
       g_is_raw = true;
     }
-#else
-  (void)on;
-#endif
+
   return true;
 }
 
