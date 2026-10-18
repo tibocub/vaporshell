@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
@@ -345,6 +346,138 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
 
 /* Draw 'prompt' + 's' and leave the cursor at byte 'cursor' of s. */
 
+/* Highlighting. One style per byte of the line:
+ *   1 green    a command word that runs something       2 red   one that does not
+ *   3 yellow   inside quotes (the quotes too)            4 underline   an argument that is an existing path
+ * Words with an expansion or an assignment in them are left alone.
+ */
+
+enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH };
+
+static bool path_exists(const char *word)
+{
+  char tilde[VS_PATH_MAX];
+  struct stat st;
+
+  if (word[0] == '~' && (word[1] == '/' || word[1] == '\0') && var_get("HOME") != NULL)
+    {
+      if (snprintf(tilde, sizeof(tilde), "%s%s", var_get("HOME"), word + 1) >= (int)sizeof(tilde))
+        {
+          return false;
+        }
+
+      word = tilde;
+    }
+
+  return stat(VS_FS(word), &st) == 0;
+}
+
+static unsigned char *highlight(const char *s, size_t len)
+{
+  unsigned char *st = vs_xmalloc(len + 1);
+  bool at_cmd = true;
+  char quote = 0;
+  size_t i = 0;
+  int budget = 16;                /* stat() calls per redraw: a long line must not make typing slow */
+
+  memset(st, HL_NONE, len + 1);
+  while (i < len)
+    {
+      char ch = s[i];
+      size_t j;
+      char word[96];
+      bool plain = true;
+
+      if (quote != 0)
+        {
+          st[i] = HL_QUOTE;
+          if (ch == '\\' && quote == '"' && i + 1 < len)
+            {
+              st[++i] = HL_QUOTE;
+            }
+          else if (ch == quote)
+            {
+              quote = 0;
+            }
+
+          i++;
+          continue;
+        }
+
+      if (ch == '\'' || ch == '"')
+        {
+          quote = ch;
+          st[i++] = HL_QUOTE;
+          continue;
+        }
+
+      if (strchr("|;&(", ch) != NULL)
+        {
+          at_cmd = true;
+          i++;
+          continue;
+        }
+
+      if (strchr(" \t\n)<>", ch) != NULL)
+        {
+          i++;
+          continue;
+        }
+
+      for (j = i; j < len && strchr(" \t\n|;&()<>'\"", s[j]) == NULL; j++)
+        {
+          plain = plain && strchr("$`\\=*?[{", s[j]) == NULL && (s[j] != '~' || j == i);
+        }
+
+      plain = plain && !(j < len && (s[j] == '\'' || s[j] == '"'));      /* ec"ho": still being written */
+      if (at_cmd)
+        {
+          size_t k = i;
+
+          while (k < j && (isalnum((unsigned char)s[k]) || s[k] == '_'))
+            {
+              k++;
+            }
+
+          if (!(k > i && k < j && s[k] == '='))        /* NAME=value: the command comes after it */
+            {
+              at_cmd = false;
+              if (plain && s[i] != '~' && j - i < sizeof(word))
+                {
+                  memcpy(word, s + i, j - i);
+                  word[j - i] = '\0';
+                  memset(st + i, vs_is_command(word) ? HL_OK : HL_BAD, j - i);
+                }
+            }
+        }
+      else if (plain && s[i] != '-' && j - i < sizeof(word) && budget-- > 0)
+        {
+          memcpy(word, s + i, j - i);
+          word[j - i] = '\0';
+          if (path_exists(word))
+            {
+              memset(st + i, HL_PATH, j - i);
+            }
+        }
+
+      i = j;
+    }
+
+  return st;
+}
+
+static void set_style(struct sbuf_s *o, unsigned char from, unsigned char to)
+{
+  static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m" };
+
+  if (from != HL_NONE)
+    {
+      sb_adds(o, "\033[0m");
+    }
+
+  sb_adds(o, sgr[to]);
+}
+
 static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
                  size_t cursor, const char *ghost, bool hilite, const char *menu)
 {
@@ -354,11 +487,8 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   size_t i;
   char t[24];
   const char *hlv = var_get("VS_HIGHLIGHT");
-  bool hl = hilite && (hlv == NULL || strcmp(hlv, "0") != 0);
-  bool at_cmd = true;
-  bool colored = false;
-  size_t cmd_end = 0;
-  size_t skip_to = 0;
+  unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len) : NULL;
+  unsigned char cur = HL_NONE;
 
   sb_init(&o);
   if (e->cur_row > 0)
@@ -383,59 +513,10 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
           at = c;
         }
 
-      if (hl && i == cmd_end && colored)
+      if (styles != NULL && styles[i] != cur)
         {
-          sb_adds(&o, "\033[0m");
-          colored = false;
-        }
-
-      if (hl && at_cmd && !colored && i >= skip_to && strchr(" \t\n|;&(", ch) == NULL)
-        {
-          /* A command word: green if it runs something, red if not. Assignments
-           * (A=1), quoted or expanded words are left alone.
-           */
-
-          size_t j = i;
-          char word[96];
-          bool plain = true;
-
-          while (j < len && strchr(" \t\n|;&()<>", s[j]) == NULL)
-            {
-              plain = plain && strchr("'\"$`\\=*?[{~", s[j]) == NULL;
-              j++;
-            }
-
-          if (j > i && j - i < sizeof(word) && plain)
-            {
-              memcpy(word, s + i, j - i);
-              word[j - i] = '\0';
-              sb_adds(&o, vs_is_command(word) ? "\033[32m" : "\033[31m");
-              colored = true;
-              cmd_end = j;
-            }
-
-          {
-            size_t k = i;
-
-            while (k < j && (isalnum((unsigned char)s[k]) || s[k] == '_'))
-              {
-                k++;
-              }
-
-            if (k > i && k < j && s[k] == '=')       /* NAME=value: the command comes after it */
-              {
-                skip_to = j;
-              }
-            else
-              {
-                at_cmd = false;
-              }
-          }
-        }
-
-      if (hl && strchr("|;&(", ch) != NULL)
-        {
-          at_cmd = true;
+          set_style(&o, cur, styles[i]);
+          cur = styles[i];
         }
 
       if (ch == '\n')
@@ -462,10 +543,12 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
         }
     }
 
-  if (colored)
+  if (cur != HL_NONE)
     {
       sb_adds(&o, "\033[0m");
     }
+
+  free(styles);
 
   if (cursor >= len)
     {
