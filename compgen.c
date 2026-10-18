@@ -753,7 +753,7 @@ void vs_set_comp_vars(const char *line, int point)
 
 /* Candidates for 'word' (the last word of line[0..point)) from the spec
  * registered for 'cmd'. False if there is none. A -F function is the slow
- * lane: it runs in this shell, uncapped (shortcut: no time budget yet).
+ * lane: it runs in this shell, stopped after $VS_COMPLETION_TIMEOUT ms (default 300; complete.c).
  */
 
 /* What the shell's own commands complete to, when the user has not said
