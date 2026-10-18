@@ -214,6 +214,29 @@ claims, `tests/bench/`:
 Numbers go in this table as they are measured, with the date and commit.
 Not yet measured: time to first prompt, and Tab latency on the RP2040's filesystem.
 
+## Measured on the RP2040 (2026-10-18)
+
+`vaporOS/tools/rp2040-bench.py` (`--setup 40` first makes a 40-file directory on littlefs). Times
+include the USB round trip, 1.7 ms for one key. The RP2040 runs at 125 MHz; the filesystems are
+binfs, procfs and littlefs on SPI flash.
+
+| Action | Time |
+|---|---|
+| one key on an empty line / after 60 characters | 1.7 / 2.2 ms |
+| one key with 5 `/flash` paths on the line | 1.9 ms (was 11.5 ms before paths were remembered) |
+| Tab: command, tbx option, variable | 2.2, 2.7, 1.8 ms |
+| Tab: nothing matches (three matching passes) / loose match | 3.3 / 4.3 ms |
+| Tab: `cd /fl` to `/flash/` (was 30 ms: one `stat` per candidate, 10-40 ms each on littlefs) | 3.6 ms |
+| Tab: menu of `/bin` or `/proc` (14 entries), choose next entry | 4.7 ms, 3.1 ms |
+| Tab: 40-file littlefs directory (was 1,735 ms) | 212 ms (reading the directory: about 5 ms per entry) |
+| Up arrow, with 100 history entries; Ctrl-R | 2.1 ms, 1.1 ms |
+| first Tab after boot (command table built) | 2.4 ms |
+
+Memory (243 KB heap, 16 KB shell stack): 54.1 KB in use with the shell idle, 189 KB free. 100 history
+entries add 4.1 KB. A session of every Tab and menu above raised the most ever in use by 8.7 KB
+(54.5 to 63.2 KB) and left 0.1 KB behind. The shell's stack high-water mark after all of it is 5.7 KB of 16.3 KB.
+The things that cost time are the filesystem calls: `stat` on littlefs, and reading a big directory.
+
 ## Testing
 
 - `prompt.c` is pure and covered by ordinary differential tests against bash

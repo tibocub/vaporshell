@@ -119,6 +119,15 @@ struct snap_s
   size_t pos;
 };
 
+/* Answers of the last few path checks (see path_known). */
+
+struct pmemo_s
+{
+  unsigned long h[8];
+  bool exists[8];
+  unsigned n;                   /* answers stored so far; slot n % 8 is overwritten next */
+};
+
 struct menu_s                   /* the completion menu under the line */
 {
   char **name;                  /* what is listed (we own these strings) */
@@ -142,6 +151,7 @@ struct menu_s                   /* the completion menu under the line */
 struct ed_s
 {
   struct menu_s menu;
+  struct pmemo_s pm;            /* which words of the line exist as paths */
   struct sbuf_s out;            /* what one redraw writes: kept between redraws, so no malloc per key */
   const char *sug;              /* the suggestion shown by the last refresh (points into the history) */
   struct sbuf_s b;              /* the line; b.s is NULL until something is typed */
@@ -383,7 +393,37 @@ static bool path_exists(const char *word)
   return stat(VS_FS(word), &st) == 0;
 }
 
-static unsigned char *highlight(const char *s, size_t len)
+/* The answers of the last few path checks, by hash of the word: the line is redrawn
+ * on every key and a stat() on littlefs costs 10 ms or more, so a word that did not
+ * change is not looked up again. Kept while one line is edited.
+ */
+
+
+static bool path_known(struct pmemo_s *m, const char *word)
+{
+  unsigned long h = 5381;
+  unsigned i;
+  const char *p;
+
+  for (p = word; *p != '\0'; p++)
+    {
+      h = h * 33 + (unsigned char)*p;
+    }
+
+  for (i = 0; i < m->n && i < 8; i++)
+    {
+      if (m->h[i] == h)
+        {
+          return m->exists[i];
+        }
+    }
+
+  m->h[m->n % 8] = h;
+  m->exists[m->n % 8] = path_exists(word);
+  return m->exists[m->n++ % 8];
+}
+
+static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 {
   unsigned char *st = vs_xmalloc(len + 1);
   bool at_cmd = true;
@@ -466,7 +506,7 @@ static unsigned char *highlight(const char *s, size_t len)
         {
           memcpy(word, s + i, j - i);
           word[j - i] = '\0';
-          if (path_exists(word))
+          if (path_known(memo, word))
             {
               memset(st + i, HL_PATH, j - i);
             }
@@ -499,7 +539,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   size_t i;
   char t[24];
   const char *hlv = var_get("VS_HIGHLIGHT");
-  unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len) : NULL;
+  unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len, &e->pm) : NULL;
   unsigned char cur = HL_NONE;
 
   o = e->out;                       /* the buffer from the last redraw, emptied */

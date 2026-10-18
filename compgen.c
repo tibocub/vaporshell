@@ -158,7 +158,7 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
   while ((de = readdir(d)) != NULL)
     {
       char full[1024];
-      struct stat st;
+      bool isdir;
 
       if (strncmp(de->d_name, leaf, leaflen) != 0 || strcmp(de->d_name, ".") == 0 ||
           strcmp(de->d_name, "..") == 0)
@@ -167,7 +167,8 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
         }
 
       snprintf(full, sizeof(full), "%s%s", dirpart, de->d_name);
-      if (dirs_only && (stat(vs_plat_fspath(full, fbuf, sizeof(fbuf)), &st) != 0 || !S_ISDIR(st.st_mode)))
+      isdir = (dirs_only || g_sink != NULL) && vs_dirent_isdir(de, full);
+      if (dirs_only && !isdir)
         {
           continue;
         }
@@ -183,6 +184,11 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
         sb_init(&name);
         sb_adds(&name, dirpart);
         sb_adds(&name, de->d_name);
+        if (isdir && g_sink != NULL)
+          {
+            sb_addc(&name, '/');          /* only for completion: tells the editor it is a directory */
+          }
+
         out3(pre, name.s, suf);
         sb_free(&name);
       }

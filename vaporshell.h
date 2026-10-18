@@ -33,6 +33,8 @@ char *vs_xstrndup(const char *s, size_t n);
 /* "vaporshell: <message>\n" on stderr. */
 
 void vs_err(const char *fmt, ...);
+struct dirent;
+bool vs_dirent_isdir(const struct dirent *e, const char *path);
 long long vs_now_ms(void);                 /* monotonic clock */
 
 /* Lexical path normalization: see util.c. */

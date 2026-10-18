@@ -9,7 +9,11 @@
 #include <time.h>
 #include <string.h>
 
+#include <dirent.h>
+#include <sys/stat.h>
+
 #include "vaporshell.h"
+#include "platform.h"
 
 static void oom(void)
 {
@@ -238,4 +242,30 @@ long long vs_now_ms(void)
 
   clock_gettime(CLOCK_MONOTONIC, &t);
   return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+/* Is directory entry 'e' (found as 'path') a directory? The entry usually says so
+ * itself; stat() is only for the filesystems that do not (or for a symlink), because
+ * on littlefs a stat costs 10 to 40 ms.
+ */
+
+bool vs_dirent_isdir(const struct dirent *e, const char *path)
+{
+  struct stat st;
+
+#ifdef DT_DIR
+  if (e->d_type == DT_DIR)
+    {
+      return true;
+    }
+
+  if (e->d_type != DT_UNKNOWN && e->d_type != DT_LNK)
+    {
+      return false;
+    }
+#else
+  (void)e;
+#endif
+
+  return stat(VS_FS(path), &st) == 0 && S_ISDIR(st.st_mode);
 }
