@@ -11,21 +11,23 @@
 
 #include <nuttx/config.h>
 
-#ifdef CONFIG_READLINE_TABCOMPLETION
-
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
-#include "system/readline.h"
+#include "complete.h"
 
 #include "vaporshell.h"
 #include "exec.h"
 #include "platform.h"
 
+#ifdef VAPORSHELL_POSIX
+static const char *const g_tbx_commands[] = { NULL };     /* no multicall table here */
+#else
 extern const char *const g_tbx_commands[];      /* dispatch.c */
+#endif
 
 #define MAX_CANDS 64
 
@@ -213,7 +215,8 @@ static void complete_path(struct cands_s *c, const char *word)
 
       if (dlen + strlen(e->d_name) + 1 < sizeof(child))
         {
-          snprintf(child, sizeof(child), "%s%s", dir, e->d_name);
+          memcpy(child, dir, dlen);
+          strcpy(child + dlen, e->d_name);
           if (stat(dlen > 0 ? vs_plat_fspath(child, fbuf, sizeof(fbuf))
                             : e->d_name, &st) == 0 && S_ISDIR(st.st_mode))
             {
@@ -228,7 +231,7 @@ static void complete_path(struct cands_s *c, const char *word)
 }
 
 int vs_complete(const char *line, int len, char *ins, int inslen,
-                readline_list_f list, void *ctx)
+                vs_comp_list_f list, void *ctx)
 {
   struct cands_s c;
   char word[VS_PATH_MAX];
@@ -316,7 +319,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
 
       if (strlen(full) >= have && have <= strlen(full))
         {
-          strlcpy(ins, full + have, inslen);
+          snprintf(ins, (size_t)inslen, "%s", full + have);
         }
     }
   else if (n > 1)
@@ -367,4 +370,3 @@ int vs_complete(const char *line, int len, char *ins, int inslen,
   return n;
 }
 
-#endif /* CONFIG_READLINE_TABCOMPLETION */

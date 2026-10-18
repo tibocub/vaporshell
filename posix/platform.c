@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
+#include <poll.h>
+#include <termios.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
@@ -54,6 +56,96 @@ int vs_plat_columns(void)
     }
 
   return -1;
+}
+
+int vs_plat_rows(void)
+{
+  struct winsize ws;
+
+  if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
+    {
+      return ws.ws_row;
+    }
+
+  return -1;
+}
+
+static struct termios g_cooked;
+static bool g_is_raw;
+
+bool vs_plat_tty_raw(bool on)
+{
+  struct termios t;
+
+  if (!on)
+    {
+      if (g_is_raw)
+        {
+          tcsetattr(STDIN_FILENO, TCSADRAIN, &g_cooked);
+          g_is_raw = false;
+        }
+
+      return true;
+    }
+
+  if (g_is_raw)
+    {
+      return true;
+    }
+
+  if (tcgetattr(STDIN_FILENO, &g_cooked) != 0)
+    {
+      return false;
+    }
+
+  t = g_cooked;
+  t.c_iflag &= ~(tcflag_t)(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  t.c_lflag &= ~(tcflag_t)(ECHO | ICANON | IEXTEN | ISIG);
+  t.c_cflag |= CS8;
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VTIME] = 0;
+  if (tcsetattr(STDIN_FILENO, TCSADRAIN, &t) != 0)
+    {
+      return false;
+    }
+
+  g_is_raw = true;
+  return true;
+}
+
+int vs_plat_tty_read(unsigned char *c, int timeout_ms)
+{
+  for (; ; )
+    {
+      struct pollfd pfd;
+      ssize_t n;
+
+      pfd.fd = STDIN_FILENO;
+      pfd.events = POLLIN;
+      n = poll(&pfd, 1, timeout_ms);
+      if (n < 0 && errno == EINTR)
+        {
+          continue;
+        }
+
+      if (n < 0)
+        {
+          return -1;
+        }
+
+      if (n == 0)
+        {
+          return 0;
+        }
+
+      n = read(STDIN_FILENO, c, 1);
+      if (n < 0 && errno == EINTR)
+        {
+          continue;
+        }
+
+      return n == 1 ? 1 : -1;
+    }
 }
 
 long vs_plat_uid(void)

@@ -14,7 +14,7 @@ MODULE    = $(CONFIG_VAPOROS_VAPORSHELL)
 
 MAINSRC = vaporshell_main.c
 CSRCS = alias.c arena.c arith.c array.c assign.c builtins.c builtins_extra.c brace.c builtins_io.c declare.c special.c readsplit.c mapfile.c mb.c select.c procsub.c jobs.c enable.c compgen.c bind.c dirs.c dispatch.c exec.c expand.c glob.c hash.c help.c inproc.c shopt.c lexer.c mode.c parser.c
-CSRCS += complete.c platform_nuttx.c redir.c test.c traps.c util.c vars.c wordscan.c
+CSRCS += history.c ledit.c prompt.c rcfile.c complete.c platform_nuttx.c redir.c test.c traps.c util.c vars.c wordscan.c
 
 include $(APPDIR)/external/vapor-nostdinc.mk
 include $(APPDIR)/Application.mk

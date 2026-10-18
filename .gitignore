@@ -21,3 +21,4 @@ tests/coverage/__pycache__
 /build/
 /build-asan/
 /build-strict/
+__pycache__/

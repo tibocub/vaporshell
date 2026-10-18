@@ -13,6 +13,7 @@ Exit status is the number of failed checks (0 = all good).
 """
 import os
 import pty
+import re
 import select
 import sys
 import time
@@ -58,10 +59,18 @@ def main():
         os.chdir(os.path.dirname(exe))
         os.execv(exe, [exe])
 
+    def lines_of(raw):
+        # The line editor redraws with CR, cursor moves and erases: keep, for each line,
+        # only what follows its last CR, and drop the escape sequences.
+        text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw.decode(errors="replace"))
+        return "\n".join(l.rstrip("\r").split("\r")[-1] for l in text.split("\n"))
+
     def read(timeout, until):
-        out, end = b"", time.time() + timeout
+        """Read until the output ends with 'until' and then stays quiet for a moment (an
+        editor shows the prompt again for every key typed, so the first one proves nothing)."""
+        out, end, quiet = b"", time.time() + timeout, time.time()
         while time.time() < end:
-            if select.select([fd], [], [], 0.2)[0]:
+            if select.select([fd], [], [], 0.1)[0]:
                 try:
                     data = os.read(fd, 65536)
                 except OSError:
@@ -69,11 +78,12 @@ def main():
                 if not data:
                     break
                 out += data
-                if until.encode() in out:
-                    break
-        return out.decode(errors="replace").replace("\r", "").replace("\x1b[K", "")
+                quiet = time.time()
+            elif time.time() - quiet > 0.4 and lines_of(out).endswith(until):
+                break
+        return lines_of(out)
 
-    def send(cmd, timeout=4, until=PROMPT):
+    def send(cmd, timeout=6, until=PROMPT):
         os.write(fd, (cmd + "\n").encode())
         return read(timeout, until)
 

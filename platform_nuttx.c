@@ -19,6 +19,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <poll.h>
+#ifdef CONFIG_SERIAL_TERMIOS
+#  include <termios.h>
+#endif
 #include <unistd.h>
 
 #include "vaporshell.h"
@@ -158,6 +162,97 @@ int vs_plat_columns(void)
 bool vs_plat_isatty(int fd)
 {
   return isatty(fd) != 0;
+}
+
+int vs_plat_rows(void)
+{
+  return -1;
+}
+
+/* A NuttX serial console hands over bytes as they arrive and echoes nothing
+ * unless termios says so, so without CONFIG_SERIAL_TERMIOS there is nothing
+ * to switch.
+ */
+
+#ifdef CONFIG_SERIAL_TERMIOS
+static struct termios g_cooked;
+static bool g_is_raw;
+#endif
+
+bool vs_plat_tty_raw(bool on)
+{
+#ifdef CONFIG_SERIAL_TERMIOS
+  struct termios t;
+
+  if (!on)
+    {
+      if (g_is_raw)
+        {
+          tcsetattr(STDIN_FILENO, TCSADRAIN, &g_cooked);
+          g_is_raw = false;
+        }
+
+      return true;
+    }
+
+  if (g_is_raw)
+    {
+      return true;
+    }
+
+  if (tcgetattr(STDIN_FILENO, &g_cooked) != 0)
+    {
+      return true;                  /* not a termios device: bytes arrive raw */
+    }
+
+  t = g_cooked;
+  t.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  t.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VTIME] = 0;
+  if (tcsetattr(STDIN_FILENO, TCSADRAIN, &t) == 0)
+    {
+      g_is_raw = true;
+    }
+#else
+  (void)on;
+#endif
+  return true;
+}
+
+int vs_plat_tty_read(unsigned char *c, int timeout_ms)
+{
+  for (; ; )
+    {
+      struct pollfd pfd;
+      ssize_t n;
+
+      pfd.fd = STDIN_FILENO;
+      pfd.events = POLLIN;
+      n = poll(&pfd, 1, timeout_ms);
+      if (n < 0 && errno == EINTR)
+        {
+          continue;
+        }
+
+      if (n < 0)
+        {
+          return -1;
+        }
+
+      if (n == 0)
+        {
+          return 0;
+        }
+
+      n = read(STDIN_FILENO, c, 1);
+      if (n < 0 && errno == EINTR)
+        {
+          continue;
+        }
+
+      return n == 1 ? 1 : -1;
+    }
 }
 
 long vs_plat_uid(void)
