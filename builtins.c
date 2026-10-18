@@ -1631,6 +1631,26 @@ static int bi_type(int argc, char **argv)
   for (; i < argc; i++)
     {
       char *path;
+      const struct alias_s *al = (g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS) ||
+                                  g_sh.so_expand_aliases) ? alias_find(argv[i]) : NULL;
+
+      if (al != NULL)
+        {
+          if (terse)
+            {
+              puts("alias");
+            }
+          else if (vs_feat(VF_BASH_INFO_FORMATS))
+            {
+              printf("%s is aliased to `%s'\n", argv[i], al->value);
+            }
+          else
+            {
+              printf("%s is an alias for %s\n", argv[i], al->value);
+            }
+
+          continue;
+        }
 
       if (is_reserved_word(argv[i]))
         {
