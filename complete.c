@@ -306,6 +306,24 @@ static void complete_path(struct cands_s *c, const char *word)
 
   memcpy(dir, word, dlen);
   dir[dlen] = '\0';
+  if (strcmp(word, "~") == 0)
+    {
+      cands_add(c, word, "~", '/', NULL);
+      return;
+    }
+
+  if (dir[0] == '~' && dir[1] == '/' && var_get("HOME") != NULL)    /* only the lookup is expanded */
+    {
+      char home[VS_PATH_MAX];
+
+      if (snprintf(home, sizeof(home), "%s%s", var_get("HOME"), dir + 1) >= (int)sizeof(home))
+        {
+          return;
+        }
+
+      strcpy(dir, home);
+      dlen = strlen(dir);
+    }
 
   d = opendir(dlen > 0 ? vs_plat_fspath(dir, fbuf, sizeof(fbuf)) : ".");
   if (d == NULL)
