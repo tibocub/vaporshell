@@ -370,6 +370,18 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     {
       gen_cdpath(c, pre, suf);
     }
+  else if (strcmp(action, "signal") == 0)
+    {
+      const char *n;
+      char dashed[16];
+      int i;
+
+      for (i = 0; c->pfx[0] == '-' && (n = vs_signal_name(i)) != NULL; i++)   /* only for kill -<Tab> */
+        {
+          snprintf(dashed, sizeof(dashed), "-%s", n);
+          emit(c, dashed, pre, suf);
+        }
+    }
   else
     {
       vs_err("compgen: %s: invalid action name", action);
@@ -807,7 +819,7 @@ static const struct complete_spec_s g_default_specs[] =
   { NULL, "cd", "-d -A cdpath " }, { NULL, "pushd", "-d -A cdpath " },
   { NULL, "fg", "-A job " },   { NULL, "bg", "-A job " },
   { NULL, "disown", "-A job " }, { NULL, "wait", "-A job " },
-  { NULL, "kill", "-A job " },
+  { NULL, "kill", "-A signal -A job " },
   { NULL, "unset", "-v " },    { NULL, "export", "-v " },
   { NULL, "readonly", "-v " }, { NULL, "declare", "-v " },
   { NULL, "typeset", "-v " },  { NULL, "local", "-v " },

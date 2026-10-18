@@ -65,6 +65,7 @@ vaporshell/
                       and stand-in <nuttx/...> headers
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
+  completions/        optional completion specs (git, ssh) for $VS_COMPLETION_PATH
   docs/interactive.md the interactive-shell plan + status (prompt, editor, history, completion, rc files)
   docs/design.md      the design doc -- read this first for anything non-trivial
   tests/              own/ (vs bash and dash), modes/ (per-mode suites),

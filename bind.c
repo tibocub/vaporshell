@@ -10,8 +10,9 @@
  *   bind -p                         the bindings, in the form bind takes back
  *
  * A key is the exact bytes a terminal sends for it: one key or one escape
- * sequence ("\e[A"). Chords of several keys and macros are not supported, and
- * neither is ~/.inputrc: put the bind commands in the rc file.
+ * sequence ("\e[A"). Chords of several keys and macros are not supported.
+ * `bind -f FILE` reads an inputrc: only the "keys": command lines count
+ * (set, $if and comments are skipped). ~/.inputrc ($INPUTRC) is read at startup.
  */
 
 #include <nuttx/config.h>
@@ -23,6 +24,7 @@
 #include "vaporshell.h"
 #include "exec.h"
 #include "ledit.h"
+#include "platform.h"
 
 /* The bytes for a key written the readline way: \C-x \M-x \d, and the usual
  * backslash escapes (\e \t \nnn \xHH ...), which the interpreter decodes.
@@ -115,6 +117,36 @@ static void print_keys(const char *seq, int len)
   putchar('"');
 }
 
+static int read_inputrc(const char *file)
+{
+  FILE *f = fopen(VS_FS(file), "r");
+  char *line = NULL;
+  size_t cap = 0;
+  int status = 0;
+
+  if (f == NULL)
+    {
+      vs_err("bind: %s: cannot read", file);
+      return 1;
+    }
+
+  while (getline(&line, &cap, f) >= 0)
+    {
+      char *p = line + strspn(line, " \t");
+      char *argv[3] = { "bind", p, NULL };
+
+      p[strcspn(p, "\n")] = '\0';
+      if (*p == '"')
+        {
+          status |= bi_bind(2, argv);
+        }
+    }
+
+  free(line);
+  fclose(f);
+  return status;
+}
+
 int bi_bind(int argc, char **argv)
 {
   bool shell = false;
@@ -181,11 +213,17 @@ int bi_bind(int argc, char **argv)
           continue;
         }
 
+      if (strcmp(a, "-f") == 0 && i + 1 < argc)
+        {
+          status |= read_inputrc(argv[++i]);
+          continue;
+        }
+
       if (a[0] == '-' && a[1] != '\0')
         {
           if (strchr("vVsSfqumu", a[1]) != NULL)
             {
-              if (i + 1 < argc && (a[1] == 'f' || a[1] == 'q' || a[1] == 'u' || a[1] == 'm'))
+              if (i + 1 < argc && (a[1] == 'q' || a[1] == 'u' || a[1] == 'm'))
                 {
                   i++;                 /* accepted and ignored: takes a file or name */
                 }

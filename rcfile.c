@@ -84,6 +84,19 @@ static void load(bool login, bool norc, const char *rcfile)
     }
 
   vs_rc_source(SYSTEM_RC);
+  path = var_get("INPUTRC") != NULL ? vs_xstrdup(var_get("INPUTRC")) : in_home(".inputrc");
+  if (path != NULL)
+    {
+      if (readable(path))
+        {
+          char *argv[4] = { "bind", "-f", path, NULL };
+
+          bi_bind(3, argv);
+        }
+
+      free(path);
+    }
+
   if (var_get("VS_RC") != NULL && *var_get("VS_RC") != '\0')
     {
       vs_rc_source(var_get("VS_RC"));
