@@ -47,7 +47,7 @@ enum vs_feature_e
   VF_ARITH_EXT,             /* ** , ++ -- and base#number in $(( )) */
   VF_BASH_SYNTAX,           /* [[ ]], (( )), for (( )), function, time, ;& ;;&, <<< */
   VF_BRACE_EXP,             /* {a,b} and {1..3} */
-  VF_ANSI_C_QUOTE,          /* $'...' and $"..." */
+  VF_ANSI_C_QUOTE,          /* $"..." ($'...' is POSIX.1-2024 and always on) */
   VF_PARAM_EXT,             /* ${x:o:l} ${x/p/r} ${x^^} ${!x} ${x@Q} */
   VF_TRAP_BASH,             /* trap on ERR, DEBUG and RETURN */
   VF_DOT_ARGS,              /* `. file args` sets the positional parameters */

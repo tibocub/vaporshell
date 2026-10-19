@@ -49,6 +49,9 @@ Two things this table taught us, both now recorded as tests:
   `tests/own` (run with `--posix`) are checked against dash; the bash-mode
   suites against bash. (5.3 made `bash --posix` looser still, which is the
   function-name row above.)
+  The dash installed for the tests is 0.5.13.1, which already implements two
+  POSIX.1-2024 additions, `set -o pipefail` and `$'...'`; POSIX mode follows the
+  standard there, so those two are on in both modes.
 
 Built since (each a feature bit, with a test): `local`, `getopts`, `hash`,
 `alias`/`unalias` (POSIX mode expands aliases in scripts, bash mode does not),

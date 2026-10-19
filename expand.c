@@ -2602,7 +2602,7 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
       return;
     }
 
-  if (!dq && s[*i + 1] == '\'' && vs_feat(VF_ANSI_C_QUOTE))
+  if (!dq && s[*i + 1] == '\'')                /* POSIX.1-2024 has $'...' too */
     {
       /* $'...': the escapes are decoded, and the result counts as quoted */
 
