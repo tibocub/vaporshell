@@ -2,6 +2,15 @@
 
 > The shell of [vaporOS](https://github.com/tibocub/vaporOS-nuttx) (also support linux/mac/bsd)
 
+
+**\/!\\ Currently focusing on bash/posix-compatibilty, portability, speed and memory efficiency. NOT safety (+ I'm not a cybersecurity expert anyway) \/!\\**
+
+
+## Readme/codebase TODOs
+- make some benchmarks to show how freakin fast and memory efficient this is compared to bash and fish
+- make the README more concise (migrate some info to the docs)
+- make a config menu (with dialog ?) for easy custom compilation, change target, select features, etc.
+
 ## TLDR
 
 Vaporshell is a lightweight and protable shell that aims to provide:
@@ -10,6 +19,19 @@ Vaporshell is a lightweight and protable shell that aims to provide:
 - A fast and comfortable user experience inspired by fish (for instance, our autocompletion engine is much faster AND more advanced than bash's)
 
 All this while being small enought to run on an RP2040 or an ESP32 (using NuttX/VaporOS)
+
+
+## Support and compatibility
+
+bash mode tested agains **bash 5.3.9** (see [bash-coverage.md](docs/bash-coverage.md))
+POSIX mode tested agains **dash 0.5.12** (see [posix-coverage.md](docs/posix-coverage.md))
+
+Tested on linux (fedora 44 and debian 13) and
+vaporOS (RP2040 and native sim).
+
+Not tested yet but support is planned for BSDs
+and MacOS as well.
+
 
 ## GOALS
 
@@ -86,6 +108,7 @@ vaporshell/
 Symlinked into [vaporOS-nuttx](https://github.com/tibocub/vaporOS-nuttx) as `vaporshell/`, the same pattern `vaporOS-coreutils` uses for `toybox/` -- see that repo's own `setup.sh` for how it gets cloned and
 wired in automatically.
 
+
 ## BUILD
 
 [#build](#build)
@@ -124,7 +147,7 @@ global a `vs_`/`g_vs_` style name; `symcheck` finds the ones that clash
 Standalone (Linux, macOS, BSD), from a plain checkout:
 
 ```
-make -f posix.mk            # build/vaporshell   (or just `make`)
+make                        # build vaporshell
 make check                  # every suite, each vs its reference shell
 make check ONLY=printf      # only tests whose name contains "printf"
 make help                   # every target
@@ -137,6 +160,7 @@ make check-pty              # the line editor in a pseudo-terminal (tests/pty)
 make bench                  # Tab-completion timings (tests/bench)
 make strict                 # fortify off, -Werror (what Fedora sees)
 ```
+
 
 ## STATUS
 
@@ -203,6 +227,7 @@ Also worth knowing: the line editor has no length limit of its own, but
 when input is not a terminal (or the editor cannot start) lines are read with
 a plain reader; script files and `-c` strings have no such limit either.
 
+
 ## TODO
 
 Goal for this list specifically: comprehensive enough that filling
@@ -218,6 +243,7 @@ tag, the scripting language itself (everything below except the
 close each mode is to its reference is a measured number, not a guess:
 see [docs/bash-coverage.md](docs/bash-coverage.md) and
 [docs/posix-coverage.md](docs/posix-coverage.md).
+
 
 ### Basic shell features
 - [x] execute a script file
@@ -265,6 +291,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
       itself); a compound-command body needs a real fork, so it's
       host-only there
 
+
 ### Control flow
 - [x] `if`/`then`/`elif`/`else`/`fi`
 - [x] `for NAME in LIST; do ...; done`, and bare `for NAME; do ...`
@@ -283,11 +310,13 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [x] real `[[ ... ]]` semantics -- its own grammar (no word splitting
       or globbing inside, unquoted `<`/`>`, `=~` with `BASH_REMATCH`)
 
+
 ### Functions
 - [x] `name() { ...; }` and the bash `function name { ...; }` form
 - [x] `local` (function-scoped variables), including `local -n`/`-i`/etc.
 - [x] `return`
 - [x] recursion
+
 
 ### Special variables / positional parameters
 - [x] `$0` (script/shell name), `$1`-`$9`, `${10}`+ (positional args)
@@ -309,12 +338,14 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
       typically read (see the Variables table in the coverage doc for
       the full, measured list)
 
+
 ### Arithmetic
 - [x] `$(( ))` arithmetic expansion
 - [x] `(( ))` as a command/conditional (exit status from truthiness)
 - [x] `let`
 - [x] compound assignment inside arithmetic contexts (`+=`, `-=`,
       `*=`, `/=`, `%=`, `++`, `--`)
+
 
 ### Arrays
 - [x] indexed arrays: `arr=(a b c)`, `${arr[0]}`, `${arr[@]}`,
@@ -325,6 +356,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
       may rely on either
 - [x] namerefs: `declare -n`/`local -n`, `+n`, `unset -n` -- chained,
       element targets (`declare -n e='a[1]'`), `for` rebinding
+
 
 ### Parameter expansion (string manipulation)
 - [x] `${var:-default}` / `${var:=default}` / `${var:?msg}` /
@@ -340,6 +372,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [x] `${var^}` / `${var^^}` / `${var,}` / `${var,,}` (case conversion)
 - [x] `${!var}` (indirect reference), `${!prefix*}` / `${!prefix@}`
 - [x] `${var@Q}` and the other `@` transform operators
+
 
 ### Builtins
 - [x] `cd`, `exit`/`quit`, `help`, `.`/`source`
@@ -367,6 +400,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [x] `history` (persistent, `HISTFILE`), `fc -l` / `fc -s` (`fc` with an
       editor is refused)
 
+
 ### Interactive quality-of-life (GOALS' own "once POSIX is solid" tier)
 
 Done, in `ledit.c`, `history.c`, `complete.c`, `compgen.c`, `compfish.c`,
@@ -387,6 +421,7 @@ Done, in `ledit.c`, `history.c`, `complete.c`, `compgen.c`, `compfish.c`,
 - [x] `.bashrc`-style startup (`~/.vaporshellrc`, `~/.vsh_profile`, `/etc/vaporshell/vsh.conf`)
 - [x] prompt escapes (`\u \h \w \$ ...`), `PROMPT_COMMAND`, `PROMPT_DIRTRIM`
 
+
 Not done (also tracked in docs/interactive.md):
 
 - [ ] `set -o vi` / `emacs` modes, kill ring (Alt-y), `HISTFILESIZE`/`HISTIGNORE`
@@ -395,6 +430,7 @@ Not done (also tracked in docs/interactive.md):
 - [ ] abbreviations, `autocd`/`..`, right prompt, Alt-Enter newline
 - [ ] `$LINES`, Ctrl-C reaching a foreground child from inside the editor's raw mode
 - [ ] completion specs for more external tools (only `git` and `ssh` ship, as optional files), hostname completion built in
+
 
 ### File Test Operators
 - [x] `-e`, `-d`, `-f`
@@ -405,6 +441,7 @@ Not done (also tracked in docs/interactive.md):
       vaporshell/toybox alone; works via `lstat` on the standalone build
 - [x] `-s` (non-empty)
 - [x] `-nt` / `-ot` / `-ef` (newer/older/same-file)
+
 
 ### Comparison / String Comparison / Logical Operators (`test`/`[`)
 - [x] `-eq` `-ne` `-lt` `-le` `-gt` `-ge`
