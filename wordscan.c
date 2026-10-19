@@ -245,7 +245,7 @@ int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end)
       return WS_OK;
     }
 
-  if (s[i + 1] == '\'' && vs_feat(VF_ANSI_C_QUOTE))
+  if (s[i + 1] == '\'')
     {
       r = ws_skip_ansic(s, len, i, &e);
       if (r == WS_OK)

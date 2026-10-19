@@ -67,8 +67,9 @@ f
 f() { [[ "${BASH_SOURCE[0]}" == "$0" ]] && echo main-guard-ok; }; f
 [[ "${BASH_SOURCE[0]}" == "$0" ]] && echo top-ok
 
+# [2] is the patch level of the installed bash (5.3.9 here, 5.3.0 in vaporshell): left out of the comparison.
 # versinfo
-echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]} ${BASH_VERSINFO[2]} ${BASH_VERSINFO[3]} ${BASH_VERSINFO[4]} ${#BASH_VERSINFO[@]}"
+echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]} x ${BASH_VERSINFO[3]} ${BASH_VERSINFO[4]} ${#BASH_VERSINFO[@]}"
 declare -p BASH_VERSINFO | { read -r a b c; echo "$a $b"; }
 (( BASH_VERSINFO[0] >= 4 )) && echo modern
 

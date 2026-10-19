@@ -634,7 +634,7 @@ static const struct
   { "noexec", 'n', false },    { "noglob", 'f', false },
   { "nounset", 'u', false },   { "verbose", 'v', false },
   { "xtrace", 'x', false },    { "noclobber", 'C', false },
-  { "pipefail", 0, true },     { "histexpand", 'H', true }
+  { "pipefail", 0, false },    { "histexpand", 'H', true }
 };
 
 #define NNAMED ((int)(sizeof(g_named_opts) / sizeof(g_named_opts[0])))

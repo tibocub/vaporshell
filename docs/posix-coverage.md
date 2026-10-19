@@ -42,7 +42,7 @@ dash releases rarely; when it does, or when the POSIX standard changes:
 
 | reference | how measured | notes |
 |---|---|---|
-| dash 0.5.12 (Ubuntu `0.5.12-6ubuntu5`) | probes + `tests/own`, `tests/modes/posix` | baseline. This build has **no `LINENO`** (POSIX requires it), no `pipefail`, ignores `. file args`, and rejects `printf %q`, all measured by probe. |
+| dash 0.5.12 (Ubuntu `0.5.12-6ubuntu5`) | probes + `tests/own`, `tests/modes/posix` | baseline. This build has **no `LINENO`** (POSIX requires it), no `pipefail` or `$'...'` (both added to POSIX in 2024 and followed here anyway), ignores `. file args`, and rejects `printf %q`, all measured by probe. |
 | smoosh corpus | `tests/smoosh-check.sh` (POSIX mode) | 146 of 184 at the time of writing; the failing set is tracked in `tests/smoosh-known-failures.txt` |
 
 ## Measured dash/bash differences vaporshell follows in POSIX mode
@@ -63,7 +63,8 @@ in `tests/modes/posix/` or a probe below.
 | aliases in scripts | expanded, from the next line; chained after a trailing-blank alias | not expanded when non-interactive |
 | `alias`, `hash`, `times` output; `ulimit -c/-f` block size | dash's formats, 512-byte blocks | bash's formats, 1024-byte blocks |
 | `type` / `command -v` not found | status 127, message on stdout | status 1 |
-| `set -o pipefail`, `set -o posix`, `[ a == a ]`, `&>` | rejected / `&` then `>` | accepted |
+| `set -o posix`, `[ a == a ]`, `&>` | rejected / `&` then `>` | accepted |
+| `set -o pipefail`, `$'...'` | accepted in POSIX mode too: both are in POSIX.1-2024 (dash 0.5.13 has them, 0.5.12 does not). `$"..."` stays bash-only | accepted |
 | `${x:1:2}`, `${x/a/b}`, `**`, `++`, `$(( , ))`, `base#n` | fatal error, status 2 | (bash features) |
 
 ## Coverage by area
