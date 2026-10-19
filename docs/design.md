@@ -21,7 +21,7 @@ over sim-only shortcuts (`arch/sim/`) wherever both would work. Where
 that isn't possible -- see Clipboard below -- it's called out
 explicitly rather than quietly assumed to work everywhere.
 
-## What NuttX already provides -- confirmed, not assumed
+## What NuttX already provides
 
 Checked directly against source, the same way `vapor-api.md` (in
 vaporOS-nuttx's own docs/) checked what Lua's stdlib already covers:
@@ -55,7 +55,7 @@ vaporOS-nuttx's own docs/) checked what Lua's stdlib already covers:
   `vterm_fb` working -- reuse this instead of writing a second line
   editor. See "Line editing" below for a real nuance this surfaced.
 
-## Confirmed real gap: process groups
+## The real gap: process groups
 
 Checked directly in `libs/libc/unistd/lib_setpgid.c` -- its own
 comment says it plainly: *"NuttX does not implement process groups,
@@ -76,7 +76,7 @@ what doesn't work is the group semantics around it.
 > "Comfort NSH lacks" checklist below is kept for history; `interactive.md`
 > has the current status.
 
-## Line editing: a nuance worth designing around, not just reusing blindly
+## Line editing: worth designing around, not just reusing blindly
 
 `apps/system/readline` has real command history already built in
 (`CONFIG_READLINE_CMD_HISTORY` -- up/down arrow recall, and even a
