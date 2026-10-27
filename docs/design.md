@@ -365,3 +365,14 @@ Superseded by `docs/modes.md`, which has the measured bash / `bash --posix`
 / dash differences, the feature-bit model (`mode.h`), the extension points
 for bash's larger features, the module layout, and the plan for the
 interactive layer and plugins.
+
+## `#!` scripts on NuttX
+
+NuttX's `exec` runs only binaries and builtin apps, so `platform_nuttx.c` implements `#!` itself, the Linux way:
+a file that starts with `#!interpreter [arg]` is started as `interpreter [arg] script args...`
+(`#!/usr/bin/env prog [more]` runs `prog`; env's own options are not supported; `#!/bin/lua` falls back to the
+bare name `lua` because builtins are found by name). A command found in `$PATH` that is such a script is
+returned as a full path (builtins are still returned as bare names). There is no executable-bit check: littlefs
+has no modes. Only the first 127 bytes of the first line are read. Tested by `tests/nuttx-sim-smoke.py`
+(path, `$PATH`, env form, direct form) and by hand on the RP2040. Scripts without `#!` still need fork and are
+not run on NuttX.

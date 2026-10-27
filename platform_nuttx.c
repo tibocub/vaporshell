@@ -347,6 +347,100 @@ bool vs_plat_external_fallback(const char *name)
   return is_tbx_command(name);
 }
 
+/* ---- #! scripts -------------------------------------------------------------
+ *
+ * NuttX's exec only runs binaries and builtin apps, so a script that starts
+ * with "#!interpreter [arg]" is started by running the interpreter on it,
+ * the way Linux does: argv becomes { interpreter, [arg], script, args... }.
+ * "#!/usr/bin/env prog [more]" runs prog (found by name: builtins have no
+ * path worth trusting) with the rest as separate words; env's own options
+ * (-S, VAR=value) are not supported.
+ */
+
+#define VS_SHEBANG_MAX 128
+
+static bool read_shebang(const char *path, char *line, size_t size)
+{
+  int fd = open(path, O_RDONLY);
+  ssize_t n;
+
+  if (fd < 0)
+    {
+      return false;
+    }
+
+  n = read(fd, line, size - 1);
+  close(fd);
+  if (n < 2 || line[0] != '#' || line[1] != '!')
+    {
+      return false;
+    }
+
+  line[n] = '\0';
+  line[strcspn(line, "\r\n")] = '\0';
+  memmove(line, line + 2, strlen(line + 2) + 1);
+  return true;
+}
+
+/* Fill out[] (NULL terminated, at most nout entries) from the #! text and
+ * the original command; returns the interpreter to spawn, or NULL.
+ */
+
+static const char *shebang_argv(char *line, const char *path,
+                                char *const argv[], char **out, int nout)
+{
+  char *interp = line + strspn(line, " \t");
+  char *rest = interp + strcspn(interp, " \t");
+  const char *base;
+  int n = 0;
+  int i;
+
+  if (*interp == '\0')
+    {
+      return NULL;
+    }
+
+  if (*rest != '\0')
+    {
+      *rest++ = '\0';
+      rest += strspn(rest, " \t");
+    }
+
+  base = strrchr(interp, '/');
+  base = base != NULL ? base + 1 : interp;
+  if (strcmp(base, "env") == 0 && *rest != '\0')
+    {
+      interp = rest;
+      rest = interp + strcspn(interp, " \t");
+      if (*rest != '\0')
+        {
+          *rest++ = '\0';
+          rest += strspn(rest, " \t");
+        }
+    }
+
+  out[n++] = interp;
+  while (*rest != '\0' && n < nout - 2)
+    {
+      out[n++] = rest;
+      rest += strcspn(rest, " \t");
+      if (*rest != '\0')
+        {
+          *rest++ = '\0';
+          rest += strspn(rest, " \t");
+        }
+    }
+
+  out[n++] = (char *)path;
+  for (i = 1; argv[i] != NULL && n < nout - 1; i++)
+    {
+      out[n++] = argv[i];
+    }
+
+  out[n] = NULL;
+  return interp;
+}
+
 /* The name is returned as given, not as a path: posix_spawnp() resolves
  * NuttX's builtin apps by bare name. The lookup only decides "does this
  * exist?" -- in $PATH (NuttX exposes its builtin apps as /bin/<name>) or as
@@ -388,8 +482,13 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
       sb_adds(&cand, name);
       if (stat(cand.s, &st) == 0)
         {
+          char head[VS_SHEBANG_MAX];
+          char *found = vs_xstrdup(S_ISREG(st.st_mode) &&
+                                   read_shebang(cand.s, head, sizeof(head))
+                                   ? cand.s : name);
+
           sb_free(&cand);
-          return vs_xstrdup(name);
+          return found;
         }
 
       if (path[len] == '\0')
@@ -427,6 +526,28 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
     {
       posix_spawn_file_actions_addclose(&actions, close_fds[i]);
     }
+
+  {
+    char line[VS_SHEBANG_MAX];
+    char *sb[40];
+    const char *interp;
+
+    if (strchr(path, '/') != NULL && read_shebang(path, line, sizeof(line)) &&
+        (interp = shebang_argv(line, path, argv, sb, 40)) != NULL)
+      {
+        ret = posix_spawnp(pid, interp, &actions, NULL, sb, envp);
+        if (ret == ENOENT && strchr(interp, '/') != NULL)
+          {
+            /* "#!/bin/lua": NuttX builtins are found by bare name */
+
+            sb[0] = strrchr(interp, '/') + 1;
+            ret = posix_spawnp(pid, sb[0], &actions, NULL, sb, envp);
+          }
+
+        posix_spawn_file_actions_destroy(&actions);
+        return ret;
+      }
+  }
 
   ret = posix_spawnp(pid, path, &actions, NULL, argv, envp);
 

@@ -46,6 +46,10 @@ CASES = [
     ("sleep 1 & echo started; wait; echo waited", "waited"),
     ("trap 'echo sig' USR1; kill -USR1 $$; echo after", "after"),
     ("trap 'echo bye' EXIT; echo trap-set", "trap-set"),
+    # #! scripts (needs the lua command from vaporOS): by path, through PATH, env form and direct form
+    ("mkdir /tmp/vs_sb; printf '#!/usr/bin/env lua\\nprint(\"sb:\"..arg[1]..\":\"..select(\"#\",...))\\n' > /tmp/vs_sb/t1; /tmp/vs_sb/t1 q w", "sb:q:2"),
+    ("PATH=/tmp/vs_sb:$PATH; t1 z", "sb:z:1"),
+    ("printf '#!/bin/lua\\nprint(\"direct:\"..arg[1])\\n' > /tmp/vs_sb/t2; t2 k", "direct:k"),
 ]
 
 
