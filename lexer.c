@@ -41,7 +41,7 @@ static const struct
 
 bool lex_fetch(struct lexer_s *lx);
 
-void lexer_init(struct lexer_s *lx, vs_line_fn fn, void *ctx)
+void lexer_init(struct lexer_s *lx, vash_line_fn fn, void *ctx)
 {
   memset(lx, 0, sizeof(*lx));
   lx->getline = fn;
@@ -89,7 +89,7 @@ static bool lex_more(struct lexer_s *lx)
   if (lx->len + n + 1 > lx->cap)
     {
       lx->cap = (lx->len + n + 1) * 2;
-      lx->buf = vs_xrealloc(lx->buf, lx->cap);
+      lx->buf = vash_xrealloc(lx->buf, lx->cap);
     }
 
   memcpy(lx->buf + lx->len, line, n);
@@ -194,7 +194,7 @@ static void lex_read_heredocs(struct lexer_s *lx)
           sb_addc(&body, '\n');
         }
 
-      vs_err("warning: here-document delimited by end-of-file "
+      vash_err("warning: here-document delimited by end-of-file "
              "(wanted `%s')", r->hd_delim);
 
 done:
@@ -388,7 +388,7 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
         {
           /* array assignment: name=( ... ) is one word, newlines and all */
 
-          if (c == '(' && !quoted && vs_feat(VF_BASH_SYNTAX) &&
+          if (c == '(' && !quoted && vash_feat(VF_BASH_SYNTAX) &&
               compound_target(w.s != NULL ? w.s : "", w.len))
             {
               size_t end;
@@ -441,7 +441,7 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
            */
 
           if ((c == '<' || c == '>') && lx->pos + 1 < lx->len &&
-              lx->buf[lx->pos + 1] == '(' && vs_feat(VF_BASH_SYNTAX))
+              lx->buf[lx->pos + 1] == '(' && vash_feat(VF_BASH_SYNTAX))
             {
               size_t e;
               int r2 = skip_construct(lx, ws_skip_procsub, lx->pos, &e, "`)'");
@@ -638,7 +638,7 @@ static int lex_token_raw(struct lexer_s *lx, struct token_s *tok)
     {
       size_t n = strlen(g_ops[i].text);
 
-      if (g_ops[i].feature >= 0 && !vs_feat((enum vs_feature_e)g_ops[i].feature))
+      if (g_ops[i].feature >= 0 && !vash_feat((enum vash_feature_e)g_ops[i].feature))
         {
           continue;
         }
@@ -649,7 +649,7 @@ static int lex_token_raw(struct lexer_s *lx, struct token_s *tok)
 
       if ((g_ops[i].type == T_LESS || g_ops[i].type == T_GREAT) &&
           lx->pos + 1 < lx->len && lx->buf[lx->pos + 1] == '(' &&
-          vs_feat(VF_BASH_SYNTAX))
+          vash_feat(VF_BASH_SYNTAX))
         {
           continue;
         }

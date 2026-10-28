@@ -95,7 +95,7 @@ static const char *skip_delimiter(const struct rs_s *r, const char *p)
 
 static char *copy_field(const struct rs_s *r, const char *start, const char *end)
 {
-  char *out = vs_xmalloc((size_t)(end - start) + 1);
+  char *out = vash_xmalloc((size_t)(end - start) + 1);
   size_t n = 0;
 
   while (start < end)
@@ -178,7 +178,7 @@ void read_split(const char *line, const char *ifs, bool raw, int nvars, struct f
     {
       if (*p == '\0')
         {
-          fv_add(out, vs_xstrdup(""));
+          fv_add(out, vash_xstrdup(""));
         }
       else if (k == nvars - 1)
         {

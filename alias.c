@@ -37,14 +37,14 @@ static void alias_set(const char *name, const char *value)
       if (strcmp(a->name, name) == 0)
         {
           free(a->value);
-          a->value = vs_xstrdup(value);
+          a->value = vash_xstrdup(value);
           return;
         }
     }
 
-  a = vs_xmalloc(sizeof(*a));
-  a->name = vs_xstrdup(name);
-  a->value = vs_xstrdup(value);
+  a = vash_xmalloc(sizeof(*a));
+  a->name = vash_xstrdup(name);
+  a->value = vash_xstrdup(value);
   a->next = g_sh.aliases;
   g_sh.aliases = a;
 }
@@ -84,7 +84,7 @@ static void print_alias(const struct alias_s *a)
 {
   const char *p;
 
-  if (vs_feat(VF_BASH_INFO_FORMATS))
+  if (vash_feat(VF_BASH_INFO_FORMATS))
     {
       fputs("alias ", stdout);
     }
@@ -146,14 +146,14 @@ static void print_all(void)
       return;
     }
 
-  v = vs_xmalloc(n * sizeof(*v));
+  v = vash_xmalloc(n * sizeof(*v));
   i = n;
   for (a = g_sh.aliases; a != NULL; a = a->next)
     {
       v[--i] = a;                      /* the list is newest-first: reverse it */
     }
 
-  if (vs_feat(VF_BASH_INFO_FORMATS))
+  if (vash_feat(VF_BASH_INFO_FORMATS))
     {
       qsort(v, n, sizeof(*v), cmp_name);
       for (i = 0; i < n; i++)
@@ -206,7 +206,7 @@ int bi_alias(int argc, char **argv)
 
           if (a == NULL)
             {
-              vs_err("alias: %s: not found", argv[i]);
+              vash_err("alias: %s: not found", argv[i]);
               status = 1;
             }
           else
@@ -216,7 +216,7 @@ int bi_alias(int argc, char **argv)
         }
       else
         {
-          char *name = vs_xstrndup(argv[i], (size_t)(eq - argv[i]));
+          char *name = vash_xstrndup(argv[i], (size_t)(eq - argv[i]));
 
           alias_set(name, eq + 1);
           free(name);
@@ -239,7 +239,7 @@ int bi_unalias(int argc, char **argv)
 
   if (argc < 2)
     {
-      vs_err("unalias: usage: unalias [-a] name [name ...]");
+      vash_err("unalias: usage: unalias [-a] name [name ...]");
       return 2;
     }
 
@@ -247,7 +247,7 @@ int bi_unalias(int argc, char **argv)
     {
       if (!alias_remove(argv[i]))
         {
-          vs_err("unalias: %s: not found", argv[i]);
+          vash_err("unalias: %s: not found", argv[i]);
           status = 1;
         }
     }

@@ -110,7 +110,7 @@ asan:
 	$(MAKE) BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
 
 check-asan: asan
-	VS_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
+	VASH_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
 
 # Ubuntu-style toolchains enable _FORTIFY_SOURCE by default, and its
 # glibc wrappers quietly declare functions (realpath, ...) that strict

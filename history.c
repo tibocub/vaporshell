@@ -75,7 +75,7 @@ static void push(char *owned)
   if (g_n == g_cap)
     {
       g_cap = g_cap > 0 ? g_cap * 2 : 32;
-      g_hist = vs_xrealloc(g_hist, (size_t)g_cap * sizeof(char *));
+      g_hist = vash_xrealloc(g_hist, (size_t)g_cap * sizeof(char *));
     }
 
   g_hist[g_n++] = owned;
@@ -87,7 +87,7 @@ static void push(char *owned)
   g_sh.hist_num = g_base + g_n;
 }
 
-void vs_hist_init(void)
+void vash_hist_init(void)
 {
   const char *home = var_get("HOME");
   const char *file = histfile();
@@ -99,9 +99,9 @@ void vs_hist_init(void)
 
   if (file == NULL && home != NULL && *home != '\0')
     {
-      char *def = vs_xmalloc(strlen(home) + 16);
+      char *def = vash_xmalloc(strlen(home) + 16);
 
-      sprintf(def, "%s/.vsh_history", home);
+      sprintf(def, "%s/.vash_history", home);
       var_set("HISTFILE", def);
       free(def);
       file = histfile();
@@ -121,7 +121,7 @@ void vs_hist_init(void)
 
       if (len > 0)
         {
-          push(vs_xstrdup(line));
+          push(vash_xstrdup(line));
           nread++;
         }
     }
@@ -134,7 +134,7 @@ void vs_hist_init(void)
 
 /* HISTCONTROL: ignorespace, ignoredups, ignoreboth, erasedups. */
 
-void vs_hist_add(const char *line)
+void vash_hist_add(const char *line)
 {
   const char *ctl = var_get("HISTCONTROL");
   int i;
@@ -177,15 +177,15 @@ void vs_hist_add(const char *line)
         }
     }
 
-  push(vs_xstrdup(line));
+  push(vash_xstrdup(line));
 }
 
-int vs_hist_count(void)
+int vash_hist_count(void)
 {
   return g_n;
 }
 
-const char *vs_hist_get(int i)
+const char *vash_hist_get(int i)
 {
   return (i >= 0 && i < g_n) ? g_hist[i] : NULL;
 }
@@ -210,7 +210,7 @@ static int write_entries(const char *file, int from, bool truncate)
   return fclose(f) == 0 ? 0 : -1;
 }
 
-void vs_hist_save(void)
+void vash_hist_save(void)
 {
   const char *file = histfile();
 
@@ -222,7 +222,7 @@ void vs_hist_save(void)
     }
 }
 
-void vs_hist_fini(void)
+void vash_hist_fini(void)
 {
   int i;
 
@@ -266,7 +266,7 @@ int bi_history(int argc, char **argv)
 
               if (idx < 0 || idx >= g_n)
                 {
-                  vs_err("history: %s: history position out of range", argc > 2 ? argv[2] : "");
+                  vash_err("history: %s: history position out of range", argc > 2 ? argv[2] : "");
                   return 1;
                 }
 
@@ -283,7 +283,7 @@ int bi_history(int argc, char **argv)
             }
 
           case 'a':
-            vs_hist_save();
+            vash_hist_save();
             return 0;
 
           case 'w':
@@ -316,7 +316,7 @@ int bi_history(int argc, char **argv)
 
                   if (len > 0)
                     {
-                      push(vs_xstrdup(line));
+                      push(vash_xstrdup(line));
                     }
                 }
 
@@ -349,7 +349,7 @@ int bi_history(int argc, char **argv)
             }
 
           default:
-            vs_err("history: %s: invalid option", argv[1]);
+            vash_err("history: %s: invalid option", argv[1]);
             return 2;
         }
     }
@@ -364,7 +364,7 @@ int bi_history(int argc, char **argv)
         show = strtol(argv[1], &end, 10);
         if (*end != '\0' || show < 0)
           {
-            vs_err("history: %s: numeric argument required", argv[1]);
+            vash_err("history: %s: numeric argument required", argv[1]);
             return 1;
           }
       }
@@ -463,7 +463,7 @@ static const char *find_event(const char *p, size_t *len)
       *len = n + 1;
     }
 
-  pat = vs_xstrndup(q, n);
+  pat = vash_xstrndup(q, n);
   for (i = g_n - 1; n > 0 && i >= 0; i--)
     {
       if (p[1] == '?' ? strstr(g_hist[i], pat) != NULL : strncmp(g_hist[i], pat, n) == 0)
@@ -481,7 +481,7 @@ static const char *find_event(const char *p, size_t *len)
  * Single quotes and a backslash turn it off.
  */
 
-char *vs_hist_expand(const char *line)
+char *vash_hist_expand(const char *line)
 {
   struct sbuf_s o;
   bool sq = false;
@@ -494,14 +494,14 @@ char *vs_hist_expand(const char *line)
     {
       const char *mid = strchr(line + 1, '^');
       const char *last = g_hist[g_n - 1];
-      char *old = mid != NULL ? vs_xstrndup(line + 1, (size_t)(mid - line - 1)) : NULL;
+      char *old = mid != NULL ? vash_xstrndup(line + 1, (size_t)(mid - line - 1)) : NULL;
       const char *at = old != NULL && *old != '\0' ? strstr(last, old) : NULL;
 
       if (at == NULL)
         {
-          vs_err("%s: substitution failed", line);
+          vash_err("%s: substitution failed", line);
           free(old);
-          return vs_xstrdup("");
+          return vash_xstrdup("");
         }
 
       sb_addn(&o, last, (size_t)(at - last));
@@ -559,9 +559,9 @@ char *vs_hist_expand(const char *line)
 
       if (ev == NULL || (spec != 0 ? !pick_word(&o, ev, spec) : (sb_adds(&o, ev), false)))
         {
-          vs_err("%.*s: %s", (int)len, p, ev == NULL ? "event not found" : "bad word specifier");
+          vash_err("%.*s: %s", (int)len, p, ev == NULL ? "event not found" : "bad word specifier");
           sb_free(&o);
-          return vs_xstrdup("");
+          return vash_xstrdup("");
         }
 
       changed = true;
@@ -605,7 +605,7 @@ static int fc_ref(const char *a, int dflt, int end)
         }
     }
 
-  vs_err("fc: no command found");
+  vash_err("fc: no command found");
   return -1;
 }
 
@@ -637,7 +637,7 @@ int bi_fc(int argc, char **argv)
               case 'r': rev = true; break;
               case 's': redo = true; break;
               default:
-                vs_err("fc: -%c: not supported (use -l or -s)", *o);
+                vash_err("fc: -%c: not supported (use -l or -s)", *o);
                 return 2;
             }
         }
@@ -645,7 +645,7 @@ int bi_fc(int argc, char **argv)
 
   if (end == 0)
     {
-      vs_err("fc: no command found");
+      vash_err("fc: no command found");
       return 1;
     }
 
@@ -653,7 +653,7 @@ int bi_fc(int argc, char **argv)
     {
       const char *sub = i < argc && strchr(argv[i], '=') != NULL ? argv[i++] : NULL;
       const char *eq = sub != NULL ? strchr(sub, '=') : NULL;
-      char *old = eq != NULL ? vs_xstrndup(sub, (size_t)(eq - sub)) : NULL;
+      char *old = eq != NULL ? vash_xstrndup(sub, (size_t)(eq - sub)) : NULL;
       const char *at;
       struct sbuf_s o;
       char *cmd;
@@ -685,7 +685,7 @@ int bi_fc(int argc, char **argv)
       if (end < g_n)
         {
           free(g_hist[end]);
-          g_hist[end] = vs_xstrdup(cmd);
+          g_hist[end] = vash_xstrdup(cmd);
         }
 
       status = run_string(cmd, strlen(cmd));
@@ -695,7 +695,7 @@ int bi_fc(int argc, char **argv)
 
   if (!list)
     {
-      vs_err("fc: editing is not supported (use -l or -s)");
+      vash_err("fc: editing is not supported (use -l or -s)");
       return 2;
     }
 

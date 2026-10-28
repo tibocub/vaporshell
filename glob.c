@@ -43,7 +43,7 @@ static bool class_match(const char *name, size_t n, int c)
 
 static long pat_char(const char *p, size_t plen, size_t j, size_t *len)
 {
-  return vs_mb_charn(p + j, plen - j, len);
+  return vash_mb_charn(p + j, plen - j, len);
 }
 
 /* p[pi] is '['. Returns 1 (c matches; *next is past the ']'), 0 (no
@@ -88,7 +88,7 @@ static int match_bracket(const char *p, const char *pq, size_t plen,
 
           if (k + 1 < plen)
             {
-              if (vs_mb() ? vs_mb_isclass(c, p + j + 2, k - (j + 2))
+              if (vash_mb() ? vash_mb_isclass(c, p + j + 2, k - (j + 2))
                           : class_match(p + j + 2, k - (j + 2), (int)c))
                 {
                   matched = true;
@@ -142,7 +142,7 @@ static bool lit_eq(const char *p, size_t plen, size_t pi, const char *s, bool ci
   long pc;
   long sc;
 
-  if (!vs_mb())
+  if (!vash_mb())
     {
       *pl = 1;
       *sl = 1;
@@ -150,8 +150,8 @@ static bool lit_eq(const char *p, size_t plen, size_t pi, const char *s, bool ci
     }
 
   pc = pat_char(p, plen, pi, pl);
-  sc = vs_mb_char(s, sl);
-  return pc == sc || (ci && vs_mb_swapcase(pc) == sc);
+  sc = vash_mb_char(s, sl);
+  return pc == sc || (ci && vash_mb_swapcase(pc) == sc);
 }
 
 /* One bracket expression against one character; with ci the other case of
@@ -165,7 +165,7 @@ static int bracket_ci(const char *p, const char *pq, size_t plen, size_t pi,
 
   if (r != 1 && ci)
     {
-      long alt = vs_mb_swapcase(ch);
+      long alt = vash_mb_swapcase(ch);
 
       if (alt != ch)
         {
@@ -209,7 +209,7 @@ static bool basic_match(const char *p, const char *pq, size_t plen, const char *
           if (!q && c == '?')
             {
               pi++;
-              sp += vs_mb_len(sp);          /* one character, not one byte */
+              sp += vash_mb_len(sp);          /* one character, not one byte */
               continue;
             }
 
@@ -217,7 +217,7 @@ static bool basic_match(const char *p, const char *pq, size_t plen, const char *
             {
               size_t next;
               size_t cl;
-              long wc = vs_mb_char(sp, &cl);
+              long wc = vash_mb_char(sp, &cl);
               int r = bracket_ci(p, pq, plen, pi, wc, &next, ci);
 
               if (r == 1)
@@ -251,7 +251,7 @@ static bool basic_match(const char *p, const char *pq, size_t plen, const char *
       if (have_star)
         {
           pi = star_p + 1;
-          star_s += vs_mb_len(star_s);      /* the star takes one more character */
+          star_s += vash_mb_len(star_s);      /* the star takes one more character */
           sp = star_s;
           continue;
         }
@@ -390,7 +390,7 @@ static int split_alts(const char *p, const char *pq, size_t open, size_t close,
 static bool alt_matches(const char *p, const char *pq, size_t a0, size_t a1,
                         const char *s, size_t len, bool ci)
 {
-  char *tmp = vs_xstrndup(s, len);
+  char *tmp = vash_xstrndup(s, len);
   bool r = xm(p, pq, a0, a1, tmp, ci);
 
   free(tmp);
@@ -401,7 +401,7 @@ static bool alt_matches(const char *p, const char *pq, size_t a0, size_t a1,
 
 static size_t step(const char *s, size_t k, size_t len)
 {
-  return k + (k < len ? vs_mb_len(s + k) : 1);
+  return k + (k < len ? vash_mb_len(s + k) : 1);
 }
 
 static bool xm_repeat(const char *p, const char *pq, size_t alts[][2], int na,
@@ -538,14 +538,14 @@ static bool xm(const char *p, const char *pq, size_t pi, size_t pe, const char *
 
   if (!quoted_at(pq, pi) && c == '?')
     {
-      return xm(p, pq, pi + 1, pe, s + vs_mb_len(s), ci);
+      return xm(p, pq, pi + 1, pe, s + vash_mb_len(s), ci);
     }
 
   if (!quoted_at(pq, pi) && c == '[')
     {
       size_t next;
       size_t cl;
-      long wc = vs_mb_char(s, &cl);
+      long wc = vash_mb_char(s, &cl);
       int r = bracket_ci(p, pq, pe, pi, wc, &next, ci);
 
       if (r == 1)
@@ -627,7 +627,7 @@ static char *join_path(const char *base, const char *name)
 {
   size_t bl = strlen(base);
   size_t nl = strlen(name);
-  char *r = vs_xmalloc(bl + nl + 2);
+  char *r = vash_xmalloc(bl + nl + 2);
 
   memcpy(r, base, bl);
   if (bl > 0 && base[bl - 1] != '/')
@@ -641,7 +641,7 @@ static char *join_path(const char *base, const char *name)
 
 static char *comp_literal(const struct gctx_s *g, const struct comp_s *c)
 {
-  return vs_xstrndup(g->p + c->off, c->len);
+  return vash_xstrndup(g->p + c->off, c->len);
 }
 
 /* Insertion sort: directory listings are small, and it avoids depending
@@ -657,7 +657,7 @@ static void sort_names(char **v, size_t n)
       char *key = v[i];
       size_t j = i;
 
-      while (j > 0 && vs_plat_collate(v[j - 1], key) > 0)
+      while (j > 0 && vash_plat_collate(v[j - 1], key) > 0)
         {
           v[j] = v[j - 1];
           j--;
@@ -684,7 +684,7 @@ static void walk_globstar(struct gctx_s *g, const char *base, int idx, bool last
       walk(g, base, idx + 1);              /* ** matched no directory at all */
     }
 
-  dir = opendir(VS_FS(base[0] != '\0' ? base : "."));
+  dir = opendir(VASH_FS(base[0] != '\0' ? base : "."));
   if (dir == NULL)
     {
       return;
@@ -700,8 +700,8 @@ static void walk_globstar(struct gctx_s *g, const char *base, int idx, bool last
           continue;
         }
 
-      names = vs_xrealloc(names, (nnames + 1) * sizeof(char *));
-      names[nnames++] = vs_xstrdup(nm);
+      names = vash_xrealloc(names, (nnames + 1) * sizeof(char *));
+      names[nnames++] = vash_xstrdup(nm);
     }
 
   closedir(dir);
@@ -713,13 +713,13 @@ static void walk_globstar(struct gctx_s *g, const char *base, int idx, bool last
 
       if (last)
         {
-          fv_add(g->res, vs_xstrdup(np));
+          fv_add(g->res, vash_xstrdup(np));
           g->added++;
         }
 
       /* symbolic links are not followed, as in bash */
 
-      if (lstat(VS_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
+      if (lstat(VASH_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
         {
           walk(g, np, idx);
         }
@@ -738,7 +738,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
 
   if (idx == g->n)
     {
-      fv_add(g->res, vs_xstrdup(base));
+      fv_add(g->res, vash_xstrdup(base));
       g->added++;
       return;
     }
@@ -755,13 +755,13 @@ static void walk(struct gctx_s *g, const char *base, int idx)
       if (idx == 0)
         {
           free(nb);
-          nb = vs_xstrdup("/");
+          nb = vash_xstrdup("/");
         }
       else if (last)
         {
           struct stat st;
 
-          if (stat(VS_FS(base), &st) != 0 || !S_ISDIR(st.st_mode))
+          if (stat(VASH_FS(base), &st) != 0 || !S_ISDIR(st.st_mode))
             {
               free(nb);
               return;
@@ -790,7 +790,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
       free(lit);
       if (last)
         {
-          if (lstat(VS_FS(np), &st) == 0)
+          if (lstat(VASH_FS(np), &st) == 0)
             {
               fv_add(g->res, np);
               g->added++;
@@ -807,7 +807,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
     }
 
   {
-    DIR *dir = opendir(VS_FS(base[0] != '\0' ? base : "."));
+    DIR *dir = opendir(VASH_FS(base[0] != '\0' ? base : "."));
     struct dirent *ent;
     char **names = NULL;
     size_t nnames = 0;
@@ -836,8 +836,8 @@ static void walk(struct gctx_s *g, const char *base, int idx)
 
         if (pat_match_ci(pp, pq, c->len, nm, g->ci))
           {
-            names = vs_xrealloc(names, (nnames + 1) * sizeof(char *));
-            names[nnames++] = vs_xstrdup(nm);
+            names = vash_xrealloc(names, (nnames + 1) * sizeof(char *));
+            names[nnames++] = vash_xstrdup(nm);
           }
       }
 
@@ -857,7 +857,7 @@ static void walk(struct gctx_s *g, const char *base, int idx)
           {
             struct stat st;
 
-            if (stat(VS_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
+            if (stat(VASH_FS(np), &st) == 0 && S_ISDIR(st.st_mode))
               {
                 walk(g, np, idx + 1);
               }

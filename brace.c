@@ -184,11 +184,11 @@ static int sequence(const char *body, size_t bn, char ***vals)
   count = (a <= b ? b - a : a - b) / step + 1;
   if (count > BRACE_MAX)
     {
-      vs_err("brace expansion: too many elements");
+      vash_err("brace expansion: too many elements");
       return -1;
     }
 
-  v = vs_xmalloc((size_t)count * sizeof(char *));
+  v = vash_xmalloc((size_t)count * sizeof(char *));
   for (k = 0; k < count; k++)
     {
       long val = a <= b ? a + k * step : a - k * step;
@@ -208,7 +208,7 @@ static int sequence(const char *body, size_t bn, char ***vals)
           snprintf(buf, sizeof(buf), "%ld", val);
         }
 
-      v[k] = vs_xstrdup(buf);
+      v[k] = vash_xstrdup(buf);
     }
 
   *vals = v;
@@ -307,7 +307,7 @@ static bool find_brace(const char *s, size_t len, size_t *open, size_t *close,
 static void emit_all(struct fieldv_s *out, const char *pre, size_t pn,
                      const char *mid, size_t mn, const char *post, size_t qn)
 {
-  char *t = vs_xmalloc(pn + mn + qn + 1);
+  char *t = vash_xmalloc(pn + mn + qn + 1);
 
   memcpy(t, pre, pn);
   memcpy(t + pn, mid, mn);
@@ -322,7 +322,7 @@ static int expand_into(const char *text, struct fieldv_s *out)
   size_t len = strlen(text);
   size_t open = 0;
   size_t close = 0;
-  size_t *commas = vs_xmalloc((len + 2) * sizeof(size_t));   /* [len] carries the count */
+  size_t *commas = vash_xmalloc((len + 2) * sizeof(size_t));   /* [len] carries the count */
   size_t nc;
   size_t i;
 
@@ -335,7 +335,7 @@ static int expand_into(const char *text, struct fieldv_s *out)
   if (!find_brace(text, len, &open, &close, commas, len))
     {
       free(commas);
-      fv_add(out, vs_xstrdup(text));
+      fv_add(out, vash_xstrdup(text));
       return 0;
     }
 
@@ -375,7 +375,7 @@ static int expand_into(const char *text, struct fieldv_s *out)
 
 /* Expands one raw word into out (which is appended to). */
 
-void vs_brace_expand(const char *word, struct fieldv_s *out)
+void vash_brace_expand(const char *word, struct fieldv_s *out)
 {
   expand_into(word, out);
 }

@@ -3,7 +3,7 @@
 # Colours: on when stdout is a terminal, off for pipes and files, NO_COLOR
 # turns them off, FORCE_COLOR=1 turns them on regardless.
 #
-# Tally: every test group appends a line to the file named by $VS_TALLY (if
+# Tally: every test group appends a line to the file named by $VASH_TALLY (if
 # set), so a wrapper can print one grand total at the end instead of leaving
 # you to add up per-group counts:
 #
@@ -22,13 +22,13 @@ fi
 
 tally_group()
 {
-    [ -n "$VS_TALLY" ] && printf 'G\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-0}" >>"$VS_TALLY"
+    [ -n "$VASH_TALLY" ] && printf 'G\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-0}" >>"$VASH_TALLY"
     return 0
 }
 
 tally_fail()
 {
-    [ -n "$VS_TALLY" ] && printf 'F\t%s\t%s\n' "$1" "$2" >>"$VS_TALLY"
+    [ -n "$VASH_TALLY" ] && printf 'F\t%s\t%s\n' "$1" "$2" >>"$VASH_TALLY"
     return 0
 }
 

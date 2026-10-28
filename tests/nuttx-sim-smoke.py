@@ -30,7 +30,7 @@ CASES = [
     ("f() { echo in f: $1; return 4; }; f arg; echo rc=$?", "rc=4"),
     ("true | false; echo rc=$?", "rc=1"),
     ("echo one two | wc -w", "2"),
-    ("echo written > /tmp/vs_smoke; echo more >> /tmp/vs_smoke; cat /tmp/vs_smoke", "more"),
+    ("echo written > /tmp/vash_smoke; echo more >> /tmp/vash_smoke; cat /tmp/vash_smoke", "more"),
     ("[ -d /tmp ] && echo dir-ok", "dir-ok"),
     ("case abc in a*) echo case-ok;; esac", "case-ok"),
     ("for i in 1 2 3; do echo n$i; done", "n3"),
@@ -47,9 +47,9 @@ CASES = [
     ("trap 'echo sig' USR1; kill -USR1 $$; echo after", "after"),
     ("trap 'echo bye' EXIT; echo trap-set", "trap-set"),
     # #! scripts (needs the lua command from vaporOS): by path, through PATH, env form and direct form
-    ("mkdir /tmp/vs_sb; printf '#!/usr/bin/env lua\\nprint(\"sb:\"..arg[1]..\":\"..select(\"#\",...))\\n' > /tmp/vs_sb/t1; /tmp/vs_sb/t1 q w", "sb:q:2"),
-    ("PATH=/tmp/vs_sb:$PATH; t1 z", "sb:z:1"),
-    ("printf '#!/bin/lua\\nprint(\"direct:\"..arg[1])\\n' > /tmp/vs_sb/t2; t2 k", "direct:k"),
+    ("mkdir /tmp/vash_sb; printf '#!/usr/bin/env lua\\nprint(\"sb:\"..arg[1]..\":\"..select(\"#\",...))\\n' > /tmp/vash_sb/t1; /tmp/vash_sb/t1 q w", "sb:q:2"),
+    ("PATH=/tmp/vash_sb:$PATH; t1 z", "sb:z:1"),
+    ("printf '#!/bin/lua\\nprint(\"direct:\"..arg[1])\\n' > /tmp/vash_sb/t2; t2 k", "direct:k"),
 ]
 
 

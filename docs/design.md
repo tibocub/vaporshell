@@ -354,9 +354,9 @@ was replaced. Layers, each calling only downward:
   ends the subshell, and the shell's task stack is used by nested
   substitutions. It needs pthreads; without them NuttX falls back to the old
   child-shell substitution and external-only pipelines (untested). The same
-  code runs on a host when `VS_INPROC` is set, which is how `tests/run-suites.sh`
+  code runs on a host when `VASH_INPROC` is set, which is how `tests/run-suites.sh`
   proves it against bash and dash.
-- **Out of memory is fatal** (`vs_xmalloc`), which keeps every caller free
+- **Out of memory is fatal** (`vash_xmalloc`), which keeps every caller free
   of NULL checks.
 
 ### Modes

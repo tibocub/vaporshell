@@ -69,12 +69,12 @@ Missing POSIX pieces: job control (`jobs`, `fg`, `bg`), `fc`, `ulimit -a`.
 
 ## 3. The model [built]
 
-`mode.h`: `enum vs_feature_e` is a list of independent behaviours; a
+`mode.h`: `enum vash_feature_e` is a list of independent behaviours; a
 *profile* is a preset of bits (`mode.c`, the whole definition of "bash" and
-"posix"). The core asks `vs_feat(VF_X)` at the one place the behaviour
+"posix"). The core asks `vash_feat(VF_X)` at the one place the behaviour
 differs. Rules for adding a bit: measure first and cite it in the table
 above; name it for the behaviour, not the shell; ask at one site; never test
-the profile itself. `set -o posix` / `+o posix` just call `vs_mode_set()`.
+the profile itself. `set -o posix` / `+o posix` just call `vash_mode_set()`.
 
 Because a mode is data, individual bits can later be switched on their own
 (bash's `shopt` is exactly this), and a new dialect is a new preset plus
@@ -82,7 +82,7 @@ whatever extension code it registers.
 
 Where features are consulted today: the lexer (operator table has a
 per-operator feature), the parser (`is_func_name`), the executor
-(`vs_special_error`, command lookup order, assignment persistence, `$(...)`
+(`vash_special_error`, command lookup order, assignment persistence, `$(...)`
 errexit), the builtin table (each entry has a `modes` mask; `builtin_find`
 and `help` filter by it) and `test`.
 
@@ -94,7 +94,7 @@ small number of *registries* instead of `#ifdef`s -- five, chosen because
 they are the places these features actually attach:
 
 1. **Builtins** [built as a table]: bash-only ones (`declare`, `mapfile`,
-   `shopt`, ...) are entries with `VS_M_BASH`.
+   `shopt`, ...) are entries with `VASH_M_BASH`.
 2. **Compound commands / keywords** [plan]: `[[`, `((`, `select`, `coproc`,
    `function`, `time` register `{keyword-or-token, feature, parse, exec}`.
    The parser asks the registry where it currently switches on `if`/`while`.
@@ -174,9 +174,9 @@ Two forms, one API:
   yet verified for this purpose).
 
 Both see the shell only through a **versioned table of function pointers**
-(`struct vs_api`), never through internal symbols, so the core can change
-without breaking plugins. A plugin exports `vs_plugin_init(const struct
-vs_api *api)` and may register: builtins, completion providers, prompt
+(`struct vash_api`), never through internal symbols, so the core can change
+without breaking plugins. A plugin exports `vash_plugin_init(const struct
+vash_api *api)` and may register: builtins, completion providers, prompt
 segments, special variables, and event hooks (`precmd`, `preexec`, `chpwd`,
 `exit`). Everything a plugin registers is namespaced and removable, which
 is also what makes "compile without it" honest. Native code means a plugin

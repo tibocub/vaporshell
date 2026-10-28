@@ -28,7 +28,7 @@ results = []
 
 def shell(env=None, cols=80, rows=24, cwd=None, args=()):
     e = {"PS1": "$ ", "HISTFILE": os.path.join(TMP, "hist-%d" % time.time_ns()),
-         "HOME": TMP, "PATH": os.environ["PATH"], "VS_BRACKETED_PASTE": "1"}
+         "HOME": TMP, "PATH": os.environ["PATH"], "VASH_BRACKETED_PASTE": "1"}
     e.update(env or {})
     return Session([VS, *args], env=e, cols=cols, rows=rows, cwd=cwd or TMP)
 
@@ -325,10 +325,10 @@ def _():
     s.close()
 
 
-@test("startup files: ~/.vaporshellrc, --norc, --rcfile, VS_RC")
+@test("startup files: ~/.vashrc, --norc, --rcfile, VASH_RC")
 def _():
     home = os.path.join(TMP, "rchome"); os.makedirs(home, exist_ok=True)
-    open(os.path.join(home, ".vaporshellrc"), "w").write("PS1='home> '\nalias hi='echo hello'\n")
+    open(os.path.join(home, ".vashrc"), "w").write("PS1='home> '\nalias hi='echo hello'\n")
     s = shell(env={"HOME": home, "PS1": "$ "})
     s.type("hi"); s.send(ENTER)
     expect(s, ["home> hi", "hello", "home>"])
@@ -341,8 +341,32 @@ def _():
     s = shell(env={"HOME": home}, args=["--rcfile", other])
     expect(s, ["other>"])
     s.close()
-    s = shell(env={"HOME": home, "VS_RC": other})
+    s = shell(env={"HOME": home, "VASH_RC": other})
     expect(s, ["other>"])
+    s.close()
+
+
+@test("bash files are read after ~/.vashrc unless it sets LOAD_BASH_FILES=0")
+def _():
+    home = os.path.join(TMP, "bashhome"); os.makedirs(home, exist_ok=True)
+    open(os.path.join(home, ".bashrc"), "w").write("PS1='bashrc> '\n")
+    s = shell(env={"HOME": home})
+    expect(s, ["bashrc>"])
+    s.close()
+    open(os.path.join(home, ".vashrc"), "w").write("FROMVASH=1\n")      # does not stop .bashrc
+    s = shell(env={"HOME": home})
+    s.type("echo $FROMVASH"); s.send(ENTER)
+    expect(s, ["bashrc> echo $FROMVASH", "1", "bashrc>"])
+    s.close()
+    open(os.path.join(home, ".vashrc"), "w").write("LOAD_BASH_FILES=0\n")
+    s = shell(env={"HOME": home})
+    expect(s, ["$"])
+    s.close()
+    open(os.path.join(home, ".bash_profile"), "w").write("PS1='profile> '\n")
+    open(os.path.join(home, ".vashrc"), "w").write("")
+    s = shell(env={"HOME": home}, args=["--login"])
+    time.sleep(0.5)                                  # the machine's own /etc/profile runs first
+    assert s.screen()[-1] == "profile>", s.screen()
     s.close()
 
 
@@ -375,7 +399,7 @@ def _():
     d = os.path.join(TMP, "menu"); os.makedirs(d, exist_ok=True)
     for n in ("m1", "m2", "m3"):
         open(os.path.join(d, n), "w").close()
-    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
     s.type("echo m"); s.send("\t")
     assert s.screen()[0] == "$ echo m" and s.screen()[1].split() == ["m1", "m2", "m3"], s.screen()
     s.send("\t"); assert s.screen()[0] == "$ echo m1", s.screen()
@@ -396,7 +420,7 @@ def _():
     d = os.path.join(TMP, "globtab"); os.makedirs(d, exist_ok=True)
     for n in ("a.sh", "b.sh", "c.txt", "only.md"):
         open(os.path.join(d, n), "w").close()
-    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
     s.type("rm *.sh"); s.send("\t")
     assert s.screen()[0] == "$ rm *.sh" and s.screen()[1].split() == ["a.sh", "b.sh"], s.screen()
     s.send("\t"); assert s.screen()[0] == "$ rm a.sh", s.screen()
@@ -451,13 +475,13 @@ def _():
     s.close()
 
 
-@test("specs load lazily from VS_COMPLETION_PATH; cd completes directories only")
+@test("specs load lazily from VASH_COMPLETION_PATH; cd completes directories only")
 def _():
     d = os.path.join(TMP, "specs"); os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, "comptest.vsh"), "w").write("complete -W 'red green' comptest\n")
+    open(os.path.join(d, "comptest.vash"), "w").write("complete -W 'red green' comptest\n")
     w = os.path.join(TMP, "work"); os.makedirs(os.path.join(w, "namedir"), exist_ok=True)
     open(os.path.join(w, "namefile"), "w").close()
-    s = shell(env={"VS_COMPLETION_PATH": d}, cwd=w)
+    s = shell(env={"VASH_COMPLETION_PATH": d}, cwd=w)
     s.type("comptest g"); s.send("\t")
     expect(s, ["$ comptest green"])
     s.send(CTRL("U")); s.type("cd na"); s.send("\t")
@@ -478,7 +502,7 @@ def _():
     s.type("echo a"); s.send(END); s.send(ENTER)                         # the newest match is "echo al"
     assert s.screen()[-2:] == ["al", "$"], s.screen()
     s.close()
-    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s = shell(env={"VASH_AUTOSUGGEST": "0"})
     s.type("echo one"); s.send(ENTER); s.type("echo o")
     assert s.screen()[-1] == "$ echo o", s.screen()
     s.close()
@@ -495,7 +519,7 @@ def _():
     assert "FOO=1 \x1b[32mls" in raw, raw[-200:]
     expect(s, ["$ echo hi | zzznotacmd x; FOO=1 ls"])
     s.close()
-    s = shell(env={"VS_HIGHLIGHT": "0"})
+    s = shell(env={"VASH_HIGHLIGHT": "0"})
     s.raw = b""
     s.type("echo hi")
     assert "\x1b[32m" not in s.raw.decode()
@@ -505,14 +529,14 @@ def _():
 @test("fish-style complete: options with descriptions, conditions, exclusive")
 def _():
     d = os.path.join(TMP, "fishspecs"); os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, "fcmd.vsh"), "w").write(
+    open(os.path.join(d, "fcmd.vash"), "w").write(
         "complete -c fcmd -s h -l help -d 'Show help'\n"
         "complete -c fcmd -l verbose -d 'More output'\n"
         "complete -c fcmd -n '[[ ${#COMP_WORDS[@]} -le 2 ]]' -a 'add commit' -d 'a subcommand'\n"
         "complete -c fcmd -n '[[ ${COMP_WORDS[1]} == add ]]' -x -a 'staged unstaged'\n")
     work = os.path.join(TMP, "fishwork"); os.makedirs(work, exist_ok=True)
     open(os.path.join(work, "sa-file"), "w").close()
-    s = shell(env={"VS_COMPLETION_PATH": d, "VS_AUTOSUGGEST": "0"}, cwd=work)
+    s = shell(env={"VASH_COMPLETION_PATH": d, "VASH_AUTOSUGGEST": "0"}, cwd=work)
     s.type("fcmd -"); s.send("\t")
     scr = s.screen()
     assert scr[0] == "$ fcmd -" and any("--help" in l and "Show help" in l for l in scr) \
@@ -545,14 +569,14 @@ def _():
     s.close()
 
 
-@test("generated .vsh specs of the tbx commands (ls -<Tab>), files otherwise")
+@test("generated .vash specs of the tbx commands (ls -<Tab>), files otherwise")
 def _():
     d = os.path.abspath(os.path.join(os.path.dirname(VS), "..", "..", "vaporOS-coreutils", "completions"))
-    if not os.path.isfile(os.path.join(d, "ls.vsh")):
+    if not os.path.isfile(os.path.join(d, "ls.vash")):
         return                                           # the sibling repo is not here
     w = os.path.join(TMP, "optwork"); os.makedirs(w, exist_ok=True)
     open(os.path.join(w, "afile"), "w").close()
-    s = shell(cwd=w, env={"VS_AUTOSUGGEST": "0", "VS_COMPLETION_PATH": d})
+    s = shell(cwd=w, env={"VASH_AUTOSUGGEST": "0", "VASH_COMPLETION_PATH": d})
     s.type("ls --co"); s.send("\t")                     # a single match completes
     expect(s, ["$ ls --color"])
     s.send(CTRL("U")); s.type("ls -"); s.send("\t")
@@ -569,7 +593,7 @@ def _():
     open(rc, "w").write("_slow() { while true; do :; done; }\n"
                         "complete -F _slow slowcmd\n"
                         "complete -c slow2 -n 'while true; do :; done' -a never\n")
-    s = shell(args=["--rcfile", rc], env={"VS_COMPLETION_TIMEOUT": "200"})
+    s = shell(args=["--rcfile", rc], env={"VASH_COMPLETION_TIMEOUT": "200"})
     for line in ("slowcmd x", "slow2 x"):
         s.type(line); s.send("\t")
         s.send("Z")                                     # the prompt answered: the loop was cut off
@@ -584,7 +608,7 @@ def _():
     open(rc, "w").write("bind '\"\\C-o\": kill-line'\n"
                         "bind -x '\"\\C-g\": READLINE_LINE=\"echo $READLINE_LINE!\"; READLINE_POINT=${#READLINE_LINE}'\n"
                         "bind '\"\\e[1;5A\": beginning-of-line'\n")
-    s = shell(args=["--rcfile", rc], env={"VS_AUTOSUGGEST": "0"})
+    s = shell(args=["--rcfile", rc], env={"VASH_AUTOSUGGEST": "0"})
     s.type("abc"); s.send(CTRL("A")); s.send(CTRL("O"))          # Ctrl-O is kill-line now
     expect(s, ["$"])
     s.type("hi"); s.send(CTRL("G"))                               # the shell code rewrote the line
@@ -604,7 +628,7 @@ def _():
     for n in ("my-report-final.txt", "alpha-test", "beta-test", "prog"):
         open(os.path.join(d, n), "w").close()
     os.chmod(os.path.join(d, "prog"), 0o755)
-    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
     s.type("cd doc"); s.send("\t")
     expect(s, ["$ cd Documents/"])
     s.send(CTRL("U")); s.type("cat port"); s.send("\t")
@@ -625,7 +649,7 @@ def _():
 def _():
     d = os.path.join(TMP, "hlpaths"); os.makedirs(d, exist_ok=True)
     open(os.path.join(d, "realfile"), "w").close()
-    s = shell(cwd=d, env={"VS_AUTOSUGGEST": "0"})
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
     s.raw = b""
     s.type("echo 'hi there' realfile nofile \"q\" -n")
     raw = s.raw.decode().split("\x1b[J")[-1]               # the last redraw
@@ -640,7 +664,7 @@ def _():
 
 @test("!! !$ !n !prefix ^old^new and fc -l / -s")
 def _():
-    s = shell(env={"VS_AUTOSUGGEST": "0", "VS_HIGHLIGHT": "0"})
+    s = shell(env={"VASH_AUTOSUGGEST": "0", "VASH_HIGHLIGHT": "0"})
     s.type("echo alpha beta"); s.send(ENTER)
     s.type("echo !$ !!"); s.send(ENTER)                 # beta, then the whole previous command
     s.type("^beta^gamma"); s.send(ENTER)
@@ -663,7 +687,7 @@ def _():
 def _():
     d = os.path.join(TMP, "rc"); os.makedirs(d, exist_ok=True)
     open(os.path.join(d, ".inputrc"), "w").write('# a comment\nset editing-mode emacs\n"\\C-o": backward-kill-line\n"\\C-t": no-such-readline-fn\n')
-    s = shell(env={"HOME": d, "VS_AUTOSUGGEST": "0"})
+    s = shell(env={"HOME": d, "VASH_AUTOSUGGEST": "0"})
     s.type("echo gone"); s.send(CTRL("O")); s.type("echo ok"); s.send(ENTER)
     scr = "\n".join(s.screen())
     assert "unknown function" not in scr and "$ echo gone" not in scr and "\nok" in "\n" + scr, scr
@@ -672,7 +696,7 @@ def _():
 
 @test("kill -<Tab> offers signals; a # comment is grey")
 def _():
-    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s = shell(env={"VASH_AUTOSUGGEST": "0"})
     s.type("kill -TER"); s.send("\t")
     expect(s, ["$ kill -TERM"])
     s.send(CTRL("U")); s.raw = b""
@@ -683,7 +707,7 @@ def _():
 
 @test("an optional spec file completes git subcommands")
 def _():
-    s = shell(env={"VS_COMPLETION_PATH": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "completions"), "VS_AUTOSUGGEST": "0"})
+    s = shell(env={"VASH_COMPLETION_PATH": os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "completions"), "VASH_AUTOSUGGEST": "0"})
     s.type("git sta"); s.send("\t")
     assert "stash" in s.screen()[-1] and "status" in s.screen()[-1], s.screen()
     s.close()
@@ -692,8 +716,8 @@ def _():
 @test("Tab leaves $? alone, even when it loads a spec file")
 def _():
     d = os.path.join(TMP, "statspec"); os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, "stcmd.vsh"), "w").write("complete -c stcmd -s h\n")
-    s = shell(env={"VS_COMPLETION_PATH": d})
+    open(os.path.join(d, "stcmd.vash"), "w").write("complete -c stcmd -s h\n")
+    s = shell(env={"VASH_COMPLETION_PATH": d})
     s.type("false"); s.send(ENTER)
     s.type("stcmd -"); s.send("\t"); s.send(CTRL("U"))
     s.type('echo "rc=$?"'); s.send(ENTER)
@@ -703,7 +727,7 @@ def _():
 
 @test("aliases and functions complete in command position")
 def _():
-    s = shell(env={"VS_AUTOSUGGEST": "0"})
+    s = shell(env={"VASH_AUTOSUGGEST": "0"})
     s.type("alias zzalias='echo a'"); s.send(ENTER)
     s.type("zzfunc() { :; }"); s.send(ENTER)
     s.type("zzal"); s.send("\t"); expect(s, ["$ alias zzalias='echo a'", "$ zzfunc() { :; }", "$ zzalias"])
@@ -737,7 +761,7 @@ def _():
 @test("Tab completes jobs, ~user and CDPATH directories")
 def _():
     base = os.path.join(TMP, "cdp"); os.makedirs(os.path.join(base, "projectdir"), exist_ok=True)
-    s = shell(env={"CDPATH": base, "VS_AUTOSUGGEST": "0"})
+    s = shell(env={"CDPATH": base, "VASH_AUTOSUGGEST": "0"})
     s.type("sleep 30 &"); s.send(ENTER)
     s.type("fg "); s.send("\t")
     assert s.screen()[-1] == "$ fg %1", s.screen()
@@ -812,12 +836,12 @@ def main():
             failed.append(fn.test_name)
             print("FAILED  %s\n    %s" % (fn.test_name, str(ex).replace("\n", "\n    ")))
     print("pty: %d passed, %d failed" % (ok, bad))
-    tally = os.environ.get("VS_TALLY")
+    tally = os.environ.get("VASH_TALLY")
     if tally and not only:
         with open(tally, "a") as t:
             for name in failed:
                 t.write("F\t%s\t%s\n" % ("line editor (pty)", name))
-            t.write("G\t%s\t%d\t%d\t0\n" % (os.environ.get("VS_PLATFORM", "Linux") + ": line editor (pty)", ok, bad))
+            t.write("G\t%s\t%d\t%d\t0\n" % (os.environ.get("VASH_PLATFORM", "Linux") + ": line editor (pty)", ok, bad))
     sys.exit(1 if bad else 0)
 
 

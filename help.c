@@ -34,7 +34,7 @@ int bi_help(int argc, char **argv)
           b = builtin_find(argv[i]);
           if (b == NULL)
             {
-              vs_err("help: no help for `%s'", argv[i]);
+              vash_err("help: no help for `%s'", argv[i]);
               status = 1;
             }
           else
@@ -47,10 +47,10 @@ int bi_help(int argc, char **argv)
     }
 
   printf("vaporshell builtins, %s mode (* = POSIX special builtin):\n",
-         vs_mode_name());
-  for (b = g_vs_builtins; b->name != NULL; b++)
+         vash_mode_name());
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
-      if ((b->modes & vs_mode_bit()) == 0)
+      if ((b->modes & vash_mode_bit()) == 0)
         {
           continue;
         }

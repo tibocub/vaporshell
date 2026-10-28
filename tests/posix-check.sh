@@ -10,7 +10,7 @@
 # vs-options are passed to vaporshell before the script (e.g. --posix).
 #
 # ONLY=substring runs just the tests whose file name contains it
-# (`make check ONLY=printf`). Results are also appended to $VS_TALLY when it
+# (`make check ONLY=printf`). Results are also appended to $VASH_TALLY when it
 # is set (see lib.sh). Each script runs in its own throwaway directory
 # ($WORK, recreated per run), since some tests create files as a side effect.
 # vaporshell is deliberately NOT put on $PATH: command substitution
@@ -35,7 +35,7 @@ WORK=$TMP/work
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 # What this group is called in the summary: suite, reference, vaporshell mode.
-LABEL="${VS_PLATFORM:+$VS_PLATFORM: }$DIR ($(basename "${REF%% *}")${VSOPTS:+ $VSOPTS}${VS_INPROC:+, in-process})"
+LABEL="${VASH_PLATFORM:+$VASH_PLATFORM: }$DIR ($(basename "${REF%% *}")${VSOPTS:+ $VSOPTS}${VASH_INPROC:+, in-process})"
 
 pass=0
 fail=0
@@ -47,14 +47,14 @@ for t in "$TESTS"/*.sh; do
     (rm -rf "$WORK" && mkdir "$WORK" && cd "$WORK" && $REF "$t" >"$TMP/ref.out" 2>/dev/null </dev/null)
     ref_rc=$?
     (rm -rf "$WORK" && mkdir "$WORK" && cd "$WORK" && "$VS" $VSOPTS "$t" >"$TMP/vs.out" 2>/dev/null </dev/null)
-    vs_rc=$?
+    vash_rc=$?
 
-    if cmp -s "$TMP/ref.out" "$TMP/vs.out" && [ "$ref_rc" = "$vs_rc" ]; then
+    if cmp -s "$TMP/ref.out" "$TMP/vs.out" && [ "$ref_rc" = "$vash_rc" ]; then
         pass=$((pass + 1))
         printf '%sok%s    %s\n' "$C_GREEN" "$C_RESET" "$name"
     else
         fail=$((fail + 1))
-        printf '%sFAIL%s  %s (status: %s=%s vaporshell=%s)\n' "$C_RED" "$C_RESET" "$name" "$REF" "$ref_rc" "$vs_rc"
+        printf '%sFAIL%s  %s (status: %s=%s vaporshell=%s)\n' "$C_RED" "$C_RESET" "$name" "$REF" "$ref_rc" "$vash_rc"
         diff "$TMP/ref.out" "$TMP/vs.out" | head -10
         tally_fail "$LABEL" "$name"
     fi

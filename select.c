@@ -43,7 +43,7 @@ static int term_columns(void)
         }
     }
 
-  c = vs_plat_columns();
+  c = vash_plat_columns();
   return c > 0 ? c : 80;
 }
 
@@ -68,7 +68,7 @@ static void indent(int from, int to)
     }
 }
 
-void vs_select_menu(char *const *items, int n)
+void vash_select_menu(char *const *items, int n)
 {
   int indices_len = digitlen(n);
   int max_item = 0;
@@ -81,7 +81,7 @@ void vs_select_menu(char *const *items, int n)
 
   for (i = 0; i < n; i++)
     {
-      int w = (int)vs_mb_count(items[i]);
+      int w = (int)vash_mb_count(items[i]);
 
       if (w > max_item)
         {
@@ -118,7 +118,7 @@ void vs_select_menu(char *const *items, int n)
           int elem_len;
 
           fprintf(stderr, "%*d) %s", width, ind + 1, items[ind]);
-          elem_len = width + 2 + (int)vs_mb_count(items[ind]);
+          elem_len = width + 2 + (int)vash_mb_count(items[ind]);
           ind += rows;
           if (ind >= n)
             {
@@ -133,7 +133,7 @@ void vs_select_menu(char *const *items, int n)
     }
 }
 
-int vs_select_parse(const char *reply, int n)
+int vash_select_parse(const char *reply, int n)
 {
   char *end;
   long long v;

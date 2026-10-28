@@ -66,7 +66,7 @@ static int parse_keys(const char *s, size_t n, char *out, int max)
         }
       else
         {
-          i += vs_esc_one(s + i, ESC_OCT_PLAIN | ESC_HEXU | ESC_E, &b, &stop);
+          i += vash_esc_one(s + i, ESC_OCT_PLAIN | ESC_HEXU | ESC_E, &b, &stop);
         }
     }
 
@@ -121,14 +121,14 @@ static bool g_in_file;             /* reading an inputrc: it is shared with read
 
 static int read_inputrc(const char *file)
 {
-  FILE *f = fopen(VS_FS(file), "r");
+  FILE *f = fopen(VASH_FS(file), "r");
   char *line = NULL;
   size_t cap = 0;
   int status = 0;
 
   if (f == NULL)
     {
-      vs_err("bind: %s: cannot read", file);
+      vash_err("bind: %s: cannot read", file);
       return 1;
     }
 
@@ -170,11 +170,11 @@ int bi_bind(int argc, char **argv)
         {
           int k;
 
-          for (k = 1; k < vs_ledit_ncmds(); k++)
+          for (k = 1; k < vash_ledit_ncmds(); k++)
             {
-              if (vs_ledit_cmd_name(k) != NULL)
+              if (vash_ledit_cmd_name(k) != NULL)
                 {
-                  puts(vs_ledit_cmd_name(k));
+                  puts(vash_ledit_cmd_name(k));
                 }
             }
 
@@ -189,7 +189,7 @@ int bi_bind(int argc, char **argv)
           int len;
           int k;
 
-          for (k = 0; vs_ledit_binding(k, &seq, &len, &name, &code); k++)
+          for (k = 0; vash_ledit_binding(k, &seq, &len, &name, &code); k++)
             {
               print_keys(seq, len);
               if (name != NULL)
@@ -235,7 +235,7 @@ int bi_bind(int argc, char **argv)
               continue;
             }
 
-          vs_err("bind: %s: invalid option", a);
+          vash_err("bind: %s: invalid option", a);
           return 2;
         }
 
@@ -251,7 +251,7 @@ int bi_bind(int argc, char **argv)
 
           if (close == NULL)
             {
-              vs_err("bind: %s: missing closing quote", a);
+              vash_err("bind: %s: missing closing quote", a);
               status = 1;
               continue;
             }
@@ -269,7 +269,7 @@ int bi_bind(int argc, char **argv)
 
       if (remove)
         {
-          status |= vs_ledit_unbind(keys, klen) == 0 ? 0 : 1;
+          status |= vash_ledit_unbind(keys, klen) == 0 ? 0 : 1;
           remove = false;
           continue;
         }
@@ -281,26 +281,26 @@ int bi_bind(int argc, char **argv)
 
       if (*rest == '\0')
         {
-          vs_err("bind: %s: no command", a);
+          vash_err("bind: %s: no command", a);
           status = 1;
         }
       else if (shell)
         {
-          status |= vs_ledit_bind(keys, klen, vs_ledit_cmd_lookup("shell-command"), rest);
+          status |= vash_ledit_bind(keys, klen, vash_ledit_cmd_lookup("shell-command"), rest);
           shell = false;
         }
-      else if (vs_ledit_cmd_lookup(rest) < 0)
+      else if (vash_ledit_cmd_lookup(rest) < 0)
         {
           if (!g_in_file)
             {
-              vs_err("bind: `%s': unknown function name", rest);
+              vash_err("bind: `%s': unknown function name", rest);
             }
 
           status = 1;
         }
       else
         {
-          status |= vs_ledit_bind(keys, klen, vs_ledit_cmd_lookup(rest), NULL);
+          status |= vash_ledit_bind(keys, klen, vash_ledit_cmd_lookup(rest), NULL);
         }
     }
 

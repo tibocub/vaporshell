@@ -24,7 +24,7 @@
 #include "version.h"
 
 #ifdef VAPORSHELL_POSIX
-struct shell_s g_vs_state;
+struct shell_s g_vash_state;
 #endif
 
 bool is_valid_name(const char *s, size_t len)
@@ -113,7 +113,7 @@ static const char *ref_follow(const char *name, char *buf, size_t n, const char 
 
       if (++depth > REF_DEPTH)
         {
-          vs_err("warning: %s: circular name reference", name);
+          vash_err("warning: %s: circular name reference", name);
           return NULL;
         }
 
@@ -214,18 +214,18 @@ static const char *bash_var(const char *name)
   if (strcmp(name, "UID") == 0 || strcmp(name, "EUID") == 0)
     {
       snprintf(buf, sizeof(buf), "%ld",
-               (long)(name[0] == 'E' ? vs_plat_euid() : vs_plat_uid()));
+               (long)(name[0] == 'E' ? vash_plat_euid() : vash_plat_uid()));
       return buf;
     }
 
   if (strcmp(name, "HOSTNAME") == 0)
     {
-      return vs_plat_hostname(host, sizeof(host)) == 0 ? host : NULL;
+      return vash_plat_hostname(host, sizeof(host)) == 0 ? host : NULL;
     }
 
   if (strcmp(name, "OSTYPE") == 0)
     {
-      return vs_plat_ostype();
+      return vash_plat_ostype();
     }
 
   return NULL;
@@ -247,7 +247,7 @@ static const char *var_get_direct(const char *name)
     }
 
   v = var_lookup(name);
-  if (v == NULL && vs_feat(VF_BASH_VARS))
+  if (v == NULL && vash_feat(VF_BASH_VARS))
     {
       return bash_var(name);
     }
@@ -299,9 +299,9 @@ const char *var_get(const char *name)
 
 static struct var_s *var_create(const char *name)
 {
-  struct var_s *v = vs_xmalloc(sizeof(*v));
+  struct var_s *v = vash_xmalloc(sizeof(*v));
 
-  v->name = vs_xstrdup(name);
+  v->name = vash_xstrdup(name);
   v->value = NULL;
   v->flags = 0;
   v->arr = NULL;
@@ -310,7 +310,7 @@ static struct var_s *var_create(const char *name)
   return v;
 }
 
-/* The variables that choose the collation locale (see vs_plat_locale_update). */
+/* The variables that choose the collation locale (see vash_plat_locale_update). */
 
 bool var_is_locale_var(const char *n)
 {
@@ -322,7 +322,7 @@ static int var_set_direct(const char *name, const char *value)
 {
   struct var_s *v;
 
-  if (vs_feat(VF_BASH_VARS) && (name[0] == 'R' || name[0] == 'S'))
+  if (vash_feat(VF_BASH_VARS) && (name[0] == 'R' || name[0] == 'S'))
     {
       /* Assigning RANDOM seeds it; assigning SECONDS restarts the count. */
 
@@ -347,14 +347,14 @@ static int var_set_direct(const char *name, const char *value)
 
       /* a platform may want every variable exported (none does today) */
 
-      if (vs_plat_export_all())
+      if (vash_plat_export_all())
         {
           v->flags |= VF_EXPORT;
         }
     }
   else if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
@@ -383,7 +383,7 @@ static int var_set_direct(const char *name, const char *value)
       else
         {
           free(v->value);
-          v->value = vs_xstrdup(cv);
+          v->value = vash_xstrdup(cv);
         }
 
       free(cv);
@@ -405,7 +405,7 @@ static int var_set_direct(const char *name, const char *value)
     }
 
   free(v->value);
-  v->value = vs_xstrdup(value);
+  v->value = vash_xstrdup(value);
   if (name[0] == 'P' && strcmp(name, "PATH") == 0)
     {
       hash_clear();                   /* remembered locations may be stale */
@@ -413,7 +413,7 @@ static int var_set_direct(const char *name, const char *value)
 
   if (var_is_locale_var(name))
     {
-      vs_plat_locale_update();
+      vash_plat_locale_update();
     }
 
   return 0;
@@ -498,7 +498,7 @@ static int unset_exact(const char *name)
         {
           if ((v->flags & VF_READONLY) != 0)
             {
-              vs_err("%s: readonly variable", name);
+              vash_err("%s: readonly variable", name);
               return -1;
             }
 
@@ -509,7 +509,7 @@ static int unset_exact(const char *name)
           free(v);
           if (var_is_locale_var(name))
             {
-              vs_plat_locale_update();
+              vash_plat_locale_update();
             }
 
           return 0;
@@ -577,14 +577,14 @@ char **var_build_env(void)
         }
     }
 
-  env = vs_xmalloc((n + 1) * sizeof(char *));
+  env = vash_xmalloc((n + 1) * sizeof(char *));
   for (v = g_sh.vars; v != NULL; v = v->next)
     {
       if ((v->flags & VF_EXPORT) != 0 && v->value != NULL)
         {
           size_t nl = strlen(v->name);
           size_t vl = strlen(v->value);
-          char *e = vs_xmalloc(nl + vl + 2);
+          char *e = vash_xmalloc(nl + vl + 2);
 
           memcpy(e, v->name, nl);
           e[nl] = '=';
@@ -619,10 +619,10 @@ void vars_import(char **list)
 
       if (eq != NULL && is_valid_name(list[i], (size_t)(eq - list[i])))
         {
-          char *name = vs_xstrndup(list[i], (size_t)(eq - list[i]));
+          char *name = vash_xstrndup(list[i], (size_t)(eq - list[i]));
           struct var_s *v = var_create(name);
 
-          v->value = vs_xstrdup(eq + 1);
+          v->value = vash_xstrdup(eq + 1);
           v->flags = VF_EXPORT;
           free(name);
         }
@@ -641,11 +641,11 @@ void pos_set(char **args, int n)
     }
 
   free(g_sh.pos);
-  g_sh.pos = vs_xmalloc((size_t)(n > 0 ? n : 1) * sizeof(char *));
+  g_sh.pos = vash_xmalloc((size_t)(n > 0 ? n : 1) * sizeof(char *));
   g_sh.npos = n;
   for (i = 0; i < n; i++)
     {
-      g_sh.pos[i] = vs_xstrdup(args[i]);
+      g_sh.pos[i] = vash_xstrdup(args[i]);
     }
 }
 
@@ -710,9 +710,9 @@ void func_define(const char *name, struct node_s *body, struct arena_s *arena)
   struct func_s *f;
 
   func_unset(name);
-  f = vs_xmalloc(sizeof(*f));
-  f->name = vs_xstrdup(name);
-  f->src = vs_xstrdup(g_sh.cur_src != NULL ? g_sh.cur_src : "");
+  f = vash_xmalloc(sizeof(*f));
+  f->name = vash_xstrdup(name);
+  f->src = vash_xstrdup(g_sh.cur_src != NULL ? g_sh.cur_src : "");
   f->body = body;
   f->arena = arena;
   arena_retain(arena);
@@ -724,9 +724,9 @@ void shell_init(const char *arg0)
 {
   char cwd[512];
 
-  vs_plat_state_create();
-  vs_mode_set(VS_PROFILE_BASH);
-  vs_shopt_defaults();
+  vash_plat_state_create();
+  vash_mode_set(VASH_PROFILE_BASH);
+  vash_shopt_defaults();
   special_init();
   g_sh.seconds_base = time(NULL);       /* $SECONDS counts from shell start */
   g_sh.arg0 = arg0;
@@ -734,9 +734,9 @@ void shell_init(const char *arg0)
   g_sh.pid = getpid();
   g_sh.cmdsub_status = -1;
   g_sh.self = "vaporshell";
-  g_sh.force_inproc = getenv("VS_INPROC") != NULL;    /* test hook, see inproc.c */
+  g_sh.force_inproc = getenv("VASH_INPROC") != NULL;    /* test hook, see inproc.c */
   vars_import(environ);
-  vs_plat_locale_update();              /* LC_ALL etc. from the environment */
+  vash_plat_locale_update();              /* LC_ALL etc. from the environment */
 
   /* getopts starts scanning at the first argument. */
 
@@ -776,7 +776,7 @@ void shell_fini(void)
 {
   int i;
 
-  vs_fish_free();
+  vash_fish_free();
 
   while (g_sh.vars != NULL)
     {
@@ -800,7 +800,7 @@ void shell_fini(void)
     }
 
   free(g_sh.pos);
-  for (i = 0; i < VS_NTRAPS; i++)
+  for (i = 0; i < VASH_NTRAPS; i++)
     {
       free(g_sh.trap_action[i]);
       free(g_sh.trap_parent[i]);
@@ -810,7 +810,7 @@ void shell_fini(void)
   dirstack_free();
   aliases_free();
   hash_clear();
-  vs_plat_state_destroy();
+  vash_plat_state_destroy();
 }
 
 /* ---- local ---------------------------------------------------------------- */
@@ -835,10 +835,10 @@ int var_local_declare(const char *name, const char *value, bool inherit)
 
   if (l == NULL)
     {
-      l = vs_xmalloc(sizeof(*l));
-      l->name = vs_xstrdup(name);
+      l = vash_xmalloc(sizeof(*l));
+      l->name = vash_xstrdup(name);
       l->had = v != NULL && v->value != NULL;
-      l->old = l->had ? vs_xstrdup(v->value) : NULL;
+      l->old = l->had ? vash_xstrdup(v->value) : NULL;
       l->old_arr = NULL;
       if (v != NULL && v->arr != NULL && !inherit)
         {
@@ -934,7 +934,7 @@ static struct arr_s *var_array_direct(const char *name, bool create)
     }
   else if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return NULL;
     }
 
@@ -996,7 +996,7 @@ int var_elem_set(const char *name, long idx, const char *val)
 
   if (v != NULL && (v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
@@ -1010,7 +1010,7 @@ int var_elem_set(const char *name, long idx, const char *val)
   v->flags &= ~(unsigned)VF_NOVALUE;
   {
     char *cv = (v->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0
-               ? var_attr_value(v->flags, val) : vs_xstrdup(val);
+               ? var_attr_value(v->flags, val) : vash_xstrdup(val);
 
     if (a->assoc)
       {
@@ -1046,7 +1046,7 @@ int var_elem_unset(const char *name, long idx)
 
   if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
@@ -1074,7 +1074,7 @@ static int var_array_replace_direct(const char *name, struct arr_s *arr)
     }
   else if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       arr_free(arr);                       /* the array is ours to take, even if refused */
       return -1;
     }
@@ -1125,11 +1125,11 @@ char *var_attr_value(unsigned flags, const char *value)
         }
 
       snprintf(buf, sizeof(buf), "%ld", n);
-      r = vs_xstrdup(buf);
+      r = vash_xstrdup(buf);
     }
   else
     {
-      r = vs_xstrdup(value);
+      r = vash_xstrdup(value);
     }
 
   if ((flags & (VF_LOWER | VF_UPPER)) != 0)
@@ -1141,7 +1141,7 @@ char *var_attr_value(unsigned flags, const char *value)
       i = 0;
       while (i < n)
         {
-          size_t cl = vs_mb_len(r + i);
+          size_t cl = vash_mb_len(r + i);
           char conv[16];
 
           if (cl > 8)
@@ -1149,12 +1149,12 @@ char *var_attr_value(unsigned flags, const char *value)
               cl = 8;
             }
 
-          sb_addn(&o, conv, vs_mb_case(r + i, cl, (flags & VF_UPPER) != 0, conv));
+          sb_addn(&o, conv, vash_mb_case(r + i, cl, (flags & VF_UPPER) != 0, conv));
           i += cl;
         }
 
       free(r);
-      r = o.s != NULL ? sb_take(&o) : vs_xstrdup("");
+      r = o.s != NULL ? sb_take(&o) : vash_xstrdup("");
     }
 
   return r;
@@ -1184,7 +1184,7 @@ static struct arr_s *var_assoc_direct(const char *name, bool create)
 
       if (create)
         {
-          vs_err("%s: cannot convert indexed to associative array", name);
+          vash_err("%s: cannot convert indexed to associative array", name);
         }
 
       return NULL;
@@ -1201,7 +1201,7 @@ static struct arr_s *var_assoc_direct(const char *name, bool create)
     }
   else if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return NULL;
     }
 
@@ -1251,7 +1251,7 @@ int var_ref_set(const char *name, const struct subref_s *r, const char *val)
   v = var_lookup(name);
   if (v != NULL && (v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
@@ -1264,7 +1264,7 @@ int var_ref_set(const char *name, const struct subref_s *r, const char *val)
   v = var_lookup(name);
   v->flags &= ~(unsigned)VF_NOVALUE;
   cv = (v->flags & (VF_INTEGER | VF_LOWER | VF_UPPER)) != 0
-       ? var_attr_value(v->flags, val) : vs_xstrdup(val);
+       ? var_attr_value(v->flags, val) : vash_xstrdup(val);
   arr_set_key(a, r->key, cv);
   free(cv);
   return 0;
@@ -1287,7 +1287,7 @@ int var_ref_unset(const char *name, const struct subref_s *r)
 
   if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
@@ -1356,25 +1356,25 @@ int var_nameref_set(const char *name, const char *target)
 
   if (!ref_target_valid(target, &bl))
     {
-      vs_err("`%s': invalid variable name for name reference", target);
+      vash_err("`%s': invalid variable name for name reference", target);
       return -1;
     }
 
   if (bl == strlen(name) && strncmp(target, name, bl) == 0)
     {
-      vs_err("%s: nameref variable self references not allowed", name);
+      vash_err("%s: nameref variable self references not allowed", name);
       return -1;
     }
 
   v = var_create_raw(name);
   if ((v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return -1;
     }
 
   free(v->value);
-  v->value = vs_xstrdup(target);
+  v->value = vash_xstrdup(target);
   v->flags |= VF_NAMEREF;
   g_sh.have_namerefs = true;
   return 0;

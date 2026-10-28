@@ -57,8 +57,8 @@ void ps_single(int status)
 
 void frame_push(struct frame_s *f, const char *name, const char *src, int line, bool is_func)
 {
-  f->name = vs_xstrdup(name);
-  f->src = vs_xstrdup(src != NULL ? src : "");
+  f->name = vash_xstrdup(name);
+  f->src = vash_xstrdup(src != NULL ? src : "");
   f->line = line;
   f->is_func = is_func;
   f->up = g_sh.frame;
@@ -124,9 +124,9 @@ static void build_frames(void)
       n++;                              /* the script itself: "main" */
     }
 
-  names = vs_xmalloc((size_t)(n + 1) * sizeof(char *));
-  srcs = vs_xmalloc((size_t)(n + 1) * sizeof(char *));
-  lines = vs_xmalloc((size_t)(n + 1) * sizeof(char *));
+  names = vash_xmalloc((size_t)(n + 1) * sizeof(char *));
+  srcs = vash_xmalloc((size_t)(n + 1) * sizeof(char *));
+  lines = vash_xmalloc((size_t)(n + 1) * sizeof(char *));
   for (f = g_sh.frame; f != NULL; f = f->up)
     {
       char buf[24];
@@ -134,7 +134,7 @@ static void build_frames(void)
       snprintf(buf, sizeof(buf), "%d", f->line);
       names[i] = f->name;
       srcs[i] = f->src;
-      lines[i] = vs_xstrdup(buf);
+      lines[i] = vash_xstrdup(buf);
       i++;
     }
 
@@ -142,7 +142,7 @@ static void build_frames(void)
     {
       names[i] = "main";
       srcs[i] = (char *)(g_sh.cur_script != NULL ? g_sh.cur_script : "");
-      lines[i] = vs_xstrdup("0");
+      lines[i] = vash_xstrdup("0");
     }
 
   /* FUNCNAME only exists inside a function; the other two whenever there is
@@ -199,7 +199,7 @@ static void build_versinfo(void)
 
 void special_refresh(const char *name)
 {
-  if (!vs_feat(VF_BASH_VARS))
+  if (!vash_feat(VF_BASH_VARS))
     {
       g_sh.lazy_dirty = 0;
       return;

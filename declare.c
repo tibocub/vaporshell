@@ -94,13 +94,13 @@ static void print_decl(const struct var_s *v)
       if ((v->flags & VF_NOVALUE) == 0)
         {
           putchar('=');
-          vs_print_array_body(v->arr);
+          vash_print_array_body(v->arr);
         }
     }
   else if (v->value != NULL)
     {
       putchar('=');
-      vs_print_dq(v->value);
+      vash_print_dq(v->value);
     }
 
   putchar('\n');
@@ -125,7 +125,7 @@ static void list_vars(const struct dopts_s *o, enum decl_kind_e kind)
       n++;
     }
 
-  vec = vs_xmalloc((n + 1) * sizeof(*vec));
+  vec = vash_xmalloc((n + 1) * sizeof(*vec));
   n = 0;
   for (v = g_sh.vars; v != NULL; v = v->next)
     {
@@ -202,19 +202,19 @@ static int decl_nameref(const char *word, const char *name, const char *arg, boo
 
   if (v != NULL && v->arr != NULL)
     {
-      vs_err("%s: %s: reference variable cannot be an array", word, name);
+      vash_err("%s: %s: reference variable cannot be an array", word, name);
       return 1;
     }
 
   if (v != NULL && (v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return 1;
     }
 
   if (target != NULL && target[0] != '\0')
     {
-      char *copy = vs_xstrdup(target);      /* target may point into the value it replaces */
+      char *copy = vash_xstrdup(target);      /* target may point into the value it replaces */
       int st = var_nameref_set(name, copy);
 
       free(copy);
@@ -250,14 +250,14 @@ static int decl_one(enum decl_kind_e kind, const struct dopts_s *o, const char *
 
   if (name == NULL)
     {
-      vs_err("%s: `%s': not a valid identifier", word, arg);
+      vash_err("%s: `%s': not a valid identifier", word, arg);
       return 1;
     }
 
   local = kind == DK_LOCAL || (kind == DK_DECLARE && g_sh.func_depth > 0 && !o->g);
   if (local && g_sh.func_depth > 0)
     {
-      var_local_declare(name, NULL, vs_feat(VF_LOCAL_INHERITS));
+      var_local_declare(name, NULL, vash_feat(VF_LOCAL_INHERITS));
     }
 
   if (o->n)
@@ -282,7 +282,7 @@ static int decl_one(enum decl_kind_e kind, const struct dopts_s *o, const char *
   v = var_lookup(name);
   if ((v->flags & VF_READONLY) != 0 && (is_asg || o->any))
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       free(name);
       return 1;
     }
@@ -292,7 +292,7 @@ static int decl_one(enum decl_kind_e kind, const struct dopts_s *o, const char *
     {
       if (v->arr != NULL && v->arr->assoc)
         {
-          vs_err("%s: cannot convert associative to indexed array", name);
+          vash_err("%s: cannot convert associative to indexed array", name);
           free(name);
           return 1;
         }
@@ -355,7 +355,7 @@ static int print_named(const char *word, char *const *names, int n)
 
       if (v == NULL)
         {
-          vs_err("%s: %s: not found", word, names[i]);
+          vash_err("%s: %s: not found", word, names[i]);
           status = 1;
         }
       else
@@ -407,7 +407,7 @@ static int list_functions(char *const *names, int n)
         cnt++;
       }
 
-    vec = vs_xmalloc((cnt + 1) * sizeof(*vec));
+    vec = vash_xmalloc((cnt + 1) * sizeof(*vec));
     cnt = 0;
     for (f = g_sh.funcs; f != NULL; f = f->next)
       {
@@ -480,20 +480,20 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
                   }
                 else
                   {
-                    vs_err("%s: -%c: invalid option", word, *c);
+                    vash_err("%s: -%c: invalid option", word, *c);
                     return 2;
                   }
 
                 break;
-              case 'r': if (minus) o.r = true; else { vs_err("%s: %s: readonly variable", word, "+r"); return 1; } break;
+              case 'r': if (minus) o.r = true; else { vash_err("%s: %s: readonly variable", word, "+r"); return 1; } break;
               case 'p': o.p = true; break;
               case 'g': o.g = true; break;
               case 'f': o.f = true; break;
               case 'F': o.F = true; break;
               case 't': break;                     /* the trace attribute: functions only */
               default:
-                vs_err("%s: -%c: invalid option", word, *c);
-                vs_err("%s: usage: %s [-aAfFgilnprtux] [-p] [name[=value] ...]", word, word);
+                vash_err("%s: -%c: invalid option", word, *c);
+                vash_err("%s: usage: %s [-aAfFgilnprtux] [-p] [name[=value] ...]", word, word);
                 return 2;
             }
 
@@ -508,13 +508,13 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
 
   if (o.f)
     {
-      vs_err("%s: -f: functions are not supported here", word);
+      vash_err("%s: -f: functions are not supported here", word);
       return 1;
     }
 
   if (kind == DK_LOCAL && g_sh.func_depth == 0)
     {
-      vs_err("local: can only be used in a function");
+      vash_err("local: can only be used in a function");
       return 1;
     }
 
@@ -558,7 +558,7 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
   return status;
 
 cannot_destroy:
-  vs_err("%s: cannot destroy array variables in this way", word);
+  vash_err("%s: cannot destroy array variables in this way", word);
   return 1;
 }
 

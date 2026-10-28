@@ -21,7 +21,7 @@ static void oom(void)
   exit(1);
 }
 
-void *vs_xmalloc(size_t n)
+void *vash_xmalloc(size_t n)
 {
   void *p = malloc(n != 0 ? n : 1);
 
@@ -33,7 +33,7 @@ void *vs_xmalloc(size_t n)
   return p;
 }
 
-void *vs_xrealloc(void *p, size_t n)
+void *vash_xrealloc(void *p, size_t n)
 {
   p = realloc(p, n != 0 ? n : 1);
   if (p == NULL)
@@ -44,21 +44,21 @@ void *vs_xrealloc(void *p, size_t n)
   return p;
 }
 
-char *vs_xstrdup(const char *s)
+char *vash_xstrdup(const char *s)
 {
-  return vs_xstrndup(s, strlen(s));
+  return vash_xstrndup(s, strlen(s));
 }
 
-char *vs_xstrndup(const char *s, size_t n)
+char *vash_xstrndup(const char *s, size_t n)
 {
-  char *p = vs_xmalloc(n + 1);
+  char *p = vash_xmalloc(n + 1);
 
   memcpy(p, s, n);
   p[n] = '\0';
   return p;
 }
 
-void vs_err(const char *fmt, ...)
+void vash_err(const char *fmt, ...)
 {
   va_list ap;
 
@@ -92,7 +92,7 @@ static void sb_reserve(struct sbuf_s *b, size_t extra)
           cap *= 2;
         }
 
-      b->s = vs_xrealloc(b->s, cap);
+      b->s = vash_xrealloc(b->s, cap);
       b->cap = cap;
     }
 }
@@ -140,7 +140,7 @@ void sb_free(struct sbuf_s *b)
  * handing any path with dots to its VFS.
  */
 
-int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n)
+int vash_path_normalize(const char *cwd, const char *path, char *out, size_t n)
 {
   size_t len = 0;
   const char *p;
@@ -159,7 +159,7 @@ int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n)
     {
       /* Start from the working directory: normalize it first. */
 
-      if (vs_path_normalize("/", cwd, out, n) != 0)
+      if (vash_path_normalize("/", cwd, out, n) != 0)
         {
           return -1;
         }
@@ -236,7 +236,7 @@ int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n)
   return 0;
 }
 
-long long vs_now_ms(void)
+long long vash_now_ms(void)
 {
   struct timespec t;
 
@@ -249,7 +249,7 @@ long long vs_now_ms(void)
  * on littlefs a stat costs 10 to 40 ms.
  */
 
-bool vs_dirent_isdir(const struct dirent *e, const char *path)
+bool vash_dirent_isdir(const struct dirent *e, const char *path)
 {
   struct stat st;
 
@@ -267,5 +267,5 @@ bool vs_dirent_isdir(const struct dirent *e, const char *path)
   (void)e;
 #endif
 
-  return stat(VS_FS(path), &st) == 0 && S_ISDIR(st.st_mode);
+  return stat(VASH_FS(path), &st) == 0 && S_ISDIR(st.st_mode);
 }

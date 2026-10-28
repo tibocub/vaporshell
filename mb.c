@@ -2,7 +2,7 @@
  * mb.c -- characters, for the parts of the shell that count or cut by them
  * (${#v}, ${v:off:len}, case conversion, ? and [...] in patterns, read -n).
  *
- * Everything is built on vs_plat_mbdecode(). When vs_plat_multibyte() is false
+ * Everything is built on vash_plat_mbdecode(). When vash_plat_multibyte() is false
  * (NuttX, the C locale) each function is a plain byte operation, so nothing here
  * costs anything or changes behaviour there.
  */
@@ -16,9 +16,9 @@
 
 #define MB_MAX 8
 
-bool vs_mb(void)
+bool vash_mb(void)
 {
-  return vs_plat_multibyte();
+  return vash_plat_multibyte();
 }
 
 /* The code point of the character in the first n bytes at s (n > 0), and how
@@ -27,7 +27,7 @@ bool vs_mb(void)
  * Unicode range so it matches nothing but itself.
  */
 
-long vs_mb_charn(const char *s, size_t n, size_t *len)
+long vash_mb_charn(const char *s, size_t n, size_t *len)
 {
   long wc = 0;
   size_t r;
@@ -38,13 +38,13 @@ long vs_mb_charn(const char *s, size_t n, size_t *len)
       return 0;
     }
 
-  if (!vs_plat_multibyte())
+  if (!vash_plat_multibyte())
     {
       *len = 1;
       return (unsigned char)s[0];
     }
 
-  r = vs_plat_mbdecode(s, n > MB_MAX ? MB_MAX : n, &wc);
+  r = vash_plat_mbdecode(s, n > MB_MAX ? MB_MAX : n, &wc);
   if (r == 0 || r == (size_t)-1)
     {
       *len = 1;
@@ -55,7 +55,7 @@ long vs_mb_charn(const char *s, size_t n, size_t *len)
   return wc;
 }
 
-long vs_mb_char(const char *s, size_t *len)
+long vash_mb_char(const char *s, size_t *len)
 {
   size_t avail = 0;
 
@@ -70,23 +70,23 @@ long vs_mb_char(const char *s, size_t *len)
       return 0;
     }
 
-  return vs_mb_charn(s, avail, len);
+  return vash_mb_charn(s, avail, len);
 }
 
-size_t vs_mb_len(const char *s)
+size_t vash_mb_len(const char *s)
 {
   size_t len;
 
-  vs_mb_char(s, &len);
+  vash_mb_char(s, &len);
   return len;
 }
 
-size_t vs_mb_count_n(const char *s, size_t n)
+size_t vash_mb_count_n(const char *s, size_t n)
 {
   size_t off = 0;
   size_t count = 0;
 
-  if (!vs_plat_multibyte())
+  if (!vash_plat_multibyte())
     {
       return n;
     }
@@ -95,7 +95,7 @@ size_t vs_mb_count_n(const char *s, size_t n)
     {
       size_t len;
 
-      vs_mb_charn(s + off, n - off, &len);
+      vash_mb_charn(s + off, n - off, &len);
       off += len;
       count++;
     }
@@ -103,20 +103,20 @@ size_t vs_mb_count_n(const char *s, size_t n)
   return count;
 }
 
-size_t vs_mb_count(const char *s)
+size_t vash_mb_count(const char *s)
 {
-  return vs_mb_count_n(s, strlen(s));
+  return vash_mb_count_n(s, strlen(s));
 }
 
 /* The byte offset after 'nchars' characters of the nbytes at s, or nbytes if
  * there are fewer.
  */
 
-size_t vs_mb_skip(const char *s, size_t nbytes, size_t nchars)
+size_t vash_mb_skip(const char *s, size_t nbytes, size_t nchars)
 {
   size_t off = 0;
 
-  if (!vs_plat_multibyte())
+  if (!vash_plat_multibyte())
     {
       return nchars < nbytes ? nchars : nbytes;
     }
@@ -125,7 +125,7 @@ size_t vs_mb_skip(const char *s, size_t nbytes, size_t nchars)
     {
       size_t len;
 
-      vs_mb_charn(s + off, nbytes - off, &len);
+      vash_mb_charn(s + off, nbytes - off, &len);
       off += len;
       nchars--;
     }
@@ -139,25 +139,25 @@ size_t vs_mb_skip(const char *s, size_t nbytes, size_t nchars)
  * *nchars is then nbytes. Free the result.
  */
 
-size_t *vs_mb_bounds(const char *s, size_t nbytes, size_t *nchars)
+size_t *vash_mb_bounds(const char *s, size_t nbytes, size_t *nchars)
 {
   size_t *b;
   size_t off = 0;
   size_t k = 0;
 
-  if (!vs_plat_multibyte())
+  if (!vash_plat_multibyte())
     {
       *nchars = nbytes;
       return NULL;
     }
 
-  b = vs_xmalloc((nbytes + 1) * sizeof(size_t));
+  b = vash_xmalloc((nbytes + 1) * sizeof(size_t));
   while (off < nbytes)
     {
       size_t len;
 
       b[k++] = off;
-      vs_mb_charn(s + off, nbytes - off, &len);
+      vash_mb_charn(s + off, nbytes - off, &len);
       off += len;
     }
 
@@ -171,14 +171,14 @@ size_t *vs_mb_bounds(const char *s, size_t nbytes, size_t *nchars)
  * single-byte locale it is the C library's toupper/tolower of that byte.
  */
 
-size_t vs_mb_case(const char *s, size_t len, bool upper, char *out)
+size_t vash_mb_case(const char *s, size_t len, bool upper, char *out)
 {
   long wc;
   long conv;
   size_t l;
   size_t n;
 
-  if (!vs_plat_multibyte())
+  if (!vash_plat_multibyte())
     {
       unsigned char c = (unsigned char)s[0];
 
@@ -187,9 +187,9 @@ size_t vs_mb_case(const char *s, size_t len, bool upper, char *out)
       return 1;
     }
 
-  wc = vs_mb_charn(s, len, &l);
-  conv = wc >= 0x110000L ? wc : (upper ? vs_plat_wc_toupper(wc) : vs_plat_wc_tolower(wc));
-  n = conv == wc ? 0 : vs_plat_mbencode(conv, out);
+  wc = vash_mb_charn(s, len, &l);
+  conv = wc >= 0x110000L ? wc : (upper ? vash_plat_wc_toupper(wc) : vash_plat_wc_tolower(wc));
+  n = conv == wc ? 0 : vash_plat_mbencode(conv, out);
   if (n == 0)
     {
       memcpy(out, s, len);              /* unchanged, or it has no encoding */
@@ -201,11 +201,11 @@ size_t vs_mb_case(const char *s, size_t len, bool upper, char *out)
 
 /* The other case of a code point, for matching without regard to case. */
 
-long vs_mb_swapcase(long wc)
+long vash_mb_swapcase(long wc)
 {
   long lower;
 
-  if (!vs_plat_multibyte() || wc >= 0x110000L)
+  if (!vash_plat_multibyte() || wc >= 0x110000L)
     {
       if (wc >= 'a' && wc <= 'z')
         {
@@ -215,13 +215,13 @@ long vs_mb_swapcase(long wc)
       return (wc >= 'A' && wc <= 'Z') ? wc - 'A' + 'a' : wc;
     }
 
-  lower = vs_plat_wc_tolower(wc);
-  return lower != wc ? lower : vs_plat_wc_toupper(wc);
+  lower = vash_plat_wc_tolower(wc);
+  return lower != wc ? lower : vash_plat_wc_toupper(wc);
 }
 
 /* Is the character in the class `[:name:]` (name is n bytes)? */
 
-bool vs_mb_isclass(long wc, const char *name, size_t n)
+bool vash_mb_isclass(long wc, const char *name, size_t n)
 {
   char buf[16];
 
@@ -232,5 +232,5 @@ bool vs_mb_isclass(long wc, const char *name, size_t n)
 
   memcpy(buf, name, n);
   buf[n] = '\0';
-  return vs_plat_wc_isclass(wc, buf);
+  return vash_plat_wc_isclass(wc, buf);
 }

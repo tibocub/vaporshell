@@ -25,21 +25,21 @@
  * every caller free of NULL checks, which is the right trade for a shell.
  */
 
-void *vs_xmalloc(size_t n);
-void *vs_xrealloc(void *p, size_t n);
-char *vs_xstrdup(const char *s);
-char *vs_xstrndup(const char *s, size_t n);
+void *vash_xmalloc(size_t n);
+void *vash_xrealloc(void *p, size_t n);
+char *vash_xstrdup(const char *s);
+char *vash_xstrndup(const char *s, size_t n);
 
 /* "vaporshell: <message>\n" on stderr. */
 
-void vs_err(const char *fmt, ...);
+void vash_err(const char *fmt, ...);
 struct dirent;
-bool vs_dirent_isdir(const struct dirent *e, const char *path);
-long long vs_now_ms(void);                 /* monotonic clock */
+bool vash_dirent_isdir(const struct dirent *e, const char *path);
+long long vash_now_ms(void);                 /* monotonic clock */
 
 /* Lexical path normalization: see util.c. */
 
-int vs_path_normalize(const char *cwd, const char *path, char *out, size_t n);
+int vash_path_normalize(const char *cwd, const char *path, char *out, size_t n);
 
 /* Growable NUL-terminated string. */
 
@@ -218,17 +218,17 @@ void special_init(void);
  * not part of a valid character counts as one character, as in bash.
  */
 
-bool vs_mb(void);                                     /* multibyte characters in effect? */
-size_t vs_mb_len(const char *s);                      /* bytes in the character at s (>= 1) */
-long vs_mb_char(const char *s, size_t *len);          /* its code point */
-long vs_mb_charn(const char *s, size_t n, size_t *len);  /* the same, n bytes available */
-size_t vs_mb_count(const char *s);                    /* characters in s */
-size_t vs_mb_count_n(const char *s, size_t n);        /* ... in its first n bytes */
-size_t vs_mb_skip(const char *s, size_t nbytes, size_t nchars);   /* byte offset after nchars */
-size_t *vs_mb_bounds(const char *s, size_t nbytes, size_t *nchars);  /* NULL: bytes are characters */
-size_t vs_mb_case(const char *s, size_t len, bool upper, char *out);  /* out: at least 16 bytes */
-long vs_mb_swapcase(long wc);
-bool vs_mb_isclass(long wc, const char *name, size_t n);
+bool vash_mb(void);                                     /* multibyte characters in effect? */
+size_t vash_mb_len(const char *s);                      /* bytes in the character at s (>= 1) */
+long vash_mb_char(const char *s, size_t *len);          /* its code point */
+long vash_mb_charn(const char *s, size_t n, size_t *len);  /* the same, n bytes available */
+size_t vash_mb_count(const char *s);                    /* characters in s */
+size_t vash_mb_count_n(const char *s, size_t n);        /* ... in its first n bytes */
+size_t vash_mb_skip(const char *s, size_t nbytes, size_t nchars);   /* byte offset after nchars */
+size_t *vash_mb_bounds(const char *s, size_t nbytes, size_t *nchars);  /* NULL: bytes are characters */
+size_t vash_mb_case(const char *s, size_t len, bool upper, char *out);  /* out: at least 16 bytes */
+long vash_mb_swapcase(long wc);
+bool vash_mb_isclass(long wc, const char *name, size_t n);
 
 /* procsub.c: <(cmd) and >(cmd). Each runs to completion and is materialized as
  * a real file (bash's true concurrency needs a background reader/writer this
@@ -248,7 +248,7 @@ void job_reap(void);                                   /* WNOHANG poll of every 
 struct job_s *job_find_id(int id);
 struct job_s *job_find_spec(const char *spec, bool *bad_spec);  /* %1, %+, %-, %%, a bare pid, or NULL: %+/current */
 void job_remove(struct job_s *j);
-void vs_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg);
+void vash_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg);
 int bi_jobs(int argc, char **argv);
 int bi_fg(int argc, char **argv);
 int bi_bg(int argc, char **argv);
@@ -258,7 +258,7 @@ int bi_compgen(int argc, char **argv);                 /* compgen.c */
 int bi_complete(int argc, char **argv);                /* compgen.c: complete, compopt */
 int bi_compopt(int argc, char **argv);
 int bi_history(int argc, char **argv);                 /* history.c */
-const char *vs_signal_name(int i);                     /* traps.c */
+const char *vash_signal_name(int i);                     /* traps.c */
 int bi_fc(int argc, char **argv);                      /* history.c */
 int bi_bind(int argc, char **argv);                    /* bind.c: accepted, ignored */
 bool builtin_is_enabled(const char *name);             /* false: enable -n disabled it */
@@ -358,10 +358,10 @@ const char *pos_get(int i);                      /* 1-based; NULL if unset */
  * registered for the calling task (platform_nuttx.c).
  */
 
-#define VS_NTRAPS 68
-#define VS_TRAP_DEBUG  65             /* bash pseudo-signals, after the real ones, */
-#define VS_TRAP_ERR    66             /* in the order bash lists them */
-#define VS_TRAP_RETURN 67
+#define VASH_NTRAPS 68
+#define VASH_TRAP_DEBUG  65             /* bash pseudo-signals, after the real ones, */
+#define VASH_TRAP_ERR    66             /* in the order bash lists them */
+#define VASH_TRAP_RETURN 67
 
 enum unwind_e
 {
@@ -386,7 +386,7 @@ struct shell_s
   bool opt_noH;           /* set +H: no `!` history expansion in the line editor */
   int trap_depth;         /* inside a trap action */
   int in_subshell;        /* running in-process as a subshell (inproc.c) */
-  bool force_inproc;      /* VS_INPROC: use in-process subshells even with fork() */
+  bool force_inproc;      /* VASH_INPROC: use in-process subshells even with fork() */
   int dot_depth;          /* nesting of `.`/source: `return` is valid inside */
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */
@@ -424,7 +424,7 @@ struct shell_s
   struct func_s *funcs;
 
   unsigned long features;     /* mode.h: the active profile's feature bits */
-  int profile;                /* enum vs_profile_e */
+  int profile;                /* enum vash_profile_e */
 
   /* shopt options that change behaviour (shopt.c); the rest are only
    * remembered so `shopt` can report them.
@@ -443,7 +443,7 @@ struct shell_s
 
   char **dirstack;            /* pushd/popd: saved directories, most recent first */
   int ndirs;
-  char *trap_parent[VS_NTRAPS];   /* bash: a subshell's `trap` lists these (the parent's) */
+  char *trap_parent[VASH_NTRAPS];   /* bash: a subshell's `trap` lists these (the parent's) */
   bool trap_dirty;                /* ...until the subshell sets a trap of its own */
   int return_fdepth;              /* function depth a RETURN trap was set at (0: top level) */
   bool in_err_trap;           /* an ERR/DEBUG/RETURN action is running */
@@ -473,17 +473,17 @@ struct shell_s
   int getopts_pos;            /* getopts: index inside a clustered option arg */
   char getopts_last[24];      /* OPTIND as getopts last stored it */
 
-  char *trap_action[VS_NTRAPS];        /* traps.c: NULL default, "" ignore */
-  volatile int trap_flag[VS_NTRAPS];   /* set by signal handlers */
+  char *trap_action[VASH_NTRAPS];        /* traps.c: NULL default, "" ignore */
+  volatile int trap_flag[VASH_NTRAPS];   /* set by signal handlers */
   volatile int trap_pending;
 };
 
 #ifdef VAPORSHELL_POSIX
-extern struct shell_s g_vs_state;
-#  define g_sh g_vs_state
+extern struct shell_s g_vash_state;
+#  define g_sh g_vash_state
 #else
-struct shell_s *vs_state(void);
-#  define g_sh (*vs_state())
+struct shell_s *vash_state(void);
+#  define g_sh (*vash_state())
 #endif
 
 /* Creates this task's shell state from the process environment. */

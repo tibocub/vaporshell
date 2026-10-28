@@ -161,7 +161,7 @@ struct ed_s
   int cur_row;                  /* rows the cursor is below the prompt's first row */
   struct sbuf_s kill;
   bool last_kill;               /* the previous command was a kill: append to it */
-  int hi;                       /* history index being shown; vs_hist_count() = the new line */
+  int hi;                       /* history index being shown; vash_hist_count() = the new line */
   char *hsaved;                 /* the new line, while another entry is shown */
   char *prefix;                 /* prefix search: the text it started from */
   struct snap_s undo[UNDO_DEPTH];
@@ -377,7 +377,7 @@ enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH, HL_COMMENT };
 
 static bool path_exists(const char *word)
 {
-  char tilde[VS_PATH_MAX];
+  char tilde[VASH_PATH_MAX];
   struct stat st;
 
   if (word[0] == '~' && (word[1] == '/' || word[1] == '\0') && var_get("HOME") != NULL)
@@ -390,7 +390,7 @@ static bool path_exists(const char *word)
       word = tilde;
     }
 
-  return stat(VS_FS(word), &st) == 0;
+  return stat(VASH_FS(word), &st) == 0;
 }
 
 /* The answers of the last few path checks, by hash of the word: the line is redrawn
@@ -425,14 +425,14 @@ static bool path_known(struct pmemo_s *m, const char *word)
 
 static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 {
-  unsigned char *st = vs_xmalloc(len + 1);
+  unsigned char *st = vash_xmalloc(len + 1);
   bool at_cmd = true;
   char quote = 0;
   size_t i = 0;
   int budget = 16;                /* stat() calls per redraw: a long line must not make typing slow */
 
   memset(st, HL_NONE, len + 1);
-  vs_commands_refresh();
+  vash_commands_refresh();
   while (i < len)
     {
       char ch = s[i];
@@ -504,7 +504,7 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
                 {
                   memcpy(word, s + i, j - i);
                   word[j - i] = '\0';
-                  memset(st + i, vs_is_command(word) ? HL_OK : HL_BAD, j - i);
+                  memset(st + i, vash_is_command(word) ? HL_OK : HL_BAD, j - i);
                 }
             }
         }
@@ -544,7 +544,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   struct cursor_s at = { 0, 0 };
   size_t i;
   char t[24];
-  const char *hlv = var_get("VS_HIGHLIGHT");
+  const char *hlv = var_get("VASH_HIGHLIGHT");
   unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len, &e->pm) : NULL;
   unsigned char cur = HL_NONE;
 
@@ -672,12 +672,12 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
 
 /* The newest history entry that starts with what is typed: the rest of it is
  * shown in grey and Right / End / Ctrl-F / Ctrl-E at the end of the line takes it.
- * VS_AUTOSUGGEST=0 turns it off. NULL if there is none.
+ * VASH_AUTOSUGGEST=0 turns it off. NULL if there is none.
  */
 
 static const char *suggestion(const struct ed_s *e)
 {
-  const char *off = var_get("VS_AUTOSUGGEST");
+  const char *off = var_get("VASH_AUTOSUGGEST");
   int i;
 
   if (e->pos != e->b.len || e->b.len == 0 || (off != NULL && strcmp(off, "0") == 0) ||
@@ -686,9 +686,9 @@ static const char *suggestion(const struct ed_s *e)
       return NULL;
     }
 
-  for (i = vs_hist_count() - 1; i >= 0; i--)
+  for (i = vash_hist_count() - 1; i >= 0; i--)
     {
-      const char *h = vs_hist_get(i);
+      const char *h = vash_hist_get(i);
 
       if (strlen(h) > e->b.len && strncmp(h, text(e), e->b.len) == 0 &&
           strpbrk(h + e->b.len, "\n\033") == NULL)
@@ -730,7 +730,7 @@ static void snap(struct ed_s *e)
       e->nundo--;
     }
 
-  e->undo[e->nundo].s = vs_xstrdup(text(e));
+  e->undo[e->nundo].s = vash_xstrdup(text(e));
   e->undo[e->nundo].pos = e->pos;
   e->nundo++;
 }
@@ -755,7 +755,7 @@ static void insert(struct ed_s *e, const char *s, size_t n)
 
   if (tail > 0)
     {
-      keep = vs_xmalloc(tail);
+      keep = vash_xmalloc(tail);
       memcpy(keep, e->b.s + e->pos, tail);
     }
 
@@ -896,32 +896,32 @@ static void case_word(struct ed_s *e, char mode)
 
 static void hist_show(struct ed_s *e, int idx)
 {
-  int n = vs_hist_count();
+  int n = vash_hist_count();
 
   if (e->hi == n && e->hsaved == NULL)
     {
-      e->hsaved = vs_xstrdup(text(e));
+      e->hsaved = vash_xstrdup(text(e));
     }
 
   e->hi = idx;
-  set_text(e, idx >= n ? (e->hsaved != NULL ? e->hsaved : "") : vs_hist_get(idx));
+  set_text(e, idx >= n ? (e->hsaved != NULL ? e->hsaved : "") : vash_hist_get(idx));
 }
 
 static void hist_move(struct ed_s *e, int dir, bool prefix)
 {
-  int n = vs_hist_count();
+  int n = vash_hist_count();
   int i = e->hi + dir;
 
   if (prefix && e->prefix == NULL)
     {
-      e->prefix = vs_xstrdup(text(e));
+      e->prefix = vash_xstrdup(text(e));
       e->prefix[e->pos] = '\0';
     }
 
   for (; i >= 0 && i <= n; i += dir)
     {
       if (!prefix || i == n ||
-          strncmp(vs_hist_get(i), e->prefix, strlen(e->prefix)) == 0)
+          strncmp(vash_hist_get(i), e->prefix, strlen(e->prefix)) == 0)
         {
           hist_show(e, i);
           if (prefix)
@@ -940,12 +940,12 @@ static int read_key(char *seq, int *len);
 
 static int find_hist(const char *needle, int from, int dir, const char **hit)
 {
-  int n = vs_hist_count();
+  int n = vash_hist_count();
   int i;
 
   for (i = from; i >= 0 && i < n; i += dir)
     {
-      const char *h = vs_hist_get(i);
+      const char *h = vash_hist_get(i);
 
       *hit = strstr(h, needle);
       if (*hit != NULL)
@@ -964,12 +964,12 @@ static int find_hist(const char *needle, int from, int dir, const char **hit)
 static bool search(struct ed_s *e)
 {
   struct sbuf_s q;
-  int idx = vs_hist_count();
+  int idx = vash_hist_count();
   const char *hit = NULL;
   char seq[SEQ_MAX];
   int len;
   bool failed = false;
-  char *orig = vs_xstrdup(text(e));
+  char *orig = vash_xstrdup(text(e));
   size_t orig_pos = e->pos;
   bool accepted = false;
 
@@ -986,9 +986,9 @@ static bool search(struct ed_s *e)
         }
 
       sb_adds(&pr, "': ");
-      if (idx < vs_hist_count())
+      if (idx < vash_hist_count())
         {
-          const char *h = vs_hist_get(idx);
+          const char *h = vash_hist_get(idx);
 
           draw(e, pr.s, h, strlen(h), hit != NULL ? (size_t)(hit - h) : 0, NULL, false, NULL);
         }
@@ -1006,7 +1006,7 @@ static bool search(struct ed_s *e)
       if (len == 1 && (seq[0] == 0x12 || seq[0] == 0x13))     /* Ctrl-R / Ctrl-S */
         {
           int dir = seq[0] == 0x12 ? -1 : 1;
-          int from = idx < vs_hist_count() ? idx + dir : vs_hist_count() - 1;
+          int from = idx < vash_hist_count() ? idx + dir : vash_hist_count() - 1;
           int found = q.s != NULL ? find_hist(q.s, from, dir, &hit) : -1;
 
           failed = found < 0 && q.s != NULL;
@@ -1021,12 +1021,12 @@ static bool search(struct ed_s *e)
             {
               q.len = prev_char(q.s, q.len);
               q.s[q.len] = '\0';
-              idx = vs_hist_count();
+              idx = vash_hist_count();
               hit = NULL;
               failed = false;
               if (q.len > 0)
                 {
-                  int found = find_hist(q.s, vs_hist_count() - 1, -1, &hit);
+                  int found = find_hist(q.s, vash_hist_count() - 1, -1, &hit);
 
                   if (found >= 0)
                     {
@@ -1039,7 +1039,7 @@ static bool search(struct ed_s *e)
         {
           set_text(e, orig);
           e->pos = orig_pos;
-          idx = vs_hist_count();
+          idx = vash_hist_count();
           break;
         }
       else if (len >= 1 && (unsigned char)seq[0] >= 0x20 && seq[0] != 0x7f)
@@ -1047,7 +1047,7 @@ static bool search(struct ed_s *e)
           int found;
 
           sb_addn(&q, seq, (size_t)len);
-          found = find_hist(q.s, idx < vs_hist_count() ? idx : vs_hist_count() - 1,
+          found = find_hist(q.s, idx < vash_hist_count() ? idx : vash_hist_count() - 1,
                             -1, &hit);
           failed = found < 0;
           if (found >= 0)
@@ -1061,10 +1061,10 @@ static bool search(struct ed_s *e)
            * runs it.
            */
 
-          if (idx < vs_hist_count())
+          if (idx < vash_hist_count())
             {
-              set_text(e, vs_hist_get(idx));
-              e->pos = hit != NULL ? (size_t)(hit - vs_hist_get(idx)) : e->b.len;
+              set_text(e, vash_hist_get(idx));
+              e->pos = hit != NULL ? (size_t)(hit - vash_hist_get(idx)) : e->b.len;
             }
 
           accepted = len == 1 && (seq[0] == '\r' || seq[0] == '\n');
@@ -1075,10 +1075,10 @@ static bool search(struct ed_s *e)
         }
     }
 
-  if (idx < vs_hist_count() && hit != NULL)
+  if (idx < vash_hist_count() && hit != NULL)
     {
-      set_text(e, vs_hist_get(idx));
-      e->pos = (size_t)(hit - vs_hist_get(idx));
+      set_text(e, vash_hist_get(idx));
+      e->pos = (size_t)(hit - vash_hist_get(idx));
       e->hi = idx;
     }
 
@@ -1183,7 +1183,7 @@ static int menu_rows(const struct ed_s *e)
 
 static int menu_visible(const struct ed_s *e)
 {
-  int r = vs_plat_rows();
+  int r = vash_plat_rows();
   int vis = (r > 0 ? r : 24) / 2;
 
   vis = vis < 3 ? 3 : vis;
@@ -1273,7 +1273,7 @@ static char *menu_text(const struct ed_s *e)
       sb_adds(&o, t);
     }
 
-  return o.s != NULL ? sb_take(&o) : vs_xstrdup("");
+  return o.s != NULL ? sb_take(&o) : vash_xstrdup("");
 }
 
 /* Choose entry 'sel' (wrapping): its tail replaces the previous choice's. */
@@ -1287,7 +1287,7 @@ static void menu_choose(struct ed_s *e, int sel)
   sel = (sel % m->n + m->n) % m->n;
   if (m->del > 0 && !m->replaced)
     {
-      m->orig = vs_xmalloc(m->del + 1);               /* a looser match: the typed word goes */
+      m->orig = vash_xmalloc(m->del + 1);               /* a looser match: the typed word goes */
       memcpy(m->orig, e->b.s + m->at - m->del, m->del);
       m->orig[m->del] = '\0';
       erase(e, m->at - m->del, m->at, false, false);
@@ -1298,7 +1298,7 @@ static void menu_choose(struct ed_s *e, int sel)
   erase(e, m->at, m->at + m->inslen, false, false);
   e->pos = m->at;
   {
-    char *tail = vs_comp_tail(m->name[sel], m->suffix[sel], m->skip);
+    char *tail = vash_comp_tail(m->name[sel], m->suffix[sel], m->skip);
 
     m->inslen = tail != NULL ? strlen(tail) : 0;
     if (tail != NULL)
@@ -1341,7 +1341,7 @@ static void complete(struct ed_s *e, int dir)
       return;
     }
 
-  n = vs_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, &skip, cand_cb, &e->menu);
+  n = vash_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, &skip, cand_cb, &e->menu);
   if (e->menu.failed)
     {
       menu_free(e);                    /* too many candidates for the memory there is */
@@ -1385,7 +1385,7 @@ static int read_key(char *seq, int *len)
   int r;
   int n = 0;
 
-  r = vs_plat_tty_read(&c, -1);
+  r = vash_plat_tty_read(&c, -1);
   if (r <= 0)
     {
       return r;
@@ -1394,7 +1394,7 @@ static int read_key(char *seq, int *len)
   seq[n++] = (char)c;
   if (c == 0x1b)
     {
-      if (vs_plat_tty_read(&c, ESC_TIMEOUT_MS) <= 0)
+      if (vash_plat_tty_read(&c, ESC_TIMEOUT_MS) <= 0)
         {
           *len = n;                         /* a lone ESC */
           return 1;
@@ -1405,7 +1405,7 @@ static int read_key(char *seq, int *len)
         {
           /* Parameters and intermediates up to the final byte (0x40-0x7e). */
 
-          while (n < SEQ_MAX - 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0)
+          while (n < SEQ_MAX - 1 && vash_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0)
             {
               seq[n++] = (char)c;
               if (c >= 0x40 && c <= 0x7e)
@@ -1418,7 +1418,7 @@ static int read_key(char *seq, int *len)
         {
           size_t k = u8len(c);
 
-          while (k-- > 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 &&
+          while (k-- > 1 && vash_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 &&
                  n < SEQ_MAX - 1)
             {
               seq[n++] = (char)c;
@@ -1429,7 +1429,7 @@ static int read_key(char *seq, int *len)
     {
       size_t k = u8len(c);
 
-      while (k-- > 1 && vs_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 && n < SEQ_MAX - 1)
+      while (k-- > 1 && vash_plat_tty_read(&c, ESC_TIMEOUT_MS) > 0 && n < SEQ_MAX - 1)
         {
           seq[n++] = (char)c;
         }
@@ -1453,7 +1453,7 @@ struct ubind_s
 static struct ubind_s *g_ubinds;
 static const char *g_shell;     /* the shell code of the binding lookup() found */
 
-int vs_ledit_bind(const char *seq, int len, int cmd, const char *shell)
+int vash_ledit_bind(const char *seq, int len, int cmd, const char *shell)
 {
   struct ubind_s *b;
 
@@ -1462,18 +1462,18 @@ int vs_ledit_bind(const char *seq, int len, int cmd, const char *shell)
       return -1;
     }
 
-  vs_ledit_unbind(seq, len);
-  b = vs_xmalloc(sizeof(*b));
+  vash_ledit_unbind(seq, len);
+  b = vash_xmalloc(sizeof(*b));
   memcpy(b->seq, seq, (size_t)len);
   b->len = len;
   b->cmd = cmd;
-  b->shell = shell != NULL ? vs_xstrdup(shell) : NULL;
+  b->shell = shell != NULL ? vash_xstrdup(shell) : NULL;
   b->next = g_ubinds;
   g_ubinds = b;
   return 0;
 }
 
-int vs_ledit_unbind(const char *seq, int len)
+int vash_ledit_unbind(const char *seq, int len)
 {
   struct ubind_s **p;
 
@@ -1493,7 +1493,7 @@ int vs_ledit_unbind(const char *seq, int len)
   return -1;
 }
 
-int vs_ledit_cmd_lookup(const char *name)
+int vash_ledit_cmd_lookup(const char *name)
 {
   int i;
 
@@ -1508,19 +1508,19 @@ int vs_ledit_cmd_lookup(const char *name)
   return -1;
 }
 
-int vs_ledit_ncmds(void)
+int vash_ledit_ncmds(void)
 {
   return C_NCMD;
 }
 
-const char *vs_ledit_cmd_name(int i)
+const char *vash_ledit_cmd_name(int i)
 {
   return i >= 0 && i < C_NCMD ? g_cmd_names[i] : NULL;
 }
 
 /* The idx-th binding, user ones first and then the built-in table; false past the end. */
 
-bool vs_ledit_binding(int idx, const char **seq, int *len, const char **name, const char **shell)
+bool vash_ledit_binding(int idx, const char **seq, int *len, const char **name, const char **shell)
 {
   const struct ubind_s *b;
   int cmd;
@@ -1590,7 +1590,7 @@ static void paste(struct ed_s *e)
   size_t m = 0;
 
   sb_init(&p);
-  while (vs_plat_tty_read(&c, 2000) > 0)
+  while (vash_plat_tty_read(&c, 2000) > 0)
     {
       if (c == (unsigned char)end[m])
         {
@@ -1838,7 +1838,7 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
             size_t b2 = e->pos >= e->b.len ? prev_char(s, e->b.len) : e->pos;
             size_t a2 = prev_char(s, b2);
             size_t end = next_char(s, e->b.len, b2);
-            char *x = vs_xmalloc(end - a2);
+            char *x = vash_xmalloc(end - a2);
 
             if (b2 > 0)
               {
@@ -1889,7 +1889,7 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_HIST_FIRST:
-        if (vs_hist_count() > 0)
+        if (vash_hist_count() > 0)
           {
             hist_show(e, 0);
           }
@@ -1897,7 +1897,7 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         break;
 
       case C_HIST_LAST:
-        hist_show(e, vs_hist_count());
+        hist_show(e, vash_hist_count());
         break;
 
       case C_RSEARCH:
@@ -1918,17 +1918,17 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
           {
             char num[16];
             const char *v;
-            char *code = vs_xstrdup(g_shell);
+            char *code = vash_xstrdup(g_shell);
 
             snap(e);
             var_set("READLINE_LINE", text(e));
             snprintf(num, sizeof(num), "%zu", e->pos);
             var_set("READLINE_POINT", num);
-            vs_plat_tty_raw(false);              /* the code may print or read */
+            vash_plat_tty_raw(false);              /* the code may print or read */
             put("\r\n");
             e->cur_row = 0;
             run_string(code, strlen(code));
-            vs_plat_tty_raw(true);
+            vash_plat_tty_raw(true);
             free(code);
             v = var_get("READLINE_LINE");
             set_text(e, v != NULL ? v : "");
@@ -1967,11 +1967,11 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
 
 /* ---- Entry points ------------------------------------------------------------- */
 
-bool vs_ledit_usable(void)
+bool vash_ledit_usable(void)
 {
   const char *term = var_get("TERM");
 
-  if (!vs_plat_isatty(STDIN_FILENO))
+  if (!vash_plat_isatty(STDIN_FILENO))
     {
       return false;
     }
@@ -1995,7 +1995,7 @@ static void ed_free(struct ed_s *e)
     }
 }
 
-char *vs_ledit_read(const char *prompt, bool continuation)
+char *vash_ledit_read(const char *prompt, bool continuation)
 {
   struct ed_s e;
   char seq[SEQ_MAX];
@@ -2007,15 +2007,15 @@ char *vs_ledit_read(const char *prompt, bool continuation)
   sb_init(&e.b);
   sb_init(&e.kill);
   e.prompt = prompt;
-  e.hi = vs_hist_count();
+  e.hi = vash_hist_count();
   e.last = C_NONE;
 
-  if (!vs_plat_tty_raw(true))
+  if (!vash_plat_tty_raw(true))
     {
       return NULL;
     }
 
-  bp = var_get("VS_BRACKETED_PASTE");
+  bp = var_get("VASH_BRACKETED_PASTE");
 #ifdef VAPORSHELL_POSIX
   e.bracketed = bp == NULL || strcmp(bp, "0") != 0;
 #else
@@ -2029,7 +2029,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
   for (; ; )
     {
       int cmd;
-      int cols = vs_plat_columns();
+      int cols = vash_plat_columns();
       const char *cv = var_get("COLUMNS");
 
       e.cols = cols > 0 ? cols : (cv != NULL && atoi(cv) > 0) ? atoi(cv) : 80;
@@ -2053,7 +2053,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
           put("^C\r\n");
           g_sh.last_status = 130;
           g_sh.input_aborted = continuation;
-          result = continuation ? NULL : vs_xstrdup("\n");   /* NULL: the parser drops the half-typed command */
+          result = continuation ? NULL : vash_xstrdup("\n");   /* NULL: the parser drops the half-typed command */
           goto done;
         }
 
@@ -2076,7 +2076,7 @@ char *vs_ledit_read(const char *prompt, bool continuation)
     {
       draw(&e, e.prompt, text(&e), e.b.len, e.b.len, NULL, true, NULL);
       put("\r\n");
-      char *x = continuation || g_sh.opt_noH ? NULL : vs_hist_expand(text(&e));
+      char *x = continuation || g_sh.opt_noH ? NULL : vash_hist_expand(text(&e));
       const char *t = x != NULL ? x : text(&e);
       size_t n = x != NULL ? strlen(x) : e.b.len;
 
@@ -2086,14 +2086,14 @@ char *vs_ledit_read(const char *prompt, bool continuation)
           put("\r\n");
         }
 
-      result = vs_xmalloc(n + 2);
+      result = vash_xmalloc(n + 2);
       memcpy(result, t, n);
       result[n] = '\n';
       result[n + 1] = '\0';
       if (!continuation)
         {
-          vs_hist_add(t);
-          vs_hist_save();                 /* now, not at exit: a kill or a reset keeps the session */
+          vash_hist_add(t);
+          vash_hist_save();                 /* now, not at exit: a kill or a reset keeps the session */
         }
 
       free(x);
@@ -2105,7 +2105,7 @@ done:
       put("\033[?2004l");
     }
 
-  vs_plat_tty_raw(false);
+  vash_plat_tty_raw(false);
   ed_free(&e);
   return result;
 }

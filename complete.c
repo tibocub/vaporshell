@@ -106,7 +106,7 @@ static void cands_add(struct cands_s *c, const char *prefix, const char *name,
 
   if (c->n == c->cap)
     {
-      /* A long list must not take the shell down with it: plain realloc, not vs_xrealloc. */
+      /* A long list must not take the shell down with it: plain realloc, not vash_xrealloc. */
 
       e = realloc(c->e, (size_t)(c->cap > 0 ? c->cap * 2 : 32) * sizeof(c->e[0]));
       if (e == NULL)
@@ -139,7 +139,7 @@ static void cands_add(struct cands_s *c, const char *prefix, const char *name,
  * NULL if memory ran out.
  */
 
-char *vs_comp_tail(const char *name, char suffix, size_t skip)
+char *vash_comp_tail(const char *name, char suffix, size_t skip)
 {
   char *full = malloc(strlen(name) * 2 + 2);
   char *d = full;
@@ -212,7 +212,7 @@ static void each_path_dir(void (*fn)(const char *dir, void *arg), void *arg)
   while (path != NULL && *path != '\0')
     {
       size_t len = strcspn(path, ":");
-      char dir[VS_PATH_MAX];
+      char dir[VASH_PATH_MAX];
 
       if (len > 0 && len < sizeof(dir))
         {
@@ -315,7 +315,7 @@ static void refresh_commands(void)
   g_ncmds = 0;
   g_poollen = 0;
   free(g_sig);
-  g_sig = sig.s != NULL ? sb_take(&sig) : vs_xstrdup("");
+  g_sig = sig.s != NULL ? sb_take(&sig) : vash_xstrdup("");
   each_path_dir(scan_dir, NULL);
   qsort(g_off, (size_t)g_ncmds, sizeof(unsigned), cmp_off);
   for (i = 1, u = 0; i < g_ncmds; i++)          /* the same name in several directories */
@@ -371,7 +371,7 @@ static void refresh_commands(void)
 
 /* Call fn for every name in the (refreshed) $PATH table, sorted, once each. */
 
-void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg)
+void vash_each_path_command(void (*fn)(const char *name, void *arg), void *arg)
 {
   int i;
 
@@ -392,7 +392,7 @@ static void complete_command(struct cands_s *c, const char *prefix)
   int hi;
   int i;
 
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
       cands_add(c, prefix, b->name, ' ', NULL);
     }
@@ -438,9 +438,9 @@ static void complete_path(struct cands_s *c, const char *word)
 {
   const char *slash = strrchr(word, '/');
   const char *base = slash != NULL ? slash + 1 : word;
-  char dir[VS_PATH_MAX];
-  char fbuf[VS_PATH_MAX];
-  char child[VS_PATH_MAX];
+  char dir[VASH_PATH_MAX];
+  char fbuf[VASH_PATH_MAX];
+  char child[VASH_PATH_MAX];
   DIR *d;
   struct dirent *e;
   size_t dlen = slash != NULL ? (size_t)(slash - word) + 1 : 0;
@@ -460,7 +460,7 @@ static void complete_path(struct cands_s *c, const char *word)
 
   if (dir[0] == '~' && dir[1] == '/' && var_get("HOME") != NULL)    /* only the lookup is expanded */
     {
-      char home[VS_PATH_MAX];
+      char home[VASH_PATH_MAX];
 
       if (snprintf(home, sizeof(home), "%s%s", var_get("HOME"), dir + 1) >= (int)sizeof(home))
         {
@@ -471,7 +471,7 @@ static void complete_path(struct cands_s *c, const char *word)
       dlen = strlen(dir);
     }
 
-  d = opendir(vs_plat_fspath(dlen > 0 ? dir : ".", fbuf, sizeof(fbuf)));    /* NuttX rejects a bare "." */
+  d = opendir(vash_plat_fspath(dlen > 0 ? dir : ".", fbuf, sizeof(fbuf)));    /* NuttX rejects a bare "." */
   if (d == NULL)
     {
       return;
@@ -495,7 +495,7 @@ static void complete_path(struct cands_s *c, const char *word)
         {
           memcpy(child, dir, dlen);
           strcpy(child + dlen, e->d_name);
-          if (vs_dirent_isdir(e, child))
+          if (vash_dirent_isdir(e, child))
             {
               suffix = '/';
             }
@@ -600,13 +600,13 @@ static void generate(struct cands_s *c, struct gen_s *g)
     }
   else if (word[0] == '%' && strchr(word, '/') == NULL)
     {
-      vs_each_job(job_cand, &(struct word_ctx_s){ c, word });    /* %1 %2 ...: with the job's command shown */
+      vash_each_job(job_cand, &(struct word_ctx_s){ c, word });    /* %1 %2 ...: with the job's command shown */
       g->whole_word = true;
     }
   else if (word[0] == '~' && strchr(word, '/') == NULL)
     {
       cands_add(c, word, "~", '/', NULL);
-      vs_each_user(user_cand, &(struct word_ctx_s){ c, word });  /* ~name/ */
+      vash_each_user(user_cand, &(struct word_ctx_s){ c, word });  /* ~name/ */
       g->whole_word = true;
     }
   else if (g->is_cmd && strchr(word, '/') == NULL)
@@ -637,7 +637,7 @@ static void generate(struct cands_s *c, struct gen_s *g)
           if (cl > 0 && cl < sizeof(cmd))
             {
               struct spec_ctx_s sc = { c, word };
-              const char *lim = var_get("VS_COMPLETION_TIMEOUT");
+              const char *lim = var_get("VASH_COMPLETION_TIMEOUT");
               long ms = lim != NULL ? strtol(lim, NULL, 10) : 300;
               int r;
 
@@ -649,8 +649,8 @@ static void generate(struct cands_s *c, struct gen_s *g)
 
               memcpy(pipest, g_sh.ps, sizeof(pipest));
               g_sh.comp_expired = false;
-              g_sh.comp_deadline = ms > 0 ? vs_now_ms() + ms : 0;
-              r = vs_comp_from_spec(cmd, g->line, g->len, word, spec_cand, &sc);
+              g_sh.comp_deadline = ms > 0 ? vash_now_ms() + ms : 0;
+              r = vash_comp_from_spec(cmd, g->line, g->len, word, spec_cand, &sc);
               g_sh.comp_deadline = 0;
               g_sh.last_status = status;               /* spec files and -F functions must not change $? */
               g_sh.nps = npipest;
@@ -660,7 +660,7 @@ static void generate(struct cands_s *c, struct gen_s *g)
                   g_sh.unwind = UW_NONE;         /* what was running is abandoned; the candidates so far stay */
                 }
 
-              if ((r & VS_SPEC_FOUND) != 0 && (c->n > 0 || (r & VS_SPEC_EXCLUSIVE) != 0))
+              if ((r & VASH_SPEC_FOUND) != 0 && (c->n > 0 || (r & VASH_SPEC_EXCLUSIVE) != 0))
                 {
                   g->whole_word = true;
                   g->by_spec = true;
@@ -681,7 +681,7 @@ static void generate(struct cands_s *c, struct gen_s *g)
  */
 
 static int complete_glob(const char *line, int len, const char *raw, const char *word,
-                         char *ins, int inslen, int *del, vs_comp_cand_f list, void *ctx)
+                         char *ins, int inslen, int *del, vash_comp_cand_f list, void *ctx)
 {
   struct fieldv_s fv;
   struct stat st;
@@ -709,8 +709,8 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
       char *tail;
 
       st.st_mode = 0;
-      stat(VS_FS(fv.v[0]), &st);
-      tail = vs_comp_tail(fv.v[0], S_ISDIR(st.st_mode) ? '/' : ' ', 0);
+      stat(VASH_FS(fv.v[0]), &st);
+      tail = vash_comp_tail(fv.v[0], S_ISDIR(st.st_mode) ? '/' : ' ', 0);
       if (tail != NULL)
         {
           snprintf(ins, (size_t)inslen, "%s", tail);
@@ -722,7 +722,7 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
       for (i = 0; i < n; i++)
         {
           st.st_mode = 0;
-          stat(VS_FS(fv.v[i]), &st);
+          stat(VASH_FS(fv.v[i]), &st);
           list(ctx, fv.v[i], NULL, S_ISDIR(st.st_mode) ? '/' : ' ');
           fv.v[i] = NULL;                    /* the callback keeps the string */
         }
@@ -737,13 +737,13 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
  * case): those replace what was typed, which is *del bytes before the cursor.
  */
 
-int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
-                size_t *skip, vs_comp_cand_f list, void *ctx)
+int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
+                size_t *skip, vash_comp_cand_f list, void *ctx)
 {
   struct cands_s c;
   struct gen_s g;
   size_t have;
-  char word[VS_PATH_MAX];
+  char word[VASH_PATH_MAX];
   const char *w = line + len;
   size_t wlen;
   size_t base_off;
@@ -891,7 +891,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
 
   if (n == 1)
     {
-      char *tail = vs_comp_tail(c.e[0].name, c.e[0].suffix, have);
+      char *tail = vash_comp_tail(c.e[0].name, c.e[0].suffix, have);
 
       if (tail != NULL)
         {
@@ -947,7 +947,7 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
   return n;
 }
 
-void vs_commands_refresh(void)
+void vash_commands_refresh(void)
 {
   refresh_commands();
 }
@@ -956,13 +956,13 @@ void vs_commands_refresh(void)
  * the cached $PATH table, or a path to an executable file? For highlighting.
  */
 
-bool vs_is_command(const char *name)
+bool vash_is_command(const char *name)
 {
   struct stat st;
   int lo = 0;
   int hi;
 
-  if (vs_parser_reserved_word(name) || alias_find(name) != NULL ||
+  if (vash_parser_reserved_word(name) || alias_find(name) != NULL ||
       func_find(name) != NULL || builtin_find(name) != NULL || is_tbx_command(name))
     {
       return true;
@@ -970,10 +970,10 @@ bool vs_is_command(const char *name)
 
   if (strchr(name, '/') != NULL)
     {
-      return stat(VS_FS(name), &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & 0111) != 0;
+      return stat(VASH_FS(name), &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & 0111) != 0;
     }
 
-  hi = g_ncmds;                         /* the table was refreshed by vs_commands_refresh() */
+  hi = g_ncmds;                         /* the table was refreshed by vash_commands_refresh() */
   while (lo < hi)
     {
       int mid = (lo + hi) / 2;

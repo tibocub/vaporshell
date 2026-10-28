@@ -18,7 +18,7 @@
 
 struct arr_s *arr_new(void)
 {
-  struct arr_s *a = vs_xmalloc(sizeof(*a));
+  struct arr_s *a = vash_xmalloc(sizeof(*a));
 
   a->e = NULL;
   a->n = 0;
@@ -68,13 +68,13 @@ struct arr_s *arr_clone(const struct arr_s *a)
       return c;
     }
 
-  c->e = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(*c->e));
+  c->e = vash_xmalloc((a->n > 0 ? a->n : 1) * sizeof(*c->e));
   c->cap = a->n > 0 ? a->n : 1;
   for (i = 0; i < a->n; i++)
     {
       c->e[i].idx = a->e[i].idx;
-      c->e[i].key = a->e[i].key != NULL ? vs_xstrdup(a->e[i].key) : NULL;
-      c->e[i].val = vs_xstrdup(a->e[i].val);
+      c->e[i].key = a->e[i].key != NULL ? vash_xstrdup(a->e[i].key) : NULL;
+      c->e[i].val = vash_xstrdup(a->e[i].val);
     }
 
   c->n = a->n;
@@ -121,7 +121,7 @@ void arr_set(struct arr_s *a, long idx, const char *val)
 {
   bool found;
   size_t pos = arr_find(a, idx, &found);
-  char *copy = vs_xstrdup(val);
+  char *copy = vash_xstrdup(val);
 
   if (found)
     {
@@ -133,7 +133,7 @@ void arr_set(struct arr_s *a, long idx, const char *val)
   if (a->n == a->cap)
     {
       a->cap = a->cap > 0 ? a->cap * 2 : 8;
-      a->e = vs_xrealloc(a->e, a->cap * sizeof(*a->e));
+      a->e = vash_xrealloc(a->e, a->cap * sizeof(*a->e));
     }
 
   memmove(a->e + pos + 1, a->e + pos, (a->n - pos) * sizeof(*a->e));
@@ -198,7 +198,7 @@ const char *arr_get_key(const struct arr_s *a, const char *key)
 void arr_set_key(struct arr_s *a, const char *key, const char *val)
 {
   size_t i = key_find(a, key);
-  char *copy = vs_xstrdup(val);
+  char *copy = vash_xstrdup(val);
 
   if (i < a->n)
     {
@@ -210,11 +210,11 @@ void arr_set_key(struct arr_s *a, const char *key, const char *val)
   if (a->n == a->cap)
     {
       a->cap = a->cap > 0 ? a->cap * 2 : 8;
-      a->e = vs_xrealloc(a->e, a->cap * sizeof(*a->e));
+      a->e = vash_xrealloc(a->e, a->cap * sizeof(*a->e));
     }
 
   a->e[a->n].idx = 0;
-  a->e[a->n].key = vs_xstrdup(key);
+  a->e[a->n].key = vash_xstrdup(key);
   a->e[a->n].val = copy;
   a->n++;
 }

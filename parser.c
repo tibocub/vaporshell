@@ -181,7 +181,7 @@ static bool is_func_name(const char *s)
 {
   size_t i;
 
-  if (!vs_feat(VF_FUNC_NAME_ANY))
+  if (!vash_feat(VF_FUNC_NAME_ANY))
     {
       return is_valid_name(s, strlen(s));
     }
@@ -403,7 +403,7 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
  * (recursion), tracked by the buffer offset where each expansion ends.
  */
 
-bool vs_parser_reserved_word(const char *w)
+bool vash_parser_reserved_word(const char *w)
 {
   static const char *const words[] =
   {
@@ -435,8 +435,8 @@ static bool try_alias(struct parser_s *p, struct token_s *t)
   int k;
 
   if (p->no_alias || t->type != T_WORD || t->quoted || g_sh.aliases == NULL ||
-      !(g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS) || g_sh.so_expand_aliases) ||
-      vs_parser_reserved_word(t->text))
+      !(g_sh.interactive || vash_feat(VF_ALIAS_SCRIPTS) || g_sh.so_expand_aliases) ||
+      vash_parser_reserved_word(t->text))
     {
       return false;
     }
@@ -471,7 +471,7 @@ static bool try_alias(struct parser_s *p, struct token_s *t)
   if (newlen + 1 > lx->cap)
     {
       lx->cap = (newlen + 1) * 2;
-      lx->buf = vs_xrealloc(lx->buf, lx->cap);
+      lx->buf = vash_xrealloc(lx->buf, lx->cap);
     }
 
   memmove(lx->buf + start + vlen, lx->buf + end, lx->len - end);
@@ -1173,7 +1173,7 @@ static struct node_s *parse_dbracket(struct parser_s *p)
   c.p = p;
   c.n = 0;
   c.i = 0;
-  c.t = vs_xmalloc((size_t)cap * sizeof(*c.t));
+  c.t = vash_xmalloc((size_t)cap * sizeof(*c.t));
   p->lx.force_extglob = true;     /* patterns like +(a|b) are words in here */
   advance(p);                     /* [[ */
 
@@ -1191,7 +1191,7 @@ static struct node_s *parse_dbracket(struct parser_s *p)
               if (c.n == cap)
                 {
                   cap *= 2;
-                  c.t = vs_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
+                  c.t = vash_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
                 }
 
               c.t[c.n].type = T_WORD;
@@ -1228,7 +1228,7 @@ static struct node_s *parse_dbracket(struct parser_s *p)
       if (c.n == cap)
         {
           cap *= 2;
-          c.t = vs_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
+          c.t = vash_xrealloc(c.t, (size_t)cap * sizeof(*c.t));
         }
 
       c.t[c.n].type = t->type;
@@ -1257,7 +1257,7 @@ static struct node_s *parse_for(struct parser_s *p)
   advance(p);
   t = peek(p);
 
-  if (t->type == T_LPAREN && vs_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
+  if (t->type == T_LPAREN && vash_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
       p->lx.buf[t->end] == '(')
     {
       return parse_arith_for(p, t->end + 1);
@@ -1565,7 +1565,7 @@ static struct node_s *parse_command(struct parser_s *p)
       return NULL;
     }
 
-  if (t->type == T_LPAREN && vs_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
+  if (t->type == T_LPAREN && vash_feat(VF_BASH_SYNTAX) && t->end < p->lx.len &&
       p->lx.buf[t->end] == '(')
     {
       size_t after;
@@ -1632,11 +1632,11 @@ static struct node_s *parse_command(struct parser_s *p)
         {
           n = parse_for(p);
         }
-      else if (strcmp(t->text, "select") == 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(t->text, "select") == 0 && vash_feat(VF_BASH_SYNTAX))
         {
           n = parse_select(p);
         }
-      else if (strcmp(t->text, "coproc") == 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(t->text, "coproc") == 0 && vash_feat(VF_BASH_SYNTAX))
         {
           n = parse_coproc(p);
         }
@@ -1644,11 +1644,11 @@ static struct node_s *parse_command(struct parser_s *p)
         {
           n = parse_case(p);
         }
-      else if (strcmp(t->text, "[[") == 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(t->text, "[[") == 0 && vash_feat(VF_BASH_SYNTAX))
         {
           n = parse_dbracket(p);
         }
-      else if (strcmp(t->text, "function") == 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(t->text, "function") == 0 && vash_feat(VF_BASH_SYNTAX))
         {
           n = parse_function_kw(p);
           if (n != NULL)
@@ -1690,7 +1690,7 @@ static struct node_s *parse_pipeline(struct parser_s *p)
   struct node_s *pipe;
   struct node_s **tail;
 
-  if (is_kw(p, "time") && vs_feat(VF_BASH_SYNTAX))
+  if (is_kw(p, "time") && vash_feat(VF_BASH_SYNTAX))
     {
       struct node_s *tn = new_node(p, N_TIME);
 
@@ -1831,7 +1831,7 @@ static struct node_s *parse_list(struct parser_s *p, bool multiline)
 
 /* ---- Entry points -------------------------------------------------------- */
 
-void parser_init(struct parser_s *p, vs_line_fn fn, void *ctx)
+void parser_init(struct parser_s *p, vash_line_fn fn, void *ctx)
 {
   memset(p, 0, sizeof(*p));
   lexer_init(&p->lx, fn, ctx);
@@ -1840,7 +1840,7 @@ void parser_init(struct parser_s *p, vs_line_fn fn, void *ctx)
 void parser_init_mem(struct parser_s *p, const char *text, size_t len)
 {
   parser_init(p, NULL, NULL);
-  p->lx.buf = vs_xmalloc(len + 1);
+  p->lx.buf = vash_xmalloc(len + 1);
   memcpy(p->lx.buf, text, len);
   p->lx.len = p->lx.cap = len;
 }

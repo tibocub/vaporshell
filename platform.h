@@ -19,8 +19,8 @@
  * instance per task, found by task id, because tasks share globals.
  */
 
-struct shell_s *vs_plat_state_create(void);   /* zeroed, bound to this task */
-void vs_plat_state_destroy(void);
+struct shell_s *vash_plat_state_create(void);   /* zeroed, bound to this task */
+void vash_plat_state_destroy(void);
 
 /* NuttX's VFS resolves neither "." nor ".." in a path. Returns a path the
  * OS can open: 'path' itself when it is fine (always, on a host), else an
@@ -29,100 +29,100 @@ void vs_plat_state_destroy(void);
  */
 
 #ifdef VAPORSHELL_POSIX
-#  define VS_PATH_MAX 512
+#  define VASH_PATH_MAX 512
 #else
 #  include <limits.h>
-#  define VS_PATH_MAX PATH_MAX            /* NuttX's own limit: these buffers sit on a small stack */
+#  define VASH_PATH_MAX PATH_MAX            /* NuttX's own limit: these buffers sit on a small stack */
 #endif
 
-const char *vs_plat_fspath(const char *path, char *buf, size_t n);
+const char *vash_plat_fspath(const char *path, char *buf, size_t n);
 
-/* Shorthand for a call site: stat(VS_FS(p), &st). The scratch buffer is a
+/* Shorthand for a call site: stat(VASH_FS(p), &st). The scratch buffer is a
  * compound literal, alive until the end of the enclosing block, which is
  * exactly as long as the call needs it.
  */
 
-#define VS_FS(p) vs_plat_fspath((p), (char[VS_PATH_MAX]){ 0 }, VS_PATH_MAX)
+#define VASH_FS(p) vash_plat_fspath((p), (char[VASH_PATH_MAX]){ 0 }, VASH_PATH_MAX)
 
 /* Is stdin a terminal? (NuttX: assumed, as before.) */
 
-bool vs_plat_interactive(void);
+bool vash_plat_interactive(void);
 
-/* The line editor's view of the terminal (ledit.c). vs_plat_tty_raw(true)
+/* The line editor's view of the terminal (ledit.c). vash_plat_tty_raw(true)
  * puts standard input in raw mode (no echo, no line buffering, no signal
  * characters: Ctrl-C arrives as a byte) and returns false if it cannot;
- * (false) restores it. vs_plat_tty_read() reads one byte: 1 on success, 0 on
+ * (false) restores it. vash_plat_tty_read() reads one byte: 1 on success, 0 on
  * timeout (timeout_ms < 0 waits forever), -1 at end of input.
  */
 
-bool vs_plat_tty_raw(bool on);
-int vs_plat_tty_read(unsigned char *c, int timeout_ms);
+bool vash_plat_tty_raw(bool on);
+int vash_plat_tty_read(unsigned char *c, int timeout_ms);
 
 /* Identity, for bash's UID/EUID/HOSTNAME/OSTYPE. */
 
-bool vs_plat_isatty(int fd);
+bool vash_plat_isatty(int fd);
 
 /* The terminal's width in columns, or -1 if it cannot be found (no terminal,
  * or the platform has no way to ask). Used only as a fallback: `select`'s
  * menu checks $COLUMNS first, as bash does.
  */
 
-int vs_plat_columns(void);
-int vs_plat_rows(void);                         /* -1 if unknown */
-long vs_plat_uid(void);
-long vs_plat_euid(void);
-int vs_plat_hostname(char *buf, size_t n);      /* 0 on success */
-const char *vs_plat_ostype(void);
+int vash_plat_columns(void);
+int vash_plat_rows(void);                         /* -1 if unknown */
+long vash_plat_uid(void);
+long vash_plat_euid(void);
+int vash_plat_hostname(char *buf, size_t n);      /* 0 on success */
+const char *vash_plat_ostype(void);
 
 /* fork() where the OS has it, else -1 with errno ENOSYS. */
 
-bool vs_plat_have_fork(void);
-pid_t vs_plat_fork(void);
+bool vash_plat_have_fork(void);
+pid_t vash_plat_fork(void);
 
 /* NuttX: variables assigned in the shell are also environment variables,
  * because a child shell is the only way it can run a substitution.
  */
 
-bool vs_plat_export_all(void);
+bool vash_plat_export_all(void);
 
 /* String ordering as bash does it for pathname sorting and [[ a < b ]]:
  * strcoll() in the collation locale on a host, plain byte order on NuttX (no
- * locales there). vs_plat_locale_update() re-reads LC_ALL / LC_COLLATE / LANG
+ * locales there). vash_plat_locale_update() re-reads LC_ALL / LC_COLLATE / LANG
  * from the shell's variables; it is called when one of them changes.
  */
 
-int vs_plat_collate(const char *a, const char *b);
-void vs_plat_locale_update(void);
+int vash_plat_collate(const char *a, const char *b);
+void vash_plat_locale_update(void);
 
 /* Characters. In a multibyte locale (UTF-8 on a host) a character is one to
  * several bytes; on NuttX, which has no locales, a character is always one byte
- * and vs_plat_multibyte() is false. The rest of the shell reaches these only
+ * and vash_plat_multibyte() is false. The rest of the shell reaches these only
  * through mb.c.
  *
- * vs_plat_mbdecode(): the character at s, of which n bytes are available. It
+ * vash_plat_mbdecode(): the character at s, of which n bytes are available. It
  * returns its length in bytes, 0 if the bytes so far begin a longer character,
  * or (size_t)-1 if they are not a character at all; *wc is its code point.
  */
 
-bool vs_plat_multibyte(void);
-size_t vs_plat_mbdecode(const char *s, size_t n, long *wc);
-size_t vs_plat_mbencode(long wc, char *out);                  /* 0 if it has no encoding */
-bool vs_plat_wc_isclass(long wc, const char *name);           /* "alpha", "upper", ... */
-long vs_plat_wc_toupper(long wc);
-long vs_plat_wc_tolower(long wc);
+bool vash_plat_multibyte(void);
+size_t vash_plat_mbdecode(const char *s, size_t n, long *wc);
+size_t vash_plat_mbencode(long wc, char *out);                  /* 0 if it has no encoding */
+bool vash_plat_wc_isclass(long wc, const char *name);           /* "alpha", "upper", ... */
+long vash_plat_wc_toupper(long wc);
+long vash_plat_wc_tolower(long wc);
 
 /* Locate 'name' for execution. Returns a malloc()'d path, or NULL with
  * *err = ENOENT (not found) or EACCES (found, not executable). NuttX
  * resolves builtin apps by bare name itself, so it returns the name.
  */
 
-char *vs_plat_find_command(const char *name, const char *path_var, int *err);
+char *vash_plat_find_command(const char *name, const char *path_var, int *err);
 
 /* Start a program. in_fd/out_fd >= 0 become its stdin/stdout; every fd in
  * close_fds is closed in the child. Returns 0 or an errno value.
  */
 
-int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
+int vash_plat_spawn(const char *path, char *const argv[], char *const envp[],
                   int in_fd, int out_fd, const int *close_fds, int nclose,
                   pid_t *pid);
 
@@ -133,22 +133,22 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
  * stage runs the shell's own builtin instead.
  */
 
-bool vs_plat_external_fallback(const char *name);
+bool vash_plat_external_fallback(const char *name);
 
 /* Replace this process (host only). Returns only on failure. */
 
-int vs_plat_exec(const char *path, char *const argv[], char *const envp[]);
+int vash_plat_exec(const char *path, char *const argv[], char *const envp[]);
 
 /* dup() into a descriptor >= 10 (not inherited by children where the OS
  * allows it), so saved descriptors don't collide with a script's own.
  */
 
-int vs_plat_dup_high(int fd);
+int vash_plat_dup_high(int fd);
 
 /* Run "vaporshell -c text" with stdout captured; NuttX only (the host
  * build forks instead). Returns malloc()'d output, trailing newlines kept.
  */
 
-char *vs_plat_capture_via_self(const char *text, int *status);
+char *vash_plat_capture_via_self(const char *text, int *status);
 
 #endif

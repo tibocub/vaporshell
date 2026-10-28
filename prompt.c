@@ -6,7 +6,7 @@
  * \[ and \] mark text that takes no room on screen (color codes). They are
  * left in the result as the control bytes PROMPT_IGN_START / PROMPT_IGN_END
  * (readline's own convention) so the line editor can work out how wide the
- * prompt really is; vs_prompt_strip() removes them for output that is not
+ * prompt really is; vash_prompt_strip() removes them for output that is not
  * going to an editor.
  *
  * Nothing here needs a terminal, so it is tested like any other expansion.
@@ -148,7 +148,7 @@ static void add_number(struct sbuf_s *out, long n)
   sb_adds(out, buf);
 }
 
-char *vs_prompt_decode(const char *ps)
+char *vash_prompt_decode(const char *ps)
 {
   struct sbuf_s out;
   const char *p;
@@ -204,7 +204,7 @@ char *vs_prompt_decode(const char *ps)
 
           case 'h':
           case 'H':
-            if (vs_plat_hostname(host, sizeof(host)) != 0)
+            if (vash_plat_hostname(host, sizeof(host)) != 0)
               {
                 strcpy(host, "localhost");
               }
@@ -223,7 +223,7 @@ char *vs_prompt_decode(const char *ps)
             break;
 
           case 'j':  add_number(&out, (long)g_sh.njobs); break;
-          case 's':  add_literal(&out, g_sh.profile == VS_PROFILE_POSIX ? "sh" : "vaporshell"); break;
+          case 's':  add_literal(&out, g_sh.profile == VASH_PROFILE_POSIX ? "sh" : "vaporshell"); break;
           case 'u':
             {
               const char *u = var_get("USER");
@@ -264,7 +264,7 @@ char *vs_prompt_decode(const char *ps)
           case 'W':  add_cwd(&out, true); break;
           case '!':  add_number(&out, g_sh.hist_num + 1); break;
           case '#':  add_number(&out, g_sh.cmd_num + 1); break;
-          case '$':  sb_addc(&out, vs_plat_euid() == 0 ? '#' : '$'); break;
+          case '$':  sb_addc(&out, vash_plat_euid() == 0 ? '#' : '$'); break;
 
           case '0': case '1': case '2': case '3':
           case '4': case '5': case '6': case '7':
@@ -290,12 +290,12 @@ char *vs_prompt_decode(const char *ps)
         }
     }
 
-  return out.s != NULL ? sb_take(&out) : vs_xstrdup("");
+  return out.s != NULL ? sb_take(&out) : vash_xstrdup("");
 }
 
-char *vs_prompt_expand(const char *ps)
+char *vash_prompt_expand(const char *ps)
 {
-  char *decoded = vs_prompt_decode(ps);
+  char *decoded = vash_prompt_decode(ps);
   char *result;
 
   if (strpbrk(decoded, "$`") == NULL)
@@ -305,10 +305,10 @@ char *vs_prompt_expand(const char *ps)
 
   result = expand_heredoc(decoded);
   free(decoded);
-  return result != NULL ? result : vs_xstrdup("");
+  return result != NULL ? result : vash_xstrdup("");
 }
 
-void vs_prompt_strip(char *s)
+void vash_prompt_strip(char *s)
 {
   char *w = s;
 

@@ -14,16 +14,16 @@
 
 /* Backslash escapes only (\u \h \w ...). malloc()'d. */
 
-char *vs_prompt_decode(const char *ps);
+char *vash_prompt_decode(const char *ps);
 
 /* Escapes, then parameter / command / arithmetic expansion of the result.
  * malloc()'d; \[ \] are still marked.
  */
 
-char *vs_prompt_expand(const char *ps);
+char *vash_prompt_expand(const char *ps);
 
 /* Remove the \[ \] markers in place. */
 
-void vs_prompt_strip(char *s);
+void vash_prompt_strip(char *s);
 
 #endif

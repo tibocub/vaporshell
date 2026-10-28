@@ -45,7 +45,7 @@ static int run_loop(struct parser_s *p, bool recover, int status);
 
 static void debug_hook(void)
 {
-  if (g_sh.trap_action[VS_TRAP_DEBUG] != NULL && g_sh.func_depth == 0)
+  if (g_sh.trap_action[VASH_TRAP_DEBUG] != NULL && g_sh.func_depth == 0)
     {
       trap_run_debug();
     }
@@ -57,7 +57,7 @@ static void errexit_check(int status)
     {
       /* the ERR trap fires in exactly the situations -e would exit in */
 
-      if (g_sh.trap_action[VS_TRAP_ERR] != NULL && g_sh.func_depth == 0)
+      if (g_sh.trap_action[VASH_TRAP_ERR] != NULL && g_sh.func_depth == 0)
         {
           trap_run_err(status);            /* not inherited by functions (no set -E) */
         }
@@ -156,17 +156,17 @@ static void child_run(struct node_s *n)
  * in profiles that say so; bash's default carries on.
  */
 
-void vs_special_error(void)
+void vash_special_error(void)
 {
   /* dash does not let a failing special builtin end the shell from inside a
    * trap action; only that action is affected.
    */
 
-  if (vs_feat(VF_SPECIAL_ERR_FATAL) && !g_sh.interactive &&
+  if (vash_feat(VF_SPECIAL_ERR_FATAL) && !g_sh.interactive &&
       g_sh.unwind == UW_NONE && g_sh.trap_depth == 0)
     {
       g_sh.unwind = UW_EXIT;
-      g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+      g_sh.last_status = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
     }
 }
 
@@ -183,7 +183,7 @@ static int call_builtin(const struct builtin_s *b, int argc, char **argv)
           status = 1;
         }
 
-      vs_err("%s: write error: %s", argv[0], strerror(errno));
+      vash_err("%s: write error: %s", argv[0], strerror(errno));
       clearerr(stdout);
     }
 
@@ -222,7 +222,7 @@ enum cmd_kind_e classify_command(const char *name, char **path_out)
       *path_out = NULL;
     }
 
-  if (b != NULL && b->special && (fn == NULL || vs_feat(VF_SPECIAL_BEFORE_FUNC)))
+  if (b != NULL && b->special && (fn == NULL || vash_feat(VF_SPECIAL_BEFORE_FUNC)))
     {
       return CK_SPECIAL;
     }
@@ -237,7 +237,7 @@ enum cmd_kind_e classify_command(const char *name, char **path_out)
       return CK_BUILTIN;
     }
 
-  path = vs_plat_find_command(name, var_get("PATH"), &err);
+  path = vash_plat_find_command(name, var_get("PATH"), &err);
   if (path == NULL)
     {
       return CK_NONE;
@@ -270,7 +270,7 @@ static int run_as_script(const char *path, char **argv)
       argc++;
     }
 
-  pid = vs_plat_fork();
+  pid = vash_plat_fork();
   if (pid < 0)
     {
       return 126;
@@ -313,17 +313,17 @@ static int run_external(char **argv, bool can_exec)
     {
       if (err == EACCES)
         {
-          vs_err("%s: Permission denied", argv[0]);
+          vash_err("%s: Permission denied", argv[0]);
           return 126;
         }
 
       if (strchr(argv[0], '/') != NULL)
         {
-          vs_err("%s: No such file or directory", argv[0]);
+          vash_err("%s: No such file or directory", argv[0]);
         }
       else
         {
-          vs_err("%s: command not found", argv[0]);
+          vash_err("%s: command not found", argv[0]);
         }
 
       return 127;
@@ -332,27 +332,27 @@ static int run_external(char **argv, bool can_exec)
   envp = var_build_env();
   fflush(NULL);
 
-  if (can_exec && vs_plat_have_fork())
+  if (can_exec && vash_plat_have_fork())
     {
-      vs_plat_exec(path, argv, envp);
+      vash_plat_exec(path, argv, envp);
       if (errno == ENOEXEC)
         {
           g_sh.arg0 = argv[0];
           _exit(run_as_script(path, argv));
         }
 
-      vs_err("%s: %s", argv[0], strerror(errno));
+      vash_err("%s: %s", argv[0], strerror(errno));
       _exit(errno == ENOENT ? 127 : 126);
     }
 
-  ret = vs_plat_spawn(path, argv, envp, -1, -1, NULL, 0, &pid);
-  if (ret == ENOEXEC && vs_plat_have_fork())
+  ret = vash_plat_spawn(path, argv, envp, -1, -1, NULL, 0, &pid);
+  if (ret == ENOEXEC && vash_plat_have_fork())
     {
       status = run_as_script(path, argv);
     }
   else if (ret != 0)
     {
-      vs_err("%s: %s", argv[0], ret == ENOENT ? "command not found"
+      vash_err("%s: %s", argv[0], ret == ENOENT ? "command not found"
                                               : strerror(ret));
       status = (ret == ENOENT) ? 127 : 126;
     }
@@ -379,14 +379,14 @@ static int call_function(struct func_s *f, int argc, char **argv)
 
   if (g_sh.func_depth >= MAX_FUNC_DEPTH)
     {
-      vs_err("%s: function nesting too deep", argv[0]);
+      vash_err("%s: function nesting too deep", argv[0]);
       return 1;
     }
 
-  args = vs_xmalloc((size_t)(nargs > 0 ? nargs : 1) * sizeof(char *));
+  args = vash_xmalloc((size_t)(nargs > 0 ? nargs : 1) * sizeof(char *));
   for (i = 0; i < nargs; i++)
     {
-      args[i] = vs_xstrdup(argv[i + 1]);
+      args[i] = vash_xstrdup(argv[i + 1]);
     }
 
   old = pos_swap(args, nargs, &old_n);
@@ -416,7 +416,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
    * function runs when it returns.
    */
 
-  if (g_sh.trap_action[VS_TRAP_RETURN] != NULL && g_sh.return_fdepth > 0 &&
+  if (g_sh.trap_action[VASH_TRAP_RETURN] != NULL && g_sh.return_fdepth > 0 &&
       g_sh.func_depth == g_sh.return_fdepth - 1)
     {
       g_sh.last_status = status;
@@ -441,7 +441,7 @@ int run_argv(int argc, char **argv, bool skip_functions)
   int status;
 
   if (b != NULL &&
-      (f == NULL || (b->special && vs_feat(VF_SPECIAL_BEFORE_FUNC))))
+      (f == NULL || (b->special && vash_feat(VF_SPECIAL_BEFORE_FUNC))))
     {
       status = call_builtin(b, argc, argv);
       return status;
@@ -470,7 +470,7 @@ struct tmpvar_s
 
 static int redir_fail_status(void)
 {
-  return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+  return vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
 }
 
 static int exec_assign_only(struct node_s *n)
@@ -489,7 +489,7 @@ static int exec_assign_only(struct node_s *n)
       if (assign_apply(w->text) != 0)
         {
           status = 1;
-          vs_special_error();
+          vash_special_error();
         }
     }
 
@@ -552,7 +552,7 @@ static void restore_tmpvars(struct tmpvar_s *tv, int ntv, bool keep)
 
   if (locale)
     {
-      vs_plat_locale_update();          /* `LC_ALL=C cmd` is over: back to the old collation */
+      vash_plat_locale_update();          /* `LC_ALL=C cmd` is over: back to the old collation */
     }
 
   free(tv);
@@ -568,7 +568,7 @@ static bool is_decl_command(const struct word_s *w)
   static const char *const names[] = { "declare", "typeset", "local", "export", "readonly", NULL };
   int i;
 
-  if (!vs_feat(VF_BASH_SYNTAX) || w == NULL)
+  if (!vash_feat(VF_BASH_SYNTAX) || w == NULL)
     {
       return false;
     }
@@ -613,7 +613,7 @@ static int expand_decl_words(const struct word_s *w, struct fieldv_s *argv,
             {
               if (argv->n > 64)
                 {
-                  vs_err("too many arguments for an array assignment");
+                  vash_err("too many arguments for an array assignment");
                   return -1;
                 }
 
@@ -667,7 +667,7 @@ static int exec_simple(struct node_s *n)
       return g_sh.unwind == UW_EXIT ? g_sh.last_status : 1;
     }
 
-  if (argv.n > 0 && vs_feat(VF_BASH_VARS))
+  if (argv.n > 0 && vash_feat(VF_BASH_VARS))
     {
       var_set("_", argv.v[argv.n - 1]);
     }
@@ -691,7 +691,7 @@ static int exec_simple(struct node_s *n)
           status = redir_fail_status();
           if (b != NULL && b->special)
             {
-              vs_special_error();
+              vash_special_error();
             }
 
           goto out;
@@ -711,7 +711,7 @@ static int exec_simple(struct node_s *n)
 
       if (!assign_scalar_parts(w->text, &name, &raw, &append))
         {
-          vs_err("%s: an array assignment cannot precede a command", w->text);
+          vash_err("%s: an array assignment cannot precede a command", w->text);
           status = 1;
           goto out;
         }
@@ -719,7 +719,7 @@ static int exec_simple(struct node_s *n)
       val = expand_assign_str(raw);
       if (val != NULL && append && var_get(name) != NULL)
         {
-          char *both = vs_xmalloc(strlen(var_get(name)) + strlen(val) + 1);
+          char *both = vash_xmalloc(strlen(var_get(name)) + strlen(val) + 1);
 
           strcpy(both, var_get(name));
           strcat(both, val);
@@ -734,11 +734,11 @@ static int exec_simple(struct node_s *n)
           goto out;
         }
 
-      tv = vs_xrealloc(tv, (size_t)(ntv + 1) * sizeof(*tv));
+      tv = vash_xrealloc(tv, (size_t)(ntv + 1) * sizeof(*tv));
       v = var_lookup(name);
       tv[ntv].name = name;
       tv[ntv].had = (v != NULL && v->value != NULL);
-      tv[ntv].old = tv[ntv].had ? vs_xstrdup(v->value) : NULL;
+      tv[ntv].old = tv[ntv].had ? vash_xstrdup(v->value) : NULL;
       tv[ntv].old_arr = (v != NULL && v->arr != NULL) ? arr_clone(v->arr) : NULL;
       tv[ntv].flags = v != NULL ? v->flags : 0;
       ntv++;
@@ -758,9 +758,9 @@ static int exec_simple(struct node_s *n)
 
   fn = func_find(argv.v[0]);
   if (b != NULL &&
-      (fn == NULL || (b->special && vs_feat(VF_SPECIAL_BEFORE_FUNC))))
+      (fn == NULL || (b->special && vash_feat(VF_SPECIAL_BEFORE_FUNC))))
     {
-      keep_assign = b->special && vs_feat(VF_SPECIAL_ASSIGN_KEEP);
+      keep_assign = b->special && vash_feat(VF_SPECIAL_ASSIGN_KEEP);
       g_sh.decl_raw = rawmask;
       status = call_builtin(b, argv.n, argv.v);
       g_sh.decl_raw = 0;
@@ -866,7 +866,7 @@ static int exec_for(struct node_s *n)
     {
       for (i = 1; i <= g_sh.npos; i++)
         {
-          fv_add(&items, vs_xstrdup(pos_get(i)));
+          fv_add(&items, vash_xstrdup(pos_get(i)));
         }
     }
 
@@ -907,7 +907,7 @@ static void cloexec(int fd);
  * (NAME defaults to "COPROC"), plus NAME_PID.
  *
  * A plain external command works the same way as `cmd &` does without fork
- * (vs_plat_spawn); anything else -- a compound command, a builtin, a
+ * (vash_plat_spawn); anything else -- a compound command, a builtin, a
  * function -- needs a real fork to run the shell itself as the coprocess,
  * so it is host-only, like other background compound commands.
  */
@@ -921,21 +921,21 @@ static int exec_coproc(struct node_s *n)
   char pidvar[64];
   bool plain = stage_is_plain_external(n->a, false);
 
-  if (!plain && !vs_plat_have_fork())
+  if (!plain && !vash_plat_have_fork())
     {
-      vs_err("coproc: only a plain external command is supported here (no fork)");
+      vash_err("coproc: only a plain external command is supported here (no fork)");
       return 0;         /* coproc itself always reports success, as in bash */
     }
 
   if (pipe(p_in) != 0)
     {
-      vs_err("coproc: %s", strerror(errno));
+      vash_err("coproc: %s", strerror(errno));
       return 0;
     }
 
   if (pipe(p_out) != 0)
     {
-      vs_err("coproc: %s", strerror(errno));
+      vash_err("coproc: %s", strerror(errno));
       close(p_in[0]);
       close(p_in[1]);
       return 0;
@@ -967,7 +967,7 @@ static int exec_coproc(struct node_s *n)
       path = hash_find_command(argv.v[0], var_get("PATH"), &err);
       if (path == NULL)
         {
-          vs_err("%s: command not found", argv.v[0]);
+          vash_err("%s: command not found", argv.v[0]);
           fv_free(&argv);
           close(p_in[0]);
           close(p_in[1]);
@@ -980,7 +980,7 @@ static int exec_coproc(struct node_s *n)
       close_fds[1] = p_out[0];
       envp = var_build_env();
       fflush(NULL);
-      ret = vs_plat_spawn(path, argv.v, envp, p_in[0], p_out[1], close_fds, 2, &pid);
+      ret = vash_plat_spawn(path, argv.v, envp, p_in[0], p_out[1], close_fds, 2, &pid);
       env_free(envp);
       free(path);
       fv_free(&argv);
@@ -990,20 +990,20 @@ static int exec_coproc(struct node_s *n)
         {
           close(p_in[1]);
           close(p_out[0]);
-          vs_err("coproc: %s", strerror(ret));
+          vash_err("coproc: %s", strerror(ret));
           return 0;
         }
     }
   else
     {
-      pid = vs_plat_fork();
+      pid = vash_plat_fork();
       if (pid < 0)
         {
           close(p_in[0]);
           close(p_in[1]);
           close(p_out[0]);
           close(p_out[1]);
-          vs_err("coproc: %s", strerror(errno));
+          vash_err("coproc: %s", strerror(errno));
           return 0;
         }
 
@@ -1066,7 +1066,7 @@ static int exec_select(struct node_s *n)
     {
       for (i = 1; i <= g_sh.npos; i++)
         {
-          fv_add(&items, vs_xstrdup(pos_get(i)));
+          fv_add(&items, vash_xstrdup(pos_get(i)));
         }
     }
 
@@ -1087,7 +1087,7 @@ static int exec_select(struct node_s *n)
 
       if (show_menu)
         {
-          vs_select_menu(items.v, items.n);
+          vash_select_menu(items.v, items.n);
         }
 
       fputs(ps3 != NULL ? ps3 : "#? ", stderr);
@@ -1103,7 +1103,7 @@ static int exec_select(struct node_s *n)
 
       reply = var_get("REPLY");
       reply = reply != NULL ? reply : "";
-      choice = vs_select_parse(reply, items.n);
+      choice = vash_select_parse(reply, items.n);
       if (choice == -1)
         {
           show_menu = true;            /* a blank line: just show the menu again */
@@ -1195,15 +1195,15 @@ static int exec_subshell(struct node_s *n)
   pid_t pid;
   struct node_s *only = n->a;
 
-  if (vs_inproc_enabled())
+  if (vash_inproc_enabled())
     {
-      return vs_inproc_subshell(only);
+      return vash_inproc_subshell(only);
     }
 
-  pid = vs_plat_fork();
+  pid = vash_plat_fork();
   if (pid < 0)
     {
-      vs_err("( ): not supported on this platform yet");
+      vash_err("( ): not supported on this platform yet");
       return 1;
     }
 
@@ -1265,8 +1265,8 @@ static int count_stages(struct node_s *first)
 
 static int run_stages(struct node_s *first, int nst)
 {
-  int (*pipes)[2] = vs_xmalloc((size_t)nst * sizeof(*pipes));
-  pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
+  int (*pipes)[2] = vash_xmalloc((size_t)nst * sizeof(*pipes));
+  pid_t *pids = vash_xmalloc((size_t)nst * sizeof(pid_t));
   struct node_s *stage = first;
   int status = 1;
   int failed = 0;
@@ -1277,7 +1277,7 @@ static int run_stages(struct node_s *first, int nst)
     {
       if (pipe(pipes[i]) != 0)
         {
-          vs_err("pipe: %s", strerror(errno));
+          vash_err("pipe: %s", strerror(errno));
           while (--i >= 0)
             {
               close(pipes[i][0]);
@@ -1292,7 +1292,7 @@ static int run_stages(struct node_s *first, int nst)
 
   for (i = 0; i < nst; i++, stage = stage->next)
     {
-      pids[i] = vs_plat_fork();
+      pids[i] = vash_plat_fork();
       if (pids[i] == 0)
         {
           if (i > 0)
@@ -1356,9 +1356,9 @@ static int run_stages(struct node_s *first, int nst)
 
 static int run_stages(struct node_s *first, int nst)
 {
-  int (*pipes)[2] = vs_xmalloc((size_t)nst * sizeof(*pipes));
-  int *closes = vs_xmalloc((size_t)(2 * nst) * sizeof(int));
-  pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
+  int (*pipes)[2] = vash_xmalloc((size_t)nst * sizeof(*pipes));
+  int *closes = vash_xmalloc((size_t)(2 * nst) * sizeof(int));
+  pid_t *pids = vash_xmalloc((size_t)nst * sizeof(pid_t));
   struct node_s *stage = first;
   int status = 1;
   int failed = 0;
@@ -1369,7 +1369,7 @@ static int run_stages(struct node_s *first, int nst)
     {
       if (pipe(pipes[i]) != 0)
         {
-          vs_err("pipe: %s", strerror(errno));
+          vash_err("pipe: %s", strerror(errno));
           free(pipes);
           free(closes);
           free(pids);
@@ -1393,10 +1393,10 @@ static int run_stages(struct node_s *first, int nst)
           stage->assigns != NULL || expand_words(stage->words, &argv) != 0 ||
           argv.n == 0 ||
           (builtin_find(argv.v[0]) != NULL &&
-           !vs_plat_external_fallback(argv.v[0])) ||
+           !vash_plat_external_fallback(argv.v[0])) ||
           func_find(argv.v[0]) != NULL)
         {
-          vs_err("pipelines can only run external programs on this "
+          vash_err("pipelines can only run external programs on this "
                  "platform yet");
           fv_free(&argv);
           continue;
@@ -1405,11 +1405,11 @@ static int run_stages(struct node_s *first, int nst)
       path = hash_find_command(argv.v[0], var_get("PATH"), &err);
       envp = var_build_env();
       if (path == NULL ||
-          vs_plat_spawn(path, argv.v, envp, i > 0 ? pipes[i - 1][0] : -1,
+          vash_plat_spawn(path, argv.v, envp, i > 0 ? pipes[i - 1][0] : -1,
                         i < nst - 1 ? pipes[i][1] : -1, closes, nclose,
                         &pids[i]) != 0)
         {
-          vs_err("%s: command not found", argv.v[0]);
+          vash_err("%s: command not found", argv.v[0]);
           pids[i] = -1;
         }
 
@@ -1501,7 +1501,7 @@ static bool stage_is_plain_external(const struct node_s *st, bool in_pipeline)
 
   return is_literal_word(name) && func_find(name) == NULL &&
          (builtin_find(name) == NULL ||
-          ((!in_pipeline || !vs_inproc_enabled()) && vs_plat_external_fallback(name)));
+          ((!in_pipeline || !vash_inproc_enabled()) && vash_plat_external_fallback(name)));
 }
 
 static void cloexec(int fd)
@@ -1515,9 +1515,9 @@ static void cloexec(int fd)
 
 static int run_stages_inproc(struct node_s *first, int nst)
 {
-  pid_t *pids = vs_xmalloc((size_t)nst * sizeof(pid_t));
-  int *stat_of = vs_xmalloc((size_t)nst * sizeof(int));
-  void **feeders = vs_xmalloc((size_t)nst * sizeof(void *));   /* threads to wait for at the end */
+  pid_t *pids = vash_xmalloc((size_t)nst * sizeof(pid_t));
+  int *stat_of = vash_xmalloc((size_t)nst * sizeof(int));
+  void **feeders = vash_xmalloc((size_t)nst * sizeof(void *));   /* threads to wait for at the end */
   struct node_s *stage = first;
   int in_fd = -1;
   int failed = 0;
@@ -1535,7 +1535,7 @@ static int run_stages_inproc(struct node_s *first, int nst)
 
       if (!last && pipe(pp) != 0)
         {
-          vs_err("pipe: %s", strerror(errno));
+          vash_err("pipe: %s", strerror(errno));
           stat_of[i] = 1;
           break;
         }
@@ -1570,10 +1570,10 @@ static int run_stages_inproc(struct node_s *first, int nst)
                 }
 
               if (path == NULL ||
-                  vs_plat_spawn(path, argv.v, envp, in_fd, pp[1], closes, nc,
+                  vash_plat_spawn(path, argv.v, envp, in_fd, pp[1], closes, nc,
                                 &pids[i]) != 0)
                 {
-                  vs_err("%s: command not found", argv.v[0]);
+                  vash_err("%s: command not found", argv.v[0]);
                   pids[i] = -1;
                   stat_of[i] = 127;
                 }
@@ -1600,7 +1600,7 @@ static int run_stages_inproc(struct node_s *first, int nst)
           char *captured = NULL;
           size_t caplen = 0;
 
-          stat_of[i] = vs_inproc_stage(stage, in_fd, last ? NULL : &captured, &caplen);
+          stat_of[i] = vash_inproc_stage(stage, in_fd, last ? NULL : &captured, &caplen);
           if (in_fd >= 0)
             {
               close(in_fd);
@@ -1611,7 +1611,7 @@ static int run_stages_inproc(struct node_s *first, int nst)
             {
               /* pp[0] becomes the next stage's stdin; a thread fills it. */
 
-              feeders[i] = vs_inproc_feed(pp[1], captured != NULL ? captured : vs_xstrdup(""),
+              feeders[i] = vash_inproc_feed(pp[1], captured != NULL ? captured : vash_xstrdup(""),
                                           captured != NULL ? caplen : 0);   /* not strlen: NULs may be data */
               in_fd = pp[0];
             }
@@ -1647,7 +1647,7 @@ static int run_stages_inproc(struct node_s *first, int nst)
 
   for (i = 0; i < nst; i++)
     {
-      vs_inproc_feed_wait(feeders[i]);
+      vash_inproc_feed_wait(feeders[i]);
     }
 
   free(feeders);
@@ -1675,7 +1675,7 @@ static int exec_pipeline(struct node_s *n)
     {
       status = exec_node(n->a);
     }
-  else if (vs_inproc_enabled())
+  else if (vash_inproc_enabled())
     {
       status = run_stages_inproc(n->a, nst);
     }
@@ -1723,7 +1723,7 @@ static int exec_async_spawn(struct node_s *st)
   path = hash_find_command(argv.v[0], var_get("PATH"), &err);
   if (path == NULL)
     {
-      vs_err("%s: command not found", argv.v[0]);
+      vash_err("%s: command not found", argv.v[0]);
       fv_free(&argv);
       return 127;
     }
@@ -1735,7 +1735,7 @@ static int exec_async_spawn(struct node_s *st)
 
   envp = var_build_env();
   fflush(NULL);
-  ret = vs_plat_spawn(path, argv.v, envp, in_fd, -1, NULL, 0, &pid);
+  ret = vash_plat_spawn(path, argv.v, envp, in_fd, -1, NULL, 0, &pid);
   if (in_fd >= 0)
     {
       close(in_fd);
@@ -1746,7 +1746,7 @@ static int exec_async_spawn(struct node_s *st)
   if (ret != 0)
     {
       fv_free(&argv);
-      vs_err("&: %s", strerror(ret));
+      vash_err("&: %s", strerror(ret));
       return 126;
     }
 
@@ -1776,7 +1776,7 @@ static int exec_async_spawn(struct node_s *st)
 
 static int exec_async(struct node_s *n)
 {
-  pid_t pid = vs_plat_fork();
+  pid_t pid = vash_plat_fork();
 
   if (pid < 0)
     {
@@ -1788,7 +1788,7 @@ static int exec_async(struct node_s *n)
           return exec_async_spawn(st);
         }
 
-      vs_err("&: only an external program can run in the background on this "
+      vash_err("&: only an external program can run in the background on this "
              "platform (no fork)");
       return 1;
     }
@@ -1883,7 +1883,7 @@ static int db_regex(const char *subject, const char *raw)
      */
 
     size_t ng = rx.re_nsub + 1;
-    regmatch_t *m = vs_xmalloc(ng * sizeof(*m));
+    regmatch_t *m = vash_xmalloc(ng * sizeof(*m));
     struct arr_s *a = arr_new();
 
     rc = regexec(&rx, subject, ng, m, 0);
@@ -1894,8 +1894,8 @@ static int db_regex(const char *subject, const char *raw)
         for (g = 0; g < ng; g++)
           {
             char *piece = m[g].rm_so >= 0
-                          ? vs_xstrndup(subject + m[g].rm_so, (size_t)(m[g].rm_eo - m[g].rm_so))
-                          : vs_xstrdup("");
+                          ? vash_xstrndup(subject + m[g].rm_so, (size_t)(m[g].rm_eo - m[g].rm_so))
+                          : vash_xstrdup("");
 
             arr_set(a, (long)g, piece);
             free(piece);
@@ -1973,7 +1973,7 @@ static int db_test(struct node_s *n)
         }
       else if (strcmp(op, "-o") == 0)
         {
-          r = vs_option_state(a) == 1 ? 0 : 1;
+          r = vash_option_state(a) == 1 ? 0 : 1;
         }
       else if (strcmp(op, "-R") == 0)
         {
@@ -2036,10 +2036,10 @@ static int db_test(struct node_s *n)
       r = db_regex(a, w->next->text);
       if (r == 2)
         {
-          vs_err("[[: invalid regular expression");
+          vash_err("[[: invalid regular expression");
         }
 #else
-      vs_err("[[ =~ ]]: not supported on this platform yet");
+      vash_err("[[ =~ ]]: not supported on this platform yet");
       r = 2;
 #endif
       free(a);
@@ -2055,11 +2055,11 @@ static int db_test(struct node_s *n)
 
   if (strcmp(op, "<") == 0)
     {
-      r = vs_plat_collate(a, b) < 0 ? 0 : 1;      /* [[ ]] sorts by the locale */
+      r = vash_plat_collate(a, b) < 0 ? 0 : 1;      /* [[ ]] sorts by the locale */
     }
   else if (strcmp(op, ">") == 0)
     {
-      r = vs_plat_collate(a, b) > 0 ? 0 : 1;
+      r = vash_plat_collate(a, b) > 0 ? 0 : 1;
     }
   else
     {
@@ -2327,7 +2327,7 @@ int exec_node(struct node_s *n)
       return 0;                    /* set -n: read, do not run */
     }
 
-  if (g_sh.comp_deadline != 0 && vs_now_ms() > g_sh.comp_deadline)
+  if (g_sh.comp_deadline != 0 && vash_now_ms() > g_sh.comp_deadline)
     {
       g_sh.comp_expired = true;            /* a completion function or condition ran too long */
       g_sh.unwind = UW_RETURN;
@@ -2501,31 +2501,31 @@ static char *run_cmdsub_impl(const char *text, size_t len, bool strip)
   sb_init(&out);
   fflush(NULL);
 
-  if (vs_inproc_enabled())
+  if (vash_inproc_enabled())
     {
-      char *r = vs_inproc_cmdsub(text, len, &status);
+      char *r = vash_inproc_cmdsub(text, len, &status);
 
       g_sh.cmdsub_status = status;
-      out.s = r != NULL ? r : vs_xstrdup("");
+      out.s = r != NULL ? r : vash_xstrdup("");
       out.len = strlen(out.s);
       out.cap = out.len + 1;
       goto maybe_strip;
     }
 
-  if (!vs_plat_have_fork())
+  if (!vash_plat_have_fork())
     {
       /* 'text' is a slice of a word, not a C string: hand the platform
        * layer a terminated copy of exactly 'len' bytes.
        */
 
-      char *copy = vs_xstrndup(text, len);
-      char *r = vs_plat_capture_via_self(copy, &status);
+      char *copy = vash_xstrndup(text, len);
+      char *r = vash_plat_capture_via_self(copy, &status);
 
       free(copy);
       g_sh.cmdsub_status = status;
       if (r == NULL)
         {
-          return vs_xstrdup("");
+          return vash_xstrdup("");
         }
 
       out.s = r;
@@ -2536,16 +2536,16 @@ static char *run_cmdsub_impl(const char *text, size_t len, bool strip)
 
   if (pipe(fds) != 0)
     {
-      vs_err("pipe: %s", strerror(errno));
-      return vs_xstrdup("");
+      vash_err("pipe: %s", strerror(errno));
+      return vash_xstrdup("");
     }
 
-  pid = vs_plat_fork();
+  pid = vash_plat_fork();
   if (pid < 0)
     {
       close(fds[0]);
       close(fds[1]);
-      return vs_xstrdup("");
+      return vash_xstrdup("");
     }
 
   if (pid == 0)
@@ -2554,7 +2554,7 @@ static char *run_cmdsub_impl(const char *text, size_t len, bool strip)
       dup2(fds[1], STDOUT_FILENO);
       close(fds[1]);
       g_sh.interactive = false;
-      if (!vs_feat(VF_ERREXIT_IN_CMDSUB))
+      if (!vash_feat(VF_ERREXIT_IN_CMDSUB))
         {
           g_sh.opt_e = false;    /* bash's default: $(...) does not inherit -e */
         }
@@ -2638,7 +2638,7 @@ static int run_loop(struct parser_s *p, bool recover, int status)
         {
           if (!g_sh.input_aborted)
             {
-              vs_err("%s", p->err);
+              vash_err("%s", p->err);
             }
 
           g_sh.syntax_error = true;
@@ -2725,14 +2725,14 @@ static char *file_next_line(void *ctx, bool continuation)
 
 int run_file(const char *path)
 {
-  char pbuf[VS_PATH_MAX];
-  FILE *fp = fopen(vs_plat_fspath(path, pbuf, sizeof(pbuf)), "r");
+  char pbuf[VASH_PATH_MAX];
+  FILE *fp = fopen(vash_plat_fspath(path, pbuf, sizeof(pbuf)), "r");
   struct parser_s p;
   int status;
 
   if (fp == NULL)
     {
-      vs_err("%s: %s", path, strerror(errno));
+      vash_err("%s: %s", path, strerror(errno));
       return 127;
     }
 
@@ -2742,7 +2742,7 @@ int run_file(const char *path)
    */
 
   {
-    int hi = vs_plat_dup_high(fileno(fp));
+    int hi = vash_plat_dup_high(fileno(fp));
     FILE *hfp = hi >= 0 ? fdopen(hi, "r") : NULL;
 
     if (hfp != NULL)

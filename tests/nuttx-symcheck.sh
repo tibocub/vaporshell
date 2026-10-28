@@ -68,7 +68,7 @@ collisions=$(comm -12 "$TMP/mine" "$TMP/others")
 echo "$(wc -l < "$TMP/mine") vaporshell globals checked against $(wc -l < "$TMP/others") others"
 
 if [ -n "$collisions" ]; then
-    echo "COLLISIONS (rename these, e.g. with a vs_/g_vs_ prefix):"
+    echo "COLLISIONS (rename these, e.g. with a vash_/g_vash_ prefix):"
     echo "$collisions" | sed 's/^/  /'
     exit 1
 fi

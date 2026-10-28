@@ -43,9 +43,9 @@ static int change_dir(const char *dir)
 
 static void push_saved(const char *dir)
 {
-  g_sh.dirstack = vs_xrealloc(g_sh.dirstack, (size_t)(g_sh.ndirs + 1) * sizeof(char *));
+  g_sh.dirstack = vash_xrealloc(g_sh.dirstack, (size_t)(g_sh.ndirs + 1) * sizeof(char *));
   memmove(g_sh.dirstack + 1, g_sh.dirstack, (size_t)g_sh.ndirs * sizeof(char *));
-  g_sh.dirstack[0] = vs_xstrdup(dir);
+  g_sh.dirstack[0] = vash_xstrdup(dir);
   g_sh.ndirs++;
 }
 
@@ -87,7 +87,7 @@ static void show_dir(const char *d, bool longform)
 
 static void show_stack(bool longform, bool per_line, bool numbered)
 {
-  char cwd[VS_PATH_MAX];
+  char cwd[VASH_PATH_MAX];
   int i;
 
   if (!cwd_of(cwd, sizeof(cwd)))
@@ -163,7 +163,7 @@ int bi_dirs(int argc, char **argv)
         }
       else
         {
-          vs_err("dirs: %s: invalid option", argv[i]);
+          vash_err("dirs: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -174,7 +174,7 @@ int bi_dirs(int argc, char **argv)
 
 int bi_pushd(int argc, char **argv)
 {
-  char cwd[VS_PATH_MAX];
+  char cwd[VASH_PATH_MAX];
   bool no_cd = false;
   const char *arg = NULL;
   int i;
@@ -191,14 +191,14 @@ int bi_pushd(int argc, char **argv)
         }
       else
         {
-          vs_err("pushd: too many arguments");
+          vash_err("pushd: too many arguments");
           return 2;
         }
     }
 
   if (!cwd_of(cwd, sizeof(cwd)))
     {
-      vs_err("pushd: cannot determine the working directory");
+      vash_err("pushd: cannot determine the working directory");
       return 1;
     }
 
@@ -210,11 +210,11 @@ int bi_pushd(int argc, char **argv)
 
       if (g_sh.ndirs == 0)
         {
-          vs_err("pushd: no other directory");
+          vash_err("pushd: no other directory");
           return 1;
         }
 
-      top = vs_xstrdup(g_sh.dirstack[0]);
+      top = vash_xstrdup(g_sh.dirstack[0]);
       if (!no_cd && change_dir(top) != 0)
         {
           free(top);
@@ -224,7 +224,7 @@ int bi_pushd(int argc, char **argv)
       if (!no_cd)
         {
           free(g_sh.dirstack[0]);
-          g_sh.dirstack[0] = vs_xstrdup(cwd);
+          g_sh.dirstack[0] = vash_xstrdup(cwd);
         }
 
       free(top);
@@ -243,15 +243,15 @@ int bi_pushd(int argc, char **argv)
 
       if (idx >= total)
         {
-          vs_err("pushd: %s: directory stack index out of range", arg);
+          vash_err("pushd: %s: directory stack index out of range", arg);
           return 1;
         }
 
-      all = vs_xmalloc((size_t)total * sizeof(char *));
-      all[0] = vs_xstrdup(cwd);
+      all = vash_xmalloc((size_t)total * sizeof(char *));
+      all[0] = vash_xstrdup(cwd);
       for (k = 1; k < total; k++)
         {
-          all[k] = vs_xstrdup(g_sh.dirstack[k - 1]);
+          all[k] = vash_xstrdup(g_sh.dirstack[k - 1]);
         }
 
       if (!no_cd && change_dir(all[idx]) != 0)
@@ -266,7 +266,7 @@ int bi_pushd(int argc, char **argv)
         }
 
       dirstack_free();
-      g_sh.dirstack = vs_xmalloc((size_t)total * sizeof(char *));
+      g_sh.dirstack = vash_xmalloc((size_t)total * sizeof(char *));
       for (k = 1; k < total; k++)
         {
           g_sh.dirstack[k - 1] = all[(idx + k) % total];
@@ -318,7 +318,7 @@ int bi_popd(int argc, char **argv)
 
   if (g_sh.ndirs == 0)
     {
-      vs_err("popd: directory stack empty");
+      vash_err("popd: directory stack empty");
       return 1;
     }
 
@@ -327,7 +327,7 @@ int bi_popd(int argc, char **argv)
       idx = stack_index(arg);
       if (idx < 0 || idx > g_sh.ndirs)
         {
-          vs_err("popd: %s: directory stack index out of range", arg);
+          vash_err("popd: %s: directory stack index out of range", arg);
           return 1;
         }
     }

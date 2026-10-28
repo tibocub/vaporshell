@@ -112,7 +112,7 @@ static int bi_exit(int argc, char **argv)
 
   if (argc > 1 && !parse_count(argv[1], &status))
     {
-      vs_err("exit: %s: numeric argument required", argv[1]);
+      vash_err("exit: %s: numeric argument required", argv[1]);
       status = 2;
     }
 
@@ -127,14 +127,14 @@ static int bi_return(int argc, char **argv)
 
   if (argc > 1 && !parse_count(argv[1], &status))
     {
-      vs_err("return: %s: numeric argument required", argv[1]);
+      vash_err("return: %s: numeric argument required", argv[1]);
       status = 2;
     }
 
   if (g_sh.func_depth == 0 && g_sh.dot_depth == 0 &&
-      vs_feat(VF_RETURN_TOPLEVEL_ERR))
+      vash_feat(VF_RETURN_TOPLEVEL_ERR))
     {
-      vs_err("return: can only `return' from a function or sourced script");
+      vash_err("return: can only `return' from a function or sourced script");
       return 2;
     }
 
@@ -150,7 +150,7 @@ static int loop_control(const char *name, enum unwind_e what, int argc,
 
   if (argc > 1 && (!parse_count(argv[1], &n) || n < 1))
     {
-      vs_err("%s: %s: loop count out of range", name, argv[1]);
+      vash_err("%s: %s: loop count out of range", name, argv[1]);
       return 1;
     }
 
@@ -199,7 +199,7 @@ static int bi_eval(int argc, char **argv)
   g_sh.syntax_error = false;
   status = run_string(text.s != NULL ? text.s : "", text.len);
   sb_free(&text);
-  if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
+  if (g_sh.syntax_error && vash_feat(VF_EVAL_SYNTAX_FATAL) &&
       !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = UW_EXIT;         /* a syntax error in eval is fatal */
@@ -221,7 +221,7 @@ static char *find_sourced(const char *name)
 
   if (strchr(name, '/') != NULL || (path = var_get("PATH")) == NULL)
     {
-      return vs_xstrdup(name);
+      return vash_xstrdup(name);
     }
 
   sb_init(&cand);
@@ -238,7 +238,7 @@ static char *find_sourced(const char *name)
         }
 
       sb_adds(&cand, name);
-      if (stat(VS_FS(cand.s), &st) == 0 && S_ISREG(st.st_mode))
+      if (stat(VASH_FS(cand.s), &st) == 0 && S_ISREG(st.st_mode))
         {
           return sb_take(&cand);
         }
@@ -251,7 +251,7 @@ static char *find_sourced(const char *name)
     }
 
   sb_free(&cand);
-  return vs_feat(VF_DOT_SEARCH_CWD) ? vs_xstrdup(name) : NULL;
+  return vash_feat(VF_DOT_SEARCH_CWD) ? vash_xstrdup(name) : NULL;
 }
 
 static int bi_dot(int argc, char **argv)
@@ -265,29 +265,29 @@ static int bi_dot(int argc, char **argv)
 
   if (argc < 2)
     {
-      vs_err("%s: filename argument required", argv[0]);
+      vash_err("%s: filename argument required", argv[0]);
       return 2;
     }
 
   file = find_sourced(argv[1]);
   if (file == NULL)
     {
-      vs_err("%s: file not found in PATH", argv[1]);
-      vs_special_error();
+      vash_err("%s: file not found in PATH", argv[1]);
+      vash_special_error();
       return 1;
     }
 
-  if (argc > 2 && !vs_feat(VF_DOT_ARGS))
+  if (argc > 2 && !vash_feat(VF_DOT_ARGS))
     {
       argc = 2;                   /* dash 0.5.12 ignores them */
     }
 
   if (argc > 2)
     {
-      args = vs_xmalloc((size_t)(argc - 2) * sizeof(char *));
+      args = vash_xmalloc((size_t)(argc - 2) * sizeof(char *));
       for (i = 2; i < argc; i++)
         {
-          args[i - 2] = vs_xstrdup(argv[i]);
+          args[i - 2] = vash_xstrdup(argv[i]);
         }
 
       saved = pos_swap(args, argc - 2, &saved_n);
@@ -307,12 +307,12 @@ static int bi_dot(int argc, char **argv)
   }
 
   g_sh.dot_depth--;
-  if (g_sh.trap_action[VS_TRAP_RETURN] != NULL && g_sh.unwind == UW_NONE)
+  if (g_sh.trap_action[VASH_TRAP_RETURN] != NULL && g_sh.unwind == UW_NONE)
     {
       g_sh.last_status = status;
       trap_run_return();              /* a sourced script finished */
     }
-  if (g_sh.syntax_error && vs_feat(VF_EVAL_SYNTAX_FATAL) &&
+  if (g_sh.syntax_error && vash_feat(VF_EVAL_SYNTAX_FATAL) &&
       !g_sh.interactive && g_sh.unwind == UW_NONE)
     {
       g_sh.unwind = UW_EXIT;
@@ -348,14 +348,14 @@ static int bi_shift(int argc, char **argv)
 
   if (argc > 1 && !parse_count(argv[1], &n))
     {
-      vs_err("shift: %s: numeric argument required", argv[1]);
+      vash_err("shift: %s: numeric argument required", argv[1]);
       return 2;
     }
 
   if (n > g_sh.npos)
     {
-      vs_err("shift: shift count out of range");
-      vs_special_error();
+      vash_err("shift: shift count out of range");
+      vash_special_error();
       return 1;
     }
 
@@ -399,11 +399,11 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
       {
         const char *eq = strchr(argv[i], '=');
         size_t nl = eq != NULL ? (size_t)(eq - argv[i]) : strlen(argv[i]);
-        char *name = vs_xstrndup(argv[i], nl);
+        char *name = vash_xstrndup(argv[i], nl);
 
         if (!is_valid_name(name, nl))
           {
-            vs_err("%s: `%s': not a valid identifier", word, argv[i]);
+            vash_err("%s: `%s': not a valid identifier", word, argv[i]);
             status = 1;
           }
         else
@@ -411,7 +411,7 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
             if (eq != NULL && var_set(name, eq + 1) != 0)
               {
                 status = 1;
-                vs_special_error();
+                vash_special_error();
               }
 
             var_set_flags(name, flag);
@@ -421,7 +421,7 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
       }
     }
 
-  if (list && vs_feat(VF_BASH_INFO_FORMATS))
+  if (list && vash_feat(VF_BASH_INFO_FORMATS))
     {
       /* bash: sorted `declare -x NAME="value"` lines. */
 
@@ -435,7 +435,7 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
           n += (v->flags & flag) != 0;
         }
 
-      vec = vs_xmalloc((n + 1) * sizeof(*vec));
+      vec = vash_xmalloc((n + 1) * sizeof(*vec));
       n = 0;
       for (v = g_sh.vars; v != NULL; v = v->next)
         {
@@ -508,7 +508,7 @@ static int mark_vars(int argc, char **argv, unsigned flag, const char *word)
 
 static int bi_export(int argc, char **argv)
 {
-  if (vs_feat(VF_BASH_SYNTAX))
+  if (vash_feat(VF_BASH_SYNTAX))
     {
       return bi_export_decl(argc, argv);
     }
@@ -518,7 +518,7 @@ static int bi_export(int argc, char **argv)
 
 static int bi_readonly(int argc, char **argv)
 {
-  if (vs_feat(VF_BASH_SYNTAX))
+  if (vash_feat(VF_BASH_SYNTAX))
     {
       return bi_readonly_decl(argc, argv);
     }
@@ -544,7 +544,7 @@ static int bi_unset(int argc, char **argv)
           funcs = false;
           refs = false;
         }
-      else if (strcmp(argv[i], "-n") == 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(argv[i], "-n") == 0 && vash_feat(VF_BASH_SYNTAX))
         {
           funcs = false;
           refs = true;                   /* the nameref itself, not what it names */
@@ -556,8 +556,8 @@ static int bi_unset(int argc, char **argv)
         }
       else
         {
-          vs_err("unset: %s: invalid option", argv[i]);
-          vs_special_error();            /* unset is a special builtin: dash ends the shell */
+          vash_err("unset: %s: invalid option", argv[i]);
+          vash_special_error();            /* unset is a special builtin: dash ends the shell */
           return 2;
         }
     }
@@ -656,13 +656,13 @@ static bool named_opt_state(int i)
     }
 }
 
-int vs_set_named_option(const char *name, bool on)
+int vash_set_named_option(const char *name, bool on)
 {
   int i;
 
-  if (strcmp(name, "posix") == 0 && vs_feat(VF_SET_O_BASH))
+  if (strcmp(name, "posix") == 0 && vash_feat(VF_SET_O_BASH))
     {
-      vs_mode_set(on ? VS_PROFILE_POSIX : VS_PROFILE_BASH);
+      vash_mode_set(on ? VASH_PROFILE_POSIX : VASH_PROFILE_BASH);
       return 0;
     }
 
@@ -673,7 +673,7 @@ int vs_set_named_option(const char *name, bool on)
           continue;
         }
 
-      if (g_named_opts[i].bash_only && !vs_feat(VF_SET_O_BASH))
+      if (g_named_opts[i].bash_only && !vash_feat(VF_SET_O_BASH))
         {
           return -1;
         }
@@ -692,14 +692,14 @@ int vs_set_named_option(const char *name, bool on)
 
 /* 1 if the named option is on, 0 if off, -1 if there is no such option. */
 
-int vs_option_state(const char *name)
+int vash_option_state(const char *name)
 {
   int i;
 
   for (i = 0; i < NNAMED; i++)
     {
       if (strcmp(name, g_named_opts[i].name) == 0 &&
-          (!g_named_opts[i].bash_only || vs_feat(VF_SET_O_BASH)))
+          (!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH)))
         {
           return named_opt_state(i) ? 1 : 0;
         }
@@ -712,7 +712,7 @@ int vs_option_state(const char *name)
 
 static void list_options(bool reusable)
 {
-  bool bash = vs_feat(VF_BASH_INFO_FORMATS);
+  bool bash = vash_feat(VF_BASH_INFO_FORMATS);
   int i;
 
   if (!reusable && !bash)
@@ -724,7 +724,7 @@ static void list_options(bool reusable)
     {
       bool on;
 
-      if (g_named_opts[i].bash_only && !vs_feat(VF_SET_O_BASH))
+      if (g_named_opts[i].bash_only && !vash_feat(VF_SET_O_BASH))
         {
           continue;
         }
@@ -766,7 +766,7 @@ static void print_set_scalar(const char *name, const char *value)
 
   if (quote)
     {
-      char *q = vs_quote_word(value);
+      char *q = vash_quote_word(value);
 
       printf("%s=%s\n", name, q);
       free(q);
@@ -787,7 +787,7 @@ static int cmp_var_names(const void *a, const void *b)
  * as $'...' when it holds control characters, which is what bash does.
  */
 
-void vs_print_dq(const char *s)
+void vash_print_dq(const char *s)
 {
   const char *p;
 
@@ -795,7 +795,7 @@ void vs_print_dq(const char *s)
     {
       if ((unsigned char)*p < 0x20 || *p == 0x7f)
         {
-          char *q = vs_quote_word(s);
+          char *q = vash_quote_word(s);
 
           fputs(q, stdout);
           free(q);
@@ -821,7 +821,7 @@ void vs_print_dq(const char *s)
  * ([k]="v" ) for an associative one -- bash leaves a space before the ).
  */
 
-void vs_print_array_body(const struct arr_s *a)
+void vash_print_array_body(const struct arr_s *a)
 {
   size_t i;
 
@@ -846,17 +846,17 @@ void vs_print_array_body(const struct arr_s *a)
           else
             {
               putchar('[');
-              vs_print_dq(a->e[i].key);
+              vash_print_dq(a->e[i].key);
               fputs("]=", stdout);
             }
 
-          vs_print_dq(a->e[i].val);
+          vash_print_dq(a->e[i].val);
           putchar(' ');
         }
       else
         {
           printf("%s[%ld]=", i > 0 ? " " : "", a->e[i].idx);
-          vs_print_dq(a->e[i].val);
+          vash_print_dq(a->e[i].val);
         }
     }
 
@@ -866,7 +866,7 @@ void vs_print_array_body(const struct arr_s *a)
 static void print_array(const struct var_s *v)
 {
   printf("%s=", v->name);
-  vs_print_array_body(v->arr);
+  vash_print_array_body(v->arr);
   putchar('\n');
 }
 
@@ -889,7 +889,7 @@ static int bi_set(int argc, char **argv)
           nv++;
         }
 
-      sorted = vs_xmalloc((nv + 1) * sizeof(*sorted));
+      sorted = vash_xmalloc((nv + 1) * sizeof(*sorted));
       for (nv = 0, v = g_sh.vars; v != NULL; v = v->next)
         {
           sorted[nv++] = v;
@@ -905,7 +905,7 @@ static int bi_set(int argc, char **argv)
             }
           else if (v->value != NULL)
             {
-              if (vs_feat(VF_BASH_SYNTAX))
+              if (vash_feat(VF_BASH_SYNTAX))
                 {
                   print_set_scalar(v->name, v->value);      /* bash: quoted only when needed */
                 }
@@ -948,11 +948,11 @@ static int bi_set(int argc, char **argv)
 
       if (strcmp(a + 1, "o") == 0)
         {
-          if (i + 1 >= argc || vs_set_named_option(argv[i + 1], on) != 0)
+          if (i + 1 >= argc || vash_set_named_option(argv[i + 1], on) != 0)
             {
-              vs_err("set: %s: invalid option name",
+              vash_err("set: %s: invalid option name",
                      i + 1 < argc ? argv[i + 1] : "(missing)");
-              vs_special_error();
+              vash_special_error();
               return 2;
             }
 
@@ -967,8 +967,8 @@ static int bi_set(int argc, char **argv)
           {
             if (set_option(*f, on) != 0)
               {
-                vs_err("set: %c%c: invalid option", a[0], *f);
-                vs_special_error();
+                vash_err("set: %c%c: invalid option", a[0], *f);
+                vash_special_error();
                 return 2;
               }
           }
@@ -994,7 +994,7 @@ static int bi_exec(int argc, char **argv)
       return 0;                 /* redirections were made permanent */
     }
 
-  if (!vs_plat_have_fork() || g_sh.in_subshell > 0)
+  if (!vash_plat_have_fork() || g_sh.in_subshell > 0)
     {
       /* No process to replace (NuttX), or an in-process subshell whose
        * "process" is the shell itself: run the command, then finish.
@@ -1007,10 +1007,10 @@ static int bi_exec(int argc, char **argv)
       return st;
     }
 
-  path = vs_plat_find_command(argv[1], var_get("PATH"), &err);
+  path = vash_plat_find_command(argv[1], var_get("PATH"), &err);
   if (path == NULL)
     {
-      vs_err("exec: %s: %s", argv[1],
+      vash_err("exec: %s: %s", argv[1],
              err == EACCES ? "Permission denied" : "not found");
       g_sh.unwind = g_sh.interactive ? UW_NONE : UW_EXIT;
       g_sh.last_status = err == EACCES ? 126 : 127;
@@ -1019,8 +1019,8 @@ static int bi_exec(int argc, char **argv)
 
   envp = var_build_env();
   fflush(NULL);
-  vs_plat_exec(path, argv + 1, envp);
-  vs_err("exec: %s: %s", argv[1], strerror(errno));
+  vash_plat_exec(path, argv + 1, envp);
+  vash_err("exec: %s: %s", argv[1], strerror(errno));
   return 126;
 }
 
@@ -1033,7 +1033,7 @@ static bool same_dir(const char *a, const char *b)
   struct stat sa;
   struct stat sb;
 
-  return stat(VS_FS(a), &sa) == 0 && stat(VS_FS(b), &sb) == 0 &&
+  return stat(VASH_FS(a), &sa) == 0 && stat(VASH_FS(b), &sb) == 0 &&
          sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
 }
 
@@ -1066,9 +1066,9 @@ static int bi_cd(int argc, char **argv)
   bool print = false;
   const char *dir;
   const char *target;
-  char oldpwd[VS_PATH_MAX];
-  char curpath[VS_PATH_MAX];
-  char cdcand[VS_PATH_MAX];
+  char oldpwd[VASH_PATH_MAX];
+  char curpath[VASH_PATH_MAX];
+  char cdcand[VASH_PATH_MAX];
   int i = 1;
 
   for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
@@ -1088,7 +1088,7 @@ static int bi_cd(int argc, char **argv)
         }
       else
         {
-          vs_err("cd: %s: invalid option", argv[i]);
+          vash_err("cd: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -1098,7 +1098,7 @@ static int bi_cd(int argc, char **argv)
       dir = var_get("HOME");
       if (dir == NULL || dir[0] == '\0')
         {
-          vs_err("cd: HOME not set");
+          vash_err("cd: HOME not set");
           return 1;
         }
     }
@@ -1107,7 +1107,7 @@ static int bi_cd(int argc, char **argv)
       dir = var_get("OLDPWD");
       if (dir == NULL)
         {
-          vs_err("cd: OLDPWD not set");
+          vash_err("cd: OLDPWD not set");
           return 1;
         }
 
@@ -1120,7 +1120,7 @@ static int bi_cd(int argc, char **argv)
 
   if (dir[0] == '\0')
     {
-      vs_err("cd: null directory");
+      vash_err("cd: null directory");
       return 1;
     }
 
@@ -1148,7 +1148,7 @@ static int bi_cd(int argc, char **argv)
               snprintf(cdcand, sizeof(cdcand), "%.*s/%s", (int)len, cp, dir);
             }
 
-          if (stat(VS_FS(cdcand), &st) == 0 && S_ISDIR(st.st_mode))
+          if (stat(VASH_FS(cdcand), &st) == 0 && S_ISDIR(st.st_mode))
             {
               target = cdcand;
               print = print || len > 0;
@@ -1171,10 +1171,10 @@ static int bi_cd(int argc, char **argv)
 
   if (physical || oldpwd[0] == '\0')
     {
-      if (chdir(VS_FS(target)) != 0)
+      if (chdir(VASH_FS(target)) != 0)
         {
-          vs_err("cd: %s: %s", dir, strerror(errno));
-          return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+          vash_err("cd: %s: %s", dir, strerror(errno));
+          return vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
         }
 
       if (getcwd(curpath, sizeof(curpath)) == NULL)
@@ -1184,11 +1184,11 @@ static int bi_cd(int argc, char **argv)
     }
   else
     {
-      if (vs_path_normalize(oldpwd, target, curpath, sizeof(curpath)) != 0 ||
-          chdir(VS_FS(curpath)) != 0)
+      if (vash_path_normalize(oldpwd, target, curpath, sizeof(curpath)) != 0 ||
+          chdir(VASH_FS(curpath)) != 0)
         {
-          vs_err("cd: %s: %s", dir, strerror(errno != 0 ? errno : ENAMETOOLONG));
-          return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+          vash_err("cd: %s: %s", dir, strerror(errno != 0 ? errno : ENAMETOOLONG));
+          return vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
         }
     }
 
@@ -1212,7 +1212,7 @@ static int bi_cd(int argc, char **argv)
 static int bi_pwd(int argc, char **argv)
 {
   bool physical = false;
-  char cwd[VS_PATH_MAX];
+  char cwd[VASH_PATH_MAX];
   int i;
 
   for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
@@ -1231,7 +1231,7 @@ static int bi_pwd(int argc, char **argv)
         }
       else
         {
-          vs_err("pwd: %s: invalid option", argv[i]);
+          vash_err("pwd: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -1244,7 +1244,7 @@ static int bi_pwd(int argc, char **argv)
 
   if (getcwd(cwd, sizeof(cwd)) == NULL)
     {
-      vs_err("pwd: %s", strerror(errno));
+      vash_err("pwd: %s", strerror(errno));
       return 1;
     }
 
@@ -1288,7 +1288,7 @@ int bi_read(int argc, char **argv)
   int nvars;
   char **names;
   struct fieldv_s fields;
-  int badname = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+  int badname = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
   bool whole = false;
   size_t cstart = 0;                    /* where the character being read began */
   long nchars = 0;
@@ -1315,14 +1315,14 @@ int bi_read(int argc, char **argv)
               continue;
             }
 
-          if (opt == 's' && vs_feat(VF_READ_EXT))
+          if (opt == 's' && vash_feat(VF_READ_EXT))
             {
               continue;                /* no terminal echo control yet */
             }
 
-          if (opt != 'p' && !(vs_feat(VF_READ_EXT) && strchr("andtu", opt) != NULL))
+          if (opt != 'p' && !(vash_feat(VF_READ_EXT) && strchr("andtu", opt) != NULL))
             {
-              vs_err("read: -%c: invalid option", opt);
+              vash_err("read: -%c: invalid option", opt);
               return 2;
             }
 
@@ -1337,7 +1337,7 @@ int bi_read(int argc, char **argv)
             }
           else
             {
-              vs_err("read: -%c: option requires an argument", opt);
+              vash_err("read: -%c: option requires an argument", opt);
               return 2;
             }
 
@@ -1361,13 +1361,13 @@ int bi_read(int argc, char **argv)
 
       if (!is_valid_name(array, strlen(array)))
         {
-          vs_err("read: `%s': not a valid identifier", array);
+          vash_err("read: `%s': not a valid identifier", array);
           return badname;
         }
 
       if (var_is_assoc(array))
         {
-          vs_err("read: %s: not an indexed array", array);
+          vash_err("read: %s: not an indexed array", array);
           return 1;
         }
 
@@ -1386,14 +1386,14 @@ int bi_read(int argc, char **argv)
     {
       if (!is_valid_name(names[k], strlen(names[k])))
         {
-          vs_err("read: `%s': not a valid identifier", names[k]);
+          vash_err("read: `%s': not a valid identifier", names[k]);
           return badname;
         }
     }
 
   /* bash shows -p only when reading from a terminal. */
 
-  if (prompt != NULL && vs_plat_isatty(rfd))
+  if (prompt != NULL && vash_plat_isatty(rfd))
     {
       fputs(prompt, stderr);
       fflush(stderr);
@@ -1457,7 +1457,7 @@ int bi_read(int argc, char **argv)
       while (cstart < line.len)
         {
           long wc;
-          size_t r = vs_plat_multibyte() ? vs_plat_mbdecode(line.s + cstart, line.len - cstart, &wc) : 1;
+          size_t r = vash_plat_multibyte() ? vash_plat_mbdecode(line.s + cstart, line.len - cstart, &wc) : 1;
 
           if (r == 0)
             {
@@ -1516,7 +1516,7 @@ static int bi_let(int argc, char **argv)
 
   if (argc < 2)
     {
-      vs_err("let: expression expected");
+      vash_err("let: expression expected");
       return 1;
     }
 
@@ -1542,7 +1542,7 @@ static int bi_builtin(int argc, char **argv)
 
   if (builtin_find(argv[1]) == NULL)
     {
-      vs_err("builtin: %s: not a shell builtin", argv[1]);
+      vash_err("builtin: %s: not a shell builtin", argv[1]);
       return 1;
     }
 
@@ -1571,7 +1571,7 @@ static int bi_command(int argc, char **argv)
         }
       else
         {
-          vs_err("command: %s: invalid option", argv[i]);
+          vash_err("command: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -1607,7 +1607,7 @@ static int bi_command(int argc, char **argv)
                 free(path);
                 break;
               default:
-                status = vs_feat(VF_NOTFOUND_127) ? 127 : 1;
+                status = vash_feat(VF_NOTFOUND_127) ? 127 : 1;
                 break;
             }
         }
@@ -1624,7 +1624,7 @@ static int bi_type(int argc, char **argv)
   bool terse = false;
   int i = 1;
 
-  if (i < argc && strcmp(argv[i], "-t") == 0 && vs_feat(VF_BASH_INFO_FORMATS))
+  if (i < argc && strcmp(argv[i], "-t") == 0 && vash_feat(VF_BASH_INFO_FORMATS))
     {
       terse = true;
       i++;
@@ -1633,7 +1633,7 @@ static int bi_type(int argc, char **argv)
   for (; i < argc; i++)
     {
       char *path;
-      const struct alias_s *al = (g_sh.interactive || vs_feat(VF_ALIAS_SCRIPTS) ||
+      const struct alias_s *al = (g_sh.interactive || vash_feat(VF_ALIAS_SCRIPTS) ||
                                   g_sh.so_expand_aliases) ? alias_find(argv[i]) : NULL;
 
       if (al != NULL)
@@ -1642,7 +1642,7 @@ static int bi_type(int argc, char **argv)
             {
               puts("alias");
             }
-          else if (vs_feat(VF_BASH_INFO_FORMATS))
+          else if (vash_feat(VF_BASH_INFO_FORMATS))
             {
               printf("%s is aliased to `%s'\n", argv[i], al->value);
             }
@@ -1707,14 +1707,14 @@ static int bi_type(int argc, char **argv)
             free(path);
             break;
           default:
-            if (vs_feat(VF_NOTFOUND_127))
+            if (vash_feat(VF_NOTFOUND_127))
               {
                 printf("%s: not found\n", argv[i]);   /* dash: on stdout */
                 status = 127;
               }
             else
               {
-                vs_err("type: %s: not found", argv[i]);
+                vash_err("type: %s: not found", argv[i]);
                 status = 1;
               }
 
@@ -1765,7 +1765,7 @@ static int bi_wait(int argc, char **argv)
 
               if (!any)
                 {
-                  vs_err("wait: no jobs");
+                  vash_err("wait: no jobs");
                   return 127;
                 }
 
@@ -1802,11 +1802,11 @@ static int bi_wait(int argc, char **argv)
         {
           if (argv[i][0] == '%')
             {
-              vs_err("wait: %s: no such job", argv[i]);
+              vash_err("wait: %s: no such job", argv[i]);
             }
           else
             {
-              vs_err("wait: pid %s is not a child of this shell", argv[i]);
+              vash_err("wait: pid %s is not a child of this shell", argv[i]);
             }
 
           status = 127;
@@ -1926,8 +1926,8 @@ static int bi_umask(int argc, char **argv)
         if (!apply_symbolic(argv[i], &perm))
           {
             umask(m);
-            vs_err("umask: %s: invalid mode", argv[i]);
-            return vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+            vash_err("umask: %s: invalid mode", argv[i]);
+            return vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
           }
 
         umask((mode_t)(~perm & 0777));
@@ -1968,68 +1968,68 @@ static int bi_umask(int argc, char **argv)
 
 /* ---- The table --------------------------------------------------------------------------- */
 
-const struct builtin_s g_vs_builtins[] =
+const struct builtin_s g_vash_builtins[] =
 {
-  { ":",        bi_colon,    true,  "do nothing, successfully", VS_M_ALL },
-  { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell", VS_M_ALL },
-  { "break",    bi_break,    true,  "break [n]: leave a loop", VS_M_ALL },
-  { "continue", bi_continue, true,  "continue [n]: next loop iteration", VS_M_ALL },
-  { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command", VS_M_ALL },
-  { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections", VS_M_ALL },
-  { "exit",     bi_exit,     true,  "exit [n]: leave the shell", VS_M_ALL },
-  { "export",   bi_export,   true,  "export [-p] [name[=value]]: mark variables for export", VS_M_ALL },
-  { "readonly", bi_readonly, true,  "readonly [-p] [name[=value]]: make variables read-only", VS_M_ALL },
-  { "return",   bi_return,   true,  "return [n]: leave a function or sourced file", VS_M_ALL },
-  { "set",      bi_set,      true,  "set [-euxfC] [-o name] [--] [args]: options and positional parameters", VS_M_ALL },
-  { "shift",    bi_shift,    true,  "shift [n]: drop positional parameters", VS_M_ALL },
-  { "source",   bi_dot,      true,  "source file [args]: same as .", VS_M_BASH },
-  { "trap",     bi_trap,     true,  "trap [action sig...]: run action on signals / exit", VS_M_ALL },
-  { "unset",    bi_unset,    true,  "unset [-fv] name...: remove variables or functions", VS_M_ALL },
-  { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression", VS_M_ALL },
-  { "cd",       bi_cd,       false, "cd [dir | -]: change directory", VS_M_ALL },
-  { "command",  bi_command,  false, "command [-v] name [args]: run bypassing functions", VS_M_ALL },
-  { "alias",    bi_alias,    false, "alias [name[=value]...]: define or show aliases", VS_M_ALL },
-  { "unalias",  bi_unalias,  false, "unalias [-a] name...: remove aliases", VS_M_ALL },
-  { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VS_M_ALL },
-  { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VS_M_ALL },
-  { "declare",  bi_declare,  false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes", VS_M_BASH },
-  { "mapfile",  bi_mapfile,  false, "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: read lines into an array", VS_M_BASH },
-  { "readarray", bi_mapfile, false, "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: a synonym for mapfile", VS_M_BASH },
-  { "typeset",  bi_declare,  false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare", VS_M_BASH },
-  { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VS_M_ALL },
+  { ":",        bi_colon,    true,  "do nothing, successfully", VASH_M_ALL },
+  { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell", VASH_M_ALL },
+  { "break",    bi_break,    true,  "break [n]: leave a loop", VASH_M_ALL },
+  { "continue", bi_continue, true,  "continue [n]: next loop iteration", VASH_M_ALL },
+  { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command", VASH_M_ALL },
+  { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections", VASH_M_ALL },
+  { "exit",     bi_exit,     true,  "exit [n]: leave the shell", VASH_M_ALL },
+  { "export",   bi_export,   true,  "export [-p] [name[=value]]: mark variables for export", VASH_M_ALL },
+  { "readonly", bi_readonly, true,  "readonly [-p] [name[=value]]: make variables read-only", VASH_M_ALL },
+  { "return",   bi_return,   true,  "return [n]: leave a function or sourced file", VASH_M_ALL },
+  { "set",      bi_set,      true,  "set [-euxfC] [-o name] [--] [args]: options and positional parameters", VASH_M_ALL },
+  { "shift",    bi_shift,    true,  "shift [n]: drop positional parameters", VASH_M_ALL },
+  { "source",   bi_dot,      true,  "source file [args]: same as .", VASH_M_BASH },
+  { "trap",     bi_trap,     true,  "trap [action sig...]: run action on signals / exit", VASH_M_ALL },
+  { "unset",    bi_unset,    true,  "unset [-fv] name...: remove variables or functions", VASH_M_ALL },
+  { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression", VASH_M_ALL },
+  { "cd",       bi_cd,       false, "cd [dir | -]: change directory", VASH_M_ALL },
+  { "command",  bi_command,  false, "command [-v] name [args]: run bypassing functions", VASH_M_ALL },
+  { "alias",    bi_alias,    false, "alias [name[=value]...]: define or show aliases", VASH_M_ALL },
+  { "unalias",  bi_unalias,  false, "unalias [-a] name...: remove aliases", VASH_M_ALL },
+  { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VASH_M_ALL },
+  { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VASH_M_ALL },
+  { "declare",  bi_declare,  false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes", VASH_M_BASH },
+  { "mapfile",  bi_mapfile,  false, "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: read lines into an array", VASH_M_BASH },
+  { "readarray", bi_mapfile, false, "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: a synonym for mapfile", VASH_M_BASH },
+  { "typeset",  bi_declare,  false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare", VASH_M_BASH },
+  { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VASH_M_ALL },
 #ifdef VAPORSHELL_POSIX
-  { "times",    bi_times,    true,  "print accumulated process times", VS_M_ALL },
-  { "ulimit",   bi_ulimit,   false, "ulimit [-HS] [-cdfnstv] [limit]: resource limits", VS_M_ALL },
+  { "times",    bi_times,    true,  "print accumulated process times", VASH_M_ALL },
+  { "ulimit",   bi_ulimit,   false, "ulimit [-HS] [-cdfnstv] [limit]: resource limits", VASH_M_ALL },
 #endif
-  { "echo",     bi_echo,     false, "echo [-neE] [arg...]: print arguments", VS_M_ALL },
-  { "false",    bi_false,    false, "do nothing, unsuccessfully", VS_M_ALL },
-  { "help",     bi_help,     false, "help [name]: list builtins", VS_M_BASH },
-  { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal", VS_M_ALL },
-  { "printf",   bi_printf,   false, "printf [-v var] format [arg...]: formatted output", VS_M_ALL },
-  { "pwd",      bi_pwd,      false, "print the working directory", VS_M_ALL },
-  { "read",     bi_read,     false, "read [-r] name...: read a line into variables", VS_M_ALL },
-  { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VS_M_ALL },
-  { "true",     bi_true,     false, "do nothing, successfully", VS_M_ALL },
-  { "type",     bi_type,     false, "type name...: say how a name resolves", VS_M_ALL },
-  { "pushd",    bi_pushd,    false, "pushd [-n] [dir | +N | -N]: push a directory", VS_M_BASH },
-  { "popd",     bi_popd,     false, "popd [-n] [+N | -N]: pop a directory", VS_M_BASH },
-  { "dirs",     bi_dirs,     false, "dirs [-clpv]: show the directory stack", VS_M_BASH },
-  { "shopt",    bi_shopt,    false, "shopt [-pqsu] [-o] [name...]: shell options", VS_M_BASH },
-  { "let",      bi_let,      false, "let expr...: evaluate arithmetic expressions", VS_M_BASH },
-  { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VS_M_BASH },
-  { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VS_M_ALL },
-  { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VS_M_ALL },
-  { "jobs",     bi_jobs,     false, "jobs [-l|-p] [-n]: list background jobs", VS_M_ALL },
-  { "fg",       bi_fg,       false, "fg [job]: bring a job to the foreground", VS_M_ALL },
-  { "bg",       bi_bg,       false, "bg [job]: resume a stopped job in the background", VS_M_ALL },
-  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VS_M_BASH },
-  { "enable",   bi_enable,   false, "enable [-n] [-a|-p] [name...]: enable or disable shell builtins", VS_M_BASH },
-  { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VS_M_BASH },
-  { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VS_M_BASH },
-  { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VS_M_BASH },
-  { "fc",       bi_fc,       false, "fc [-lnr] [first [last]] | fc -s [old=new] [cmd]: list or re-run history entries", VS_M_ALL },
-  { "history",  bi_history,  false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history", VS_M_BASH },
-  { "bind",     bi_bind,     false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings", VS_M_BASH },
+  { "echo",     bi_echo,     false, "echo [-neE] [arg...]: print arguments", VASH_M_ALL },
+  { "false",    bi_false,    false, "do nothing, unsuccessfully", VASH_M_ALL },
+  { "help",     bi_help,     false, "help [name]: list builtins", VASH_M_BASH },
+  { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal", VASH_M_ALL },
+  { "printf",   bi_printf,   false, "printf [-v var] format [arg...]: formatted output", VASH_M_ALL },
+  { "pwd",      bi_pwd,      false, "print the working directory", VASH_M_ALL },
+  { "read",     bi_read,     false, "read [-r] name...: read a line into variables", VASH_M_ALL },
+  { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VASH_M_ALL },
+  { "true",     bi_true,     false, "do nothing, successfully", VASH_M_ALL },
+  { "type",     bi_type,     false, "type name...: say how a name resolves", VASH_M_ALL },
+  { "pushd",    bi_pushd,    false, "pushd [-n] [dir | +N | -N]: push a directory", VASH_M_BASH },
+  { "popd",     bi_popd,     false, "popd [-n] [+N | -N]: pop a directory", VASH_M_BASH },
+  { "dirs",     bi_dirs,     false, "dirs [-clpv]: show the directory stack", VASH_M_BASH },
+  { "shopt",    bi_shopt,    false, "shopt [-pqsu] [-o] [name...]: shell options", VASH_M_BASH },
+  { "let",      bi_let,      false, "let expr...: evaluate arithmetic expressions", VASH_M_BASH },
+  { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VASH_M_BASH },
+  { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VASH_M_ALL },
+  { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VASH_M_ALL },
+  { "jobs",     bi_jobs,     false, "jobs [-l|-p] [-n]: list background jobs", VASH_M_ALL },
+  { "fg",       bi_fg,       false, "fg [job]: bring a job to the foreground", VASH_M_ALL },
+  { "bg",       bi_bg,       false, "bg [job]: resume a stopped job in the background", VASH_M_ALL },
+  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VASH_M_BASH },
+  { "enable",   bi_enable,   false, "enable [-n] [-a|-p] [name...]: enable or disable shell builtins", VASH_M_BASH },
+  { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VASH_M_BASH },
+  { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VASH_M_BASH },
+  { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VASH_M_BASH },
+  { "fc",       bi_fc,       false, "fc [-lnr] [first [last]] | fc -s [old=new] [cmd]: list or re-run history entries", VASH_M_ALL },
+  { "history",  bi_history,  false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history", VASH_M_BASH },
+  { "bind",     bi_bind,     false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings", VASH_M_BASH },
   { NULL, NULL, false, NULL, 0 }
 };
 
@@ -2037,9 +2037,9 @@ const struct builtin_s *builtin_find(const char *name)
 {
   const struct builtin_s *b;
 
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
-      if ((b->modes & vs_mode_bit()) != 0 && strcmp(b->name, name) == 0)
+      if ((b->modes & vash_mode_bit()) != 0 && strcmp(b->name, name) == 0)
         {
           return builtin_is_enabled(name) ? b : NULL;
         }

@@ -65,11 +65,11 @@ if [ -z "$VAPOROS_DIR" ] || [ ! -f "$VAPOROS_DIR/dev.mk" ] || [ -z "$NUTTX_DIR" 
     exit 3
 fi
 
-if [ -z "$VS_TALLY" ]; then
-    VS_TALLY=$(mktemp "${TMPDIR:-/tmp}/vaporshell-tally.XXXXXX") || exit 2
-    export VS_TALLY
+if [ -z "$VASH_TALLY" ]; then
+    VASH_TALLY=$(mktemp "${TMPDIR:-/tmp}/vaporshell-tally.XXXXXX") || exit 2
+    export VASH_TALLY
     own_tally=1
-    trap 'rm -f "$VS_TALLY"' EXIT INT TERM
+    trap 'rm -f "$VASH_TALLY"' EXIT INT TERM
 fi
 
 step() { printf '\n%s==> %s%s\n' "$C_BOLD" "$1" "$C_RESET"; }
@@ -142,7 +142,7 @@ if [ "$BUILD" != none ]; then
         fi
         tally_group "NuttX build" 0 1
         tally_fail "NuttX build" "$BUILD build"
-        [ -n "$own_tally" ] && { echo; tally_report "$VS_TALLY" 1; }
+        [ -n "$own_tally" ] && { echo; tally_report "$VASH_TALLY" 1; }
         exit 1
     fi
 
@@ -187,11 +187,11 @@ echo "$out" | grep '^FAIL' | while IFS= read -r l; do tally_fail "NuttX smoke" "
 
 step "differential suites in the simulator (jobs: $JOBS)"
 python3 "$HERE/reference/run-differential.py" --all-suites --brief --jobs "$JOBS" \
-    ${ONLY:+--only "$ONLY"} --tally "$VS_TALLY" --nuttx-dir "$NUTTX_DIR"
+    ${ONLY:+--only "$ONLY"} --tally "$VASH_TALLY" --nuttx-dir "$NUTTX_DIR"
 
 if [ -n "$own_tally" ]; then
     echo
-    tally_report "$VS_TALLY" 1
+    tally_report "$VASH_TALLY" 1
     exit $?
 fi
 exit 0

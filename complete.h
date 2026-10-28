@@ -5,16 +5,16 @@
 #ifndef VAPORSHELL_COMPLETE_H
 #define VAPORSHELL_COMPLETE_H
 
-typedef void (*vs_comp_list_f)(void *ctx, const char *name, const char *desc);   /* desc may be NULL */
+typedef void (*vash_comp_list_f)(void *ctx, const char *name, const char *desc);   /* desc may be NULL */
 
-/* A candidate of vs_complete(): the callback KEEPS name and desc (malloc'd; desc may
+/* A candidate of vash_complete(): the callback KEEPS name and desc (malloc'd; desc may
  * be NULL) and frees them. What completes the word with it is
- * vs_comp_tail(name, suffix, skip) with the *skip vs_complete() returned.
+ * vash_comp_tail(name, suffix, skip) with the *skip vash_complete() returned.
  */
 
-typedef void (*vs_comp_cand_f)(void *ctx, char *name, char *desc, char suffix);
+typedef void (*vash_comp_cand_f)(void *ctx, char *name, char *desc, char suffix);
 
-char *vs_comp_tail(const char *name, char suffix, size_t skip);
+char *vash_comp_tail(const char *name, char suffix, size_t skip);
 
 /* Complete the word at the end of line[0..len). The text to insert goes to
  * 'ins' (the common part of all candidates); every candidate is passed to
@@ -31,25 +31,25 @@ char *vs_comp_tail(const char *name, char suffix, size_t skip);
 
 /* Candidates for the last word of line[0..point) from the specs of command 'cmd'
  * (see compgen.c, compfish.c). Returns 0 if the command has none, else
- * VS_SPEC_FOUND, plus VS_SPEC_EXCLUSIVE if files should not be offered as well.
+ * VASH_SPEC_FOUND, plus VASH_SPEC_EXCLUSIVE if files should not be offered as well.
  */
 
-#define VS_SPEC_FOUND     1
-#define VS_SPEC_EXCLUSIVE 2
+#define VASH_SPEC_FOUND     1
+#define VASH_SPEC_EXCLUSIVE 2
 
-int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
-                       vs_comp_list_f sink, void *ctx);
+int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                       vash_comp_list_f sink, void *ctx);
 
-/* vs_is_command() looks in the $PATH table as it was at the last vs_commands_refresh()
+/* vash_is_command() looks in the $PATH table as it was at the last vash_commands_refresh()
  * (one stat per directory), so a caller checking several words refreshes once.
  */
 
-void vs_commands_refresh(void);
-bool vs_is_command(const char *name);
-void vs_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
-void vs_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
+void vash_commands_refresh(void);
+bool vash_is_command(const char *name);
+void vash_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
+void vash_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 
-int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
-                size_t *skip, vs_comp_cand_f list, void *ctx);
+int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
+                size_t *skip, vash_comp_cand_f list, void *ctx);
 
 #endif

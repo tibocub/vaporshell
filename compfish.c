@@ -109,13 +109,13 @@ static bool bash_o_value(const char *v)
 
 static char *join(const char *dashes, const char *name)
 {
-  char *r = vs_xmalloc(strlen(dashes) + strlen(name) + 1);
+  char *r = vash_xmalloc(strlen(dashes) + strlen(name) + 1);
 
   sprintf(r, "%s%s", dashes, name);
   return r;
 }
 
-int vs_complete_fish(int argc, char **argv)
+int vash_complete_fish(int argc, char **argv)
 {
   /* It is fish-style if --command is used, or -c CMD comes with a flag only fish
    * has (bash's complete has -c as "command names" with no value).
@@ -148,7 +148,7 @@ int vs_complete_fish(int argc, char **argv)
       return -1;
     }
 
-  f = vs_xmalloc(sizeof(*f));
+  f = vash_xmalloc(sizeof(*f));
   memset(f, 0, sizeof(*f));
   for (i = 1; i < argc; i++)
     {
@@ -157,7 +157,7 @@ int vs_complete_fish(int argc, char **argv)
 
       if (k < 0 || (g_flags[k].value && v == NULL))
         {
-          vs_err("complete: %s: invalid option", argv[i]);
+          vash_err("complete: %s: invalid option", argv[i]);
           fspec_free(f);
           return 2;
         }
@@ -165,13 +165,13 @@ int vs_complete_fish(int argc, char **argv)
       i += v != NULL;
       switch (k)
         {
-          case 0:  free(f->cmd); f->cmd = vs_xstrdup(v); break;
+          case 0:  free(f->cmd); f->cmd = vash_xstrdup(v); break;
           case 1:  free(f->shortopt); f->shortopt = join("-", v); break;
           case 2:  free(f->longopt); f->longopt = join("--", v); break;
           case 3:  free(f->oldopt); f->oldopt = join("-", v); break;
-          case 4:  free(f->desc); f->desc = vs_xstrdup(v); break;
-          case 5:  free(f->args); f->args = vs_xstrdup(v); break;
-          case 6:  free(f->cond); f->cond = vs_xstrdup(v); break;
+          case 4:  free(f->desc); f->desc = vash_xstrdup(v); break;
+          case 5:  free(f->args); f->args = vash_xstrdup(v); break;
+          case 6:  free(f->cond); f->cond = vash_xstrdup(v); break;
           case 7:
           case 8:  f->no_files = true; break;
           case 11: erase = true; break;
@@ -224,7 +224,7 @@ int vs_complete_fish(int argc, char **argv)
   return 0;
 }
 
-bool vs_fish_known(const char *cmd)
+bool vash_fish_known(const char *cmd)
 {
   const struct fspec_s *f;
 
@@ -241,17 +241,17 @@ bool vs_fish_known(const char *cmd)
 
 /* An empty spec: "this command's completion file was run already". */
 
-void vs_fish_mark(const char *cmd)
+void vash_fish_mark(const char *cmd)
 {
-  struct fspec_s *f = vs_xmalloc(sizeof(*f));
+  struct fspec_s *f = vash_xmalloc(sizeof(*f));
 
   memset(f, 0, sizeof(*f));
-  f->cmd = vs_xstrdup(cmd);
+  f->cmd = vash_xstrdup(cmd);
   f->next = g_sh.fspecs;
   g_sh.fspecs = f;
 }
 
-void vs_fish_free(void)
+void vash_fish_free(void)
 {
   while (g_sh.fspecs != NULL)
     {
@@ -274,9 +274,9 @@ static bool condition_holds(const char *cond)
 
 /* -a "one two\tabout it three": words separated by blanks, a word's own text after a tab. */
 
-static void each_arg(const struct fspec_s *f, vs_comp_list_f sink, void *ctx)
+static void each_arg(const struct fspec_s *f, vash_comp_list_f sink, void *ctx)
 {
-  char *copy = vs_xstrdup(f->args);
+  char *copy = vash_xstrdup(f->args);
   char *p = copy;
 
   while (*p != '\0')
@@ -315,8 +315,8 @@ static void each_arg(const struct fspec_s *f, vs_comp_list_f sink, void *ctx)
   free(copy);
 }
 
-int vs_comp_fish(const char *cmd, const char *line, int point, const char *word,
-                 vs_comp_list_f sink, void *ctx)
+int vash_comp_fish(const char *cmd, const char *line, int point, const char *word,
+                 vash_comp_list_f sink, void *ctx)
 {
   const struct fspec_s *f;
   int result = 0;
@@ -329,12 +329,12 @@ int vs_comp_fish(const char *cmd, const char *line, int point, const char *word,
           continue;
         }
 
-      result |= VS_SPEC_FOUND;
+      result |= VASH_SPEC_FOUND;
       if (f->cond != NULL)
         {
           if (!vars_set)
             {
-              vs_set_comp_vars(line, point);
+              vash_set_comp_vars(line, point);
               vars_set = true;
             }
 
@@ -346,7 +346,7 @@ int vs_comp_fish(const char *cmd, const char *line, int point, const char *word,
 
       if (f->no_files)
         {
-          result |= VS_SPEC_EXCLUSIVE;
+          result |= VASH_SPEC_EXCLUSIVE;
         }
 
       if (word[0] == '-')

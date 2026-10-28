@@ -66,7 +66,7 @@ void fv_add(struct fieldv_s *f, char *owned)
   if (f->n + 2 > f->cap)
     {
       f->cap = f->cap != 0 ? f->cap * 2 : 8;
-      f->v = vs_xrealloc(f->v, (size_t)f->cap * sizeof(char *));
+      f->v = vash_xrealloc(f->v, (size_t)f->cap * sizeof(char *));
     }
 
   f->v[f->n++] = owned;
@@ -132,7 +132,7 @@ static void x_push(struct xctx_s *x)
   if (x->nfields == x->cap)
     {
       x->cap = x->cap != 0 ? x->cap * 2 : 4;
-      x->fields = vs_xrealloc(x->fields, (size_t)x->cap * sizeof(*x->fields));
+      x->fields = vash_xrealloc(x->fields, (size_t)x->cap * sizeof(*x->fields));
     }
 
   f = &x->fields[x->nfields++];
@@ -369,7 +369,7 @@ static void x_scan(struct xctx_s *x, const char *s, size_t len, bool dq,
 
 static void x_operand(struct xctx_s *x, const char *word, size_t n, bool dq)
 {
-  char *copy = vs_xstrndup(word, n);
+  char *copy = vash_xstrndup(word, n);
 
   x_scan(x, copy, n, dq, false);
   free(copy);
@@ -379,7 +379,7 @@ static void x_operand(struct xctx_s *x, const char *word, size_t n, bool dq)
 
 static char *operand_str(const char *word, size_t n, bool heredoc)
 {
-  char *copy = vs_xstrndup(word, n);
+  char *copy = vash_xstrndup(word, n);
   char *r;
 
   if (heredoc)
@@ -399,7 +399,7 @@ static char *operand_str(const char *word, size_t n, bool heredoc)
 
 static void bad_subst_fatal(void)
 {
-  if (!g_sh.interactive && vs_feat(VF_EXIT2_ON_ERROR))
+  if (!g_sh.interactive && vash_feat(VF_EXIT2_ON_ERROR))
     {
       g_sh.unwind = UW_EXIT;
       g_sh.last_status = 2;
@@ -409,23 +409,23 @@ static void bad_subst_fatal(void)
 static void param_error(struct xctx_s *x, const char *name, size_t nlen,
                         const char *msg)
 {
-  vs_err("%.*s: %s", (int)nlen, name, msg);
+  vash_err("%.*s: %s", (int)nlen, name, msg);
   x->error = true;
   if (!g_sh.interactive)
     {
       g_sh.unwind = UW_EXIT;
-      g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+      g_sh.last_status = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
     }
 }
 
 static void trim_and_add(struct xctx_s *x, const char *value, char op,
                          bool longest, const char *word, size_t wn, bool dq)
 {
-  char *wcopy = vs_xstrndup(word, wn);
+  char *wcopy = vash_xstrndup(word, wn);
   struct pat_s pat = expand_pattern(wcopy);
   size_t vl = strlen(value);
   size_t nch;
-  size_t *bd = vs_mb_bounds(value, vl, &nch);     /* NULL: a byte is a character */
+  size_t *bd = vash_mb_bounds(value, vl, &nch);     /* NULL: a byte is a character */
   size_t k;
   size_t cut = 0;
   bool found = false;
@@ -434,7 +434,7 @@ static void trim_and_add(struct xctx_s *x, const char *value, char op,
 #define BND(k) (bd != NULL ? bd[k] : (k))
 
   free(wcopy);
-  tmp = vs_xmalloc(vl + 1);
+  tmp = vash_xmalloc(vl + 1);
 
   if (op == '#')
     {
@@ -516,7 +516,7 @@ int expand_subscript(const char *sub, size_t n, const char *name, long *idx)
 
   if (text[0] == '\0')
     {
-      vs_err("%s: bad array subscript", name != NULL ? name : "");
+      vash_err("%s: bad array subscript", name != NULL ? name : "");
       free(text);
       return -1;
     }
@@ -549,7 +549,7 @@ int expand_subscript(const char *sub, size_t n, const char *name, long *idx)
       v += top + 1;
       if (v < 0 || top < 0)
         {
-          vs_err("%s: bad array subscript", name != NULL ? name : "");
+          vash_err("%s: bad array subscript", name != NULL ? name : "");
           return -1;
         }
     }
@@ -573,7 +573,7 @@ int expand_subref(const char *sub, size_t n, const char *name, struct subref_s *
 
 static void ext_fail(struct xctx_s *x, const char *what)
 {
-  vs_err("%s", what);
+  vash_err("%s", what);
   x->error = true;
   bad_subst_fatal();
 }
@@ -699,7 +699,7 @@ static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
     char buf[32];
     const char *val;
     const char *str = get_param(name, nlen, &val, buf, sizeof(buf)) ? val : "";
-    long slen = (long)vs_mb_count(str);        /* characters, not bytes */
+    long slen = (long)vash_mb_count(str);        /* characters, not bytes */
     long end;
 
     if (off < 0)
@@ -737,9 +737,9 @@ static void ext_substring(struct xctx_s *x, const char *name, size_t nlen,
 
     {
       size_t sbytes = strlen(str);
-      size_t b0 = vs_mb_skip(str, sbytes, (size_t)off);
-      size_t b1 = vs_mb_skip(str, sbytes, (size_t)end);
-      char *piece = vs_xstrndup(str + b0, b1 - b0);
+      size_t b0 = vash_mb_skip(str, sbytes, (size_t)off);
+      size_t b1 = vash_mb_skip(str, sbytes, (size_t)end);
+      char *piece = vash_xstrndup(str + b0, b1 - b0);
 
       x->present = x->present || dq;       /* unquoted, x_add_value marks it (leading blanks are not a field) */
       x_add_value(x, piece, dq);
@@ -791,10 +791,10 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
                          bool at_end)
 {
   size_t vl = strlen(val);
-  char *piece = vs_xmalloc(vl + 1);
+  char *piece = vash_xmalloc(vl + 1);
   struct sbuf_s out;
   size_t nch;
-  size_t *bd = vs_mb_bounds(val, vl, &nch);   /* NULL: a byte is a character */
+  size_t *bd = vash_mb_bounds(val, vl, &nch);   /* NULL: a byte is a character */
   size_t ci = 0;                               /* the character we are at */
   bool allow_empty = at_start || at_end;
   bool literal;
@@ -804,7 +804,7 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
 #define BND(k) (bd != NULL ? bd[k] : (k))
 
   rep_shape(pat, &literal, &bounded);
-  patchars = vs_mb_count_n(pat->s, pat->len);
+  patchars = vash_mb_count_n(pat->s, pat->len);
   sb_init(&out);
   while (ci <= nch)
     {
@@ -905,7 +905,7 @@ static char *ext_replace(const char *val, const struct pat_s *pat,
 #undef BND
   free(bd);
   free(piece);
-  return out.s != NULL ? sb_take(&out) : vs_xstrdup("");
+  return out.s != NULL ? sb_take(&out) : vash_xstrdup("");
 }
 
 static void ext_replace_op(struct xctx_s *x, const char *name, size_t nlen,
@@ -989,10 +989,10 @@ static void ext_replace_op(struct xctx_s *x, const char *name, size_t nlen,
         }
     }
 
-  praw = vs_xstrndup(spec + k, slash - k);
+  praw = vash_xstrndup(spec + k, slash - k);
   if (slash < sn)
     {
-      rraw = vs_xstrndup(spec + slash + 1, sn - slash - 1);
+      rraw = vash_xstrndup(spec + slash + 1, sn - slash - 1);
     }
 
   pat = expand_pattern(praw);
@@ -1002,7 +1002,7 @@ static void ext_replace_op(struct xctx_s *x, const char *name, size_t nlen,
 
   if (pat.len == 0 && !at_start && !at_end)
     {
-      result = vs_xstrdup(str);           /* an empty pattern replaces nothing */
+      result = vash_xstrdup(str);           /* an empty pattern replaces nothing */
     }
   else
     {
@@ -1029,7 +1029,7 @@ static void ext_case(struct xctx_s *x, const char *name, size_t nlen,
   bool upper = spec[0] == '^';
   bool all = sn > 1 && spec[1] == spec[0];
   size_t k = all ? 2 : 1;
-  char *praw = vs_xstrndup(spec + k, sn - k);
+  char *praw = vash_xstrndup(spec + k, sn - k);
   struct pat_s pat = expand_pattern(praw);
   struct sbuf_s out;
   size_t i = 0;
@@ -1039,7 +1039,7 @@ static void ext_case(struct xctx_s *x, const char *name, size_t nlen,
   sb_init(&out);
   while (i < nb)
     {
-      size_t cl = vs_mb_len(str + i);
+      size_t cl = vash_mb_len(str + i);
       char one[16];
       char conv[16];
 
@@ -1054,7 +1054,7 @@ static void ext_case(struct xctx_s *x, const char *name, size_t nlen,
           one[cl] = '\0';
           if (pat.len == 0 || pat_match(pat.s, pat.q, pat.len, one))
             {
-              sb_addn(&out, conv, vs_mb_case(str + i, cl, upper, conv));
+              sb_addn(&out, conv, vash_mb_case(str + i, cl, upper, conv));
               i += cl;
               continue;
             }
@@ -1144,7 +1144,7 @@ static char *quote_for_reuse(const char *v)
 
 /* The value quoted so the shell reads it back the same (used by set, ${x@Q}). */
 
-char *vs_quote_word(const char *v)
+char *vash_quote_word(const char *v)
 {
   return quote_for_reuse(v);
 }
@@ -1173,7 +1173,7 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
       case 'U':
       case 'L':
       case 'u':
-        r = vs_xstrdup(str);
+        r = vash_xstrdup(str);
         for (i = 0; r[i] != '\0'; i++)
           {
             if (op == 'u' && i > 0)
@@ -1197,7 +1197,7 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
             {
               if (str[i] == '\\' && str[i + 1] != '\0')
                 {
-                  i += 1 + vs_esc_one(str + i + 1,
+                  i += 1 + vash_esc_one(str + i + 1,
                                       ESC_OCT_PLAIN | ESC_HEXU | ESC_E | ESC_CTRL,
                                       &dec, &stop);
                 }
@@ -1207,14 +1207,14 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
                 }
             }
 
-          r = dec.s != NULL ? sb_take(&dec) : vs_xstrdup("");
+          r = dec.s != NULL ? sb_take(&dec) : vash_xstrdup("");
         }
 
         break;
 
       case 'P':
-        r = vs_prompt_expand(str);
-        vs_prompt_strip(r);
+        r = vash_prompt_expand(str);
+        vash_prompt_strip(r);
         break;
 
       case 'A':
@@ -1269,7 +1269,7 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
           if (v != NULL && (v->flags & VF_READONLY) != 0) fl[f++] = 'r';
           if (v != NULL && (v->flags & VF_EXPORT) != 0) fl[f++] = 'x';
           fl[f] = '\0';
-          r = vs_xstrdup(fl);
+          r = vash_xstrdup(fl);
         }
 
         break;
@@ -1367,21 +1367,21 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
 
       if (!get_param(nm, nl, &val, buf, sizeof(buf)))
         {
-          vs_err("%s: invalid indirect expansion", nm);
+          vash_err("%s: invalid indirect expansion", nm);
           x->error = true;
           return;
         }
 
       if (val[0] == '\0')
         {
-          vs_err("%s: invalid variable name", nm);
+          vash_err("%s: invalid variable name", nm);
           x->error = true;
           return;
         }
 
       if (!valid_param(val, strlen(val)))
         {
-          vs_err("%s: invalid variable name", val);
+          vash_err("%s: invalid variable name", val);
           x->error = true;
           return;
         }
@@ -1410,7 +1410,7 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
               if (cnt == cap)
                 {
                   cap = cap ? cap * 2 : 16;
-                  names = vs_xrealloc(names, (size_t)cap * sizeof(*names));
+                  names = vash_xrealloc(names, (size_t)cap * sizeof(*names));
                 }
 
               names[cnt++] = v->name;
@@ -1576,11 +1576,11 @@ static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool
     {
       int k;
 
-      m->v = vs_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(char *));
-      m->idx = vs_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(long));
+      m->v = vash_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(char *));
+      m->idx = vash_xmalloc((size_t)(g_sh.npos > 0 ? g_sh.npos : 1) * sizeof(long));
       for (k = 1; k <= g_sh.npos; k++)
         {
-          m->v[m->n] = vs_xstrdup(pos_get(k));
+          m->v[m->n] = vash_xstrdup(pos_get(k));
           m->idx[m->n++] = k;
         }
 
@@ -1588,36 +1588,36 @@ static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool
     }
 
   {
-    char *nm = vs_xstrndup(name, nlen);
+    char *nm = vash_xstrndup(name, nlen);
     struct arr_s *a = var_array(nm, false);
 
     if (a != NULL)
       {
         size_t k;
 
-        m->v = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
-        m->idx = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(long));
+        m->v = vash_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
+        m->idx = vash_xmalloc((a->n > 0 ? a->n : 1) * sizeof(long));
         if (a->assoc)
           {
-            m->keys = vs_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
+            m->keys = vash_xmalloc((a->n > 0 ? a->n : 1) * sizeof(char *));
           }
 
         for (k = 0; k < a->n; k++)
           {
             if (a->assoc)
               {
-                m->keys[m->n] = vs_xstrdup(a->e[k].key);
+                m->keys[m->n] = vash_xstrdup(a->e[k].key);
               }
 
-            m->v[m->n] = vs_xstrdup(a->e[k].val);
+            m->v[m->n] = vash_xstrdup(a->e[k].val);
             m->idx[m->n++] = a->e[k].idx;
           }
       }
     else if (var_get(nm) != NULL)
       {
-        m->v = vs_xmalloc(sizeof(char *));
-        m->idx = vs_xmalloc(sizeof(long));
-        m->v[0] = vs_xstrdup(var_get(nm));
+        m->v = vash_xmalloc(sizeof(char *));
+        m->idx = vash_xmalloc(sizeof(long));
+        m->v[0] = vash_xstrdup(var_get(nm));
         m->idx[0] = 0;
         m->n = 1;
       }
@@ -1629,7 +1629,7 @@ static void mlist_collect(struct mlist_s *m, const char *name, size_t nlen, bool
 static void x_multi_bad(struct xctx_s *x, const char *name, size_t nlen, const char *rest,
                         size_t rn)
 {
-  vs_err("${%.*s%.*s}: bad substitution", (int)nlen, name, (int)rn, rest);
+  vash_err("${%.*s%.*s}: bad substitution", (int)nlen, name, (int)rn, rest);
   x->error = true;
   bad_subst_fatal();
 }
@@ -1744,7 +1744,7 @@ static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positi
   bool at = !star;
   int k;
 
-  if (positional && !vs_feat(VF_PARAM_EXT))
+  if (positional && !vash_feat(VF_PARAM_EXT))
     {
       x_multi_posix(x, name, nlen, star, rest, rn, length, dq);
       return;
@@ -1829,7 +1829,7 @@ static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positi
 
       if (off >= 0)
         {
-          char **sel = vs_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
+          char **sel = vash_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
 
           for (k = 0; k < m.n && (!has_len || taken < len); k++)
             {
@@ -1958,7 +1958,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
   const char *word = NULL;
   size_t wn = 0;
 
-  if (vs_feat(VF_PARAM_EXT) && n > 1 && in[0] == '!' && nm_start(in[1]))
+  if (vash_feat(VF_PARAM_EXT) && n > 1 && in[0] == '!' && nm_start(in[1]))
     {
       x_indirect(x, in + 1, n - 1, dq);
       return;
@@ -1994,7 +1994,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
   nlen = (size_t)(in + i - name);
   if (nlen == 0 || !valid_param(name, nlen))
     {
-      vs_err("${%.*s}: bad substitution", (int)n, in);
+      vash_err("${%.*s}: bad substitution", (int)n, in);
       x->error = true;
       bad_subst_fatal();
       return;
@@ -2008,7 +2008,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
       return;
     }
 
-  if (vs_feat(VF_PARAM_EXT) && !length && i < n && ext_op_at(in, i, n))
+  if (vash_feat(VF_PARAM_EXT) && !length && i < n && ext_op_at(in, i, n))
     {
       x_param_ext(x, name, nlen, in + i, n - i, dq);
       return;
@@ -2025,7 +2025,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
       if (i >= n || strchr("-=?+#%", in[i]) == NULL ||
           (colon && strchr("#%", in[i]) != NULL) || length)
         {
-          vs_err("${%.*s}: bad substitution", (int)n, in);
+          vash_err("${%.*s}: bad substitution", (int)n, in);
           x->error = true;
           bad_subst_fatal();
           return;
@@ -2047,7 +2047,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
   if (length)
     {
       snprintf(buf, sizeof(buf), "%lu",
-               (unsigned long)(isset ? vs_mb_count(val) : 0));
+               (unsigned long)(isset ? vash_mb_count(val) : 0));
       x_add_value(x, buf, dq);
       return;
     }
@@ -2112,7 +2112,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
                   return;
                 }
 
-              nm = vs_xstrndup(name, nlen);
+              nm = vash_xstrndup(name, nlen);
               if ((g_ov_name == name && g_ov_ref != NULL) ? var_ref_set(nm, g_ov_ref, v) != 0
                                                           : var_set(nm, v) != 0)
                 {
@@ -2239,13 +2239,13 @@ static void x_indices(struct xctx_s *x, const char *name, size_t nlen, bool star
   int k;
 
   mlist_collect(&m, name, nlen, false);
-  strs = vs_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
+  strs = vash_xmalloc((size_t)(m.n > 0 ? m.n : 1) * sizeof(char *));
   for (k = 0; k < m.n; k++)
     {
       char buf[24];
 
       snprintf(buf, sizeof(buf), "%ld", m.idx[k]);
-      strs[k] = vs_xstrdup(m.keys != NULL ? m.keys[k] : buf);
+      strs[k] = vash_xstrdup(m.keys != NULL ? m.keys[k] : buf);
     }
 
   x_emit_list(x, !star, dq, strs, m.n);
@@ -2272,7 +2272,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
   const char *sub;
   size_t sublen;
 
-  if (!vs_feat(VF_BASH_SYNTAX) || n < 2)
+  if (!vash_feat(VF_BASH_SYNTAX) || n < 2)
     {
       x_braced_inner(x, in, n, dq);
       return;
@@ -2336,7 +2336,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
     {
       /* ${!a[i]}: the element's value is the name of the variable to expand */
 
-      char *nm = vs_xstrndup(in + p, s - p);
+      char *nm = vash_xstrndup(in + p, s - p);
       struct subref_s ir;
       const char *target;
 
@@ -2351,7 +2351,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
       free(nm);
       if (target == NULL || target[0] == '\0' || !valid_param(target, strlen(target)))
         {
-          vs_err("%s: invalid indirect expansion", target != NULL ? target : "");
+          vash_err("%s: invalid indirect expansion", target != NULL ? target : "");
           x->error = true;
           subref_free(&ir);
           return;
@@ -2373,7 +2373,7 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
     }
 
   {
-    char *nm = vs_xstrndup(in + p, s - p);
+    char *nm = vash_xstrndup(in + p, s - p);
     char *in2;
     char *ev;
     struct subref_s ref;
@@ -2389,12 +2389,12 @@ static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
       }
 
     cur = var_ref_get(nm, &ref);
-    ev = cur != NULL ? vs_xstrdup(cur) : NULL;
+    ev = cur != NULL ? vash_xstrdup(cur) : NULL;
     free(nm);
 
     /* the same text without the [subscript], so the scalar code can take over */
 
-    in2 = vs_xmalloc(n + 1);
+    in2 = vash_xmalloc(n + 1);
     memcpy(in2, in, s);
     memcpy(in2 + s, in + close + 1, n - close - 1);
     in2[n - (close + 1 - s)] = '\0';
@@ -2498,7 +2498,7 @@ static void x_arith(struct xctx_s *x, const char *expr, size_t n, bool dq)
       if (!g_sh.interactive)
         {
           g_sh.unwind = UW_EXIT;
-          g_sh.last_status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+          g_sh.last_status = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
         }
     }
   else
@@ -2551,7 +2551,7 @@ static size_t x_tilde(struct xctx_s *x, const char *s, size_t len)
       j++;
     }
 
-  user = vs_xstrndup(s + 1, j - 1);
+  user = vash_xstrndup(s + 1, j - 1);
   if (user[0] == '\0')
     {
       home = var_get("HOME");
@@ -2616,7 +2616,7 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
           if (s[j] == '\\' && j + 1 < len)
             {
               j++;
-              j += vs_esc_one(s + j, ESC_OCT_PLAIN | ESC_HEXU | ESC_E | ESC_CTRL,
+              j += vash_esc_one(s + j, ESC_OCT_PLAIN | ESC_HEXU | ESC_E | ESC_CTRL,
                               &dec, &stop);
             }
           else
@@ -2636,7 +2636,7 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
       return;
     }
 
-  if (!dq && s[*i + 1] == '"' && vs_feat(VF_ANSI_C_QUOTE))
+  if (!dq && s[*i + 1] == '"' && vash_feat(VF_ANSI_C_QUOTE))
     {
       (*i)++;                       /* $"...": the same as "..." without translation */
       return;
@@ -2684,7 +2684,7 @@ static void x_dollar(struct xctx_s *x, const char *s, size_t len, size_t *i,
       return;
     }
 
-  vs_err("bad substitution");
+  vash_err("bad substitution");
   x->error = true;
   bad_subst_fatal();
   *i = len;
@@ -2819,7 +2819,7 @@ static void x_scan(struct xctx_s *x, const char *s, size_t len, bool dq,
        */
 
       if ((c == '<' || c == '>') && !dq && i + 1 < len && s[i + 1] == '(' &&
-          vs_feat(VF_BASH_SYNTAX))
+          vash_feat(VF_BASH_SYNTAX))
         {
           if (ws_skip_cmdsub(s, len, i + 2, &e) == WS_OK)
             {
@@ -2869,7 +2869,7 @@ static void x_finish(struct xctx_s *x, struct fieldv_s *out)
             }
           else if (g_sh.so_failglob)
             {
-              vs_err("no match: %s", f->s);            /* shopt failglob */
+              vash_err("no match: %s", f->s);            /* shopt failglob */
               x->error = true;
               free(f->s);
             }
@@ -2923,7 +2923,7 @@ int expand_words(const struct word_s *w, struct fieldv_s *out)
 {
   for (; w != NULL; w = w->next)
     {
-      if (vs_feat(VF_BRACE_EXP) && strchr(w->text, '{') != NULL)
+      if (vash_feat(VF_BRACE_EXP) && strchr(w->text, '{') != NULL)
         {
           /* brace expansion first, on the raw text; each result is then
            * expanded like any other word
@@ -2933,7 +2933,7 @@ int expand_words(const struct word_s *w, struct fieldv_s *out)
           int k;
 
           fv_init(&bw);
-          vs_brace_expand(w->text, &bw);
+          vash_brace_expand(w->text, &bw);
           for (k = 0; k < bw.n; k++)
             {
               if (expand_one_word(bw.v[k], out) != 0)

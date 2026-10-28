@@ -24,15 +24,15 @@
 #include "mode.h"
 #include "exec.h"
 
-#define NTRAPS VS_NTRAPS
+#define NTRAPS VASH_NTRAPS
 
 #if defined(VAPORSHELL_POSIX) || !defined(CONFIG_DISABLE_SIGNALS)
-#  define VS_HAVE_SIGNALS 1
+#  define VASH_HAVE_SIGNALS 1
 #else
-#  define VS_HAVE_SIGNALS 0
+#  define VASH_HAVE_SIGNALS 0
 #endif
 
-#if VS_HAVE_SIGNALS
+#if VASH_HAVE_SIGNALS
 
 static const struct
 {
@@ -91,7 +91,7 @@ static const struct
 
 /* The i-th signal name (HUP, INT, ...), NULL after the last: for completion. */
 
-const char *vs_signal_name(int i)
+const char *vash_signal_name(int i)
 {
   return i >= 0 && i + 1 < NSIGS ? g_sigs[i + 1].name : NULL;
 }
@@ -107,14 +107,14 @@ static int sig_number(const char *s)
       char *end;
       long v = strtol(s, &end, 10);
 
-      return (*end == '\0' && v >= 0 && v < VS_TRAP_DEBUG) ? (int)v : -1;
+      return (*end == '\0' && v >= 0 && v < VASH_TRAP_DEBUG) ? (int)v : -1;
     }
 
-  if (vs_feat(VF_TRAP_BASH))
+  if (vash_feat(VF_TRAP_BASH))
     {
-      if (strcasecmp(s, "ERR") == 0) return VS_TRAP_ERR;
-      if (strcasecmp(s, "DEBUG") == 0) return VS_TRAP_DEBUG;
-      if (strcasecmp(s, "RETURN") == 0) return VS_TRAP_RETURN;
+      if (strcasecmp(s, "ERR") == 0) return VASH_TRAP_ERR;
+      if (strcasecmp(s, "DEBUG") == 0) return VASH_TRAP_DEBUG;
+      if (strcasecmp(s, "RETURN") == 0) return VASH_TRAP_RETURN;
     }
 
   if (strncmp(s, "SIG", 3) == 0)
@@ -125,7 +125,7 @@ static int sig_number(const char *s)
   for (i = 0; i < NSIGS; i++)
     {
       if (strcmp(s, g_sigs[i].name) == 0 ||
-          (vs_feat(VF_TRAP_BASH) && strcasecmp(s, g_sigs[i].name) == 0))
+          (vash_feat(VF_TRAP_BASH) && strcasecmp(s, g_sigs[i].name) == 0))
         {
           return g_sigs[i].num;
         }
@@ -138,9 +138,9 @@ static const char *sig_name(int num)
 {
   int i;
 
-  if (num == VS_TRAP_ERR) return "ERR";
-  if (num == VS_TRAP_DEBUG) return "DEBUG";
-  if (num == VS_TRAP_RETURN) return "RETURN";
+  if (num == VASH_TRAP_ERR) return "ERR";
+  if (num == VASH_TRAP_DEBUG) return "DEBUG";
+  if (num == VASH_TRAP_RETURN) return "RETURN";
 
   for (i = 0; i < NSIGS; i++)
     {
@@ -153,7 +153,7 @@ static const char *sig_name(int num)
   return "?";
 }
 
-#if VS_HAVE_SIGNALS
+#if VASH_HAVE_SIGNALS
 
 static void on_signal(int sig)
 {
@@ -168,7 +168,7 @@ static void install(int sig, const char *action)
 {
   struct sigaction sa;
 
-  if (sig == 0 || sig >= VS_TRAP_DEBUG)
+  if (sig == 0 || sig >= VASH_TRAP_DEBUG)
     {
       return;                        /* EXIT and the pseudo-signals are not OS signals */
     }
@@ -204,20 +204,20 @@ static void install(int sig, const char *action)
 static void set_trap(int sig, const char *action)
 {
   g_sh.trap_dirty = true;             /* a subshell's own traps now show */
-  if (sig == VS_TRAP_RETURN)
+  if (sig == VASH_TRAP_RETURN)
     {
       g_sh.return_fdepth = g_sh.func_depth;
     }
 
   free(g_sh.trap_action[sig]);
-  g_sh.trap_action[sig] = action != NULL ? vs_xstrdup(action) : NULL;
+  g_sh.trap_action[sig] = action != NULL ? vash_xstrdup(action) : NULL;
   install(sig, g_sh.trap_action[sig]);
 }
 
 static void print_traps(void)
 {
   int i;
-  bool parent = vs_feat(VF_TRAP_BASH) && !g_sh.trap_dirty;
+  bool parent = vash_feat(VF_TRAP_BASH) && !g_sh.trap_dirty;
 
   for (i = 0; i < NTRAPS; i++)
     {
@@ -242,7 +242,7 @@ static void print_traps(void)
 
           /* bash names real signals SIGINT; dash just INT */
 
-          printf("' %s%s\n", (i > 0 && i < VS_TRAP_DEBUG && vs_feat(VF_BASH_INFO_FORMATS)) ? "SIG" : "", sig_name(i));
+          printf("' %s%s\n", (i > 0 && i < VASH_TRAP_DEBUG && vash_feat(VF_BASH_INFO_FORMATS)) ? "SIG" : "", sig_name(i));
         }
     }
 }
@@ -287,7 +287,7 @@ int bi_trap(int argc, char **argv)
 
   if (i >= argc)
     {
-      vs_err("trap: usage: trap [action] condition...");
+      vash_err("trap: usage: trap [action] condition...");
       return 2;
     }
 
@@ -297,13 +297,13 @@ int bi_trap(int argc, char **argv)
 
       if (sig < 0)
         {
-          vs_err("trap: %s: invalid signal specification", argv[i]);
+          vash_err("trap: %s: invalid signal specification", argv[i]);
           status = 1;
         }
-#if VS_HAVE_SIGNALS
+#if VASH_HAVE_SIGNALS
       else if (sig == SIGKILL || sig == SIGSTOP)
         {
-          vs_err("trap: %s: cannot be trapped", argv[i]);
+          vash_err("trap: %s: cannot be trapped", argv[i]);
           status = 1;
         }
 #endif
@@ -348,7 +348,7 @@ void trap_run_pending(void)
           g_sh.trap_flag[i] = 0;
           if (g_sh.trap_action[i] != NULL && g_sh.trap_action[i][0] != '\0')
             {
-              char *copy = vs_xstrdup(g_sh.trap_action[i]);
+              char *copy = vash_xstrdup(g_sh.trap_action[i]);
 
               run_action(copy);
               free(copy);
@@ -371,7 +371,7 @@ static void run_pseudo(int slot, bool *guard, int status)
     }
 
   {
-    char *copy = vs_xstrdup(action);
+    char *copy = vash_xstrdup(action);
     int saved = g_sh.last_status;
 
     *guard = true;
@@ -385,17 +385,17 @@ static void run_pseudo(int slot, bool *guard, int status)
 
 void trap_run_err(int status)
 {
-  run_pseudo(VS_TRAP_ERR, &g_sh.in_err_trap, status);
+  run_pseudo(VASH_TRAP_ERR, &g_sh.in_err_trap, status);
 }
 
 void trap_run_debug(void)
 {
-  run_pseudo(VS_TRAP_DEBUG, &g_sh.in_debug_trap, g_sh.last_status);
+  run_pseudo(VASH_TRAP_DEBUG, &g_sh.in_debug_trap, g_sh.last_status);
 }
 
 void trap_run_return(void)
 {
-  run_pseudo(VS_TRAP_RETURN, &g_sh.in_return_trap, g_sh.last_status);
+  run_pseudo(VASH_TRAP_RETURN, &g_sh.in_return_trap, g_sh.last_status);
 }
 
 void trap_run_exit(void)
@@ -424,7 +424,7 @@ static void remember_parent_traps(void)
   for (i = 0; i < NTRAPS; i++)
     {
       free(g_sh.trap_parent[i]);
-      g_sh.trap_parent[i] = g_sh.trap_action[i] != NULL ? vs_xstrdup(g_sh.trap_action[i]) : NULL;
+      g_sh.trap_parent[i] = g_sh.trap_action[i] != NULL ? vash_xstrdup(g_sh.trap_action[i]) : NULL;
     }
 
   g_sh.trap_dirty = false;
@@ -446,7 +446,7 @@ void trap_subshell_enter(void)
 
       if (a[0] == '\0')
         {
-          g_sh.trap_action[i] = vs_xstrdup("");      /* ignored stays ignored */
+          g_sh.trap_action[i] = vash_xstrdup("");      /* ignored stays ignored */
         }
       else
         {
@@ -503,7 +503,7 @@ void trap_reset_in_child(void)
   g_sh.trap_pending = 0;
 }
 
-#if VS_HAVE_SIGNALS
+#if VASH_HAVE_SIGNALS
 
 static int cmp_sig(const void *a, const void *b)
 {
@@ -536,7 +536,7 @@ static int kill_list(int argc, char **argv)
             }
         }
 
-      vs_err("kill: %s: invalid signal specification", argv[2]);
+      vash_err("kill: %s: invalid signal specification", argv[2]);
       return 1;
     }
 
@@ -546,7 +546,7 @@ static int kill_list(int argc, char **argv)
     }
 
   qsort(order, (size_t)n, sizeof(int), cmp_sig);
-  if (!vs_feat(VF_BASH_INFO_FORMATS))
+  if (!vash_feat(VF_BASH_INFO_FORMATS))
     {
       puts("0");
     }
@@ -563,7 +563,7 @@ static int kill_list(int argc, char **argv)
             }
         }
 
-      if (vs_feat(VF_BASH_INFO_FORMATS))
+      if (vash_feat(VF_BASH_INFO_FORMATS))
         {
           printf("%2d) SIG%s%s", order[k], g_sigs[j].name,
                  (k % 5 == 4 || k == n - 1) ? "\n" : "\t");
@@ -577,11 +577,11 @@ static int kill_list(int argc, char **argv)
   return 0;
 }
 
-#endif /* VS_HAVE_SIGNALS */
+#endif /* VASH_HAVE_SIGNALS */
 
 int bi_kill(int argc, char **argv)
 {
-#if VS_HAVE_SIGNALS
+#if VASH_HAVE_SIGNALS
   int sig = SIGTERM;
   int i = 1;
   int status = 0;
@@ -605,7 +605,7 @@ int bi_kill(int argc, char **argv)
 
       if (sig < 0)
         {
-          vs_err("kill: invalid signal specification");
+          vash_err("kill: invalid signal specification");
           return 2;
         }
 
@@ -619,7 +619,7 @@ int bi_kill(int argc, char **argv)
 
   if (i >= argc)
     {
-      vs_err("kill: usage: kill [-s sig | -sig] pid...");
+      vash_err("kill: usage: kill [-s sig | -sig] pid...");
       return 2;
     }
 
@@ -634,7 +634,7 @@ int bi_kill(int argc, char **argv)
 
           if (j == NULL)
             {
-              vs_err("kill: %s: no such job", argv[i]);
+              vash_err("kill: %s: no such job", argv[i]);
               status = 1;
               continue;
             }
@@ -648,7 +648,7 @@ int bi_kill(int argc, char **argv)
 
       if (kill(pid, sig) != 0)
         {
-          vs_err("kill: %s: %s", argv[i], strerror(errno));
+          vash_err("kill: %s: %s", argv[i], strerror(errno));
           status = 1;
         }
     }
@@ -657,7 +657,7 @@ int bi_kill(int argc, char **argv)
 #else
   (void)argc;
   (void)argv;
-  vs_err("kill: not supported on this platform yet");
+  vash_err("kill: not supported on this platform yet");
   return 1;
 #endif
 }

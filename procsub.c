@@ -52,12 +52,12 @@ static char *make_temp(void)
       tmp = "/tmp";
     }
 
-  path = vs_xmalloc(strlen(tmp) + sizeof("/vs-procsub-XXXXXX") + 1);
+  path = vash_xmalloc(strlen(tmp) + sizeof("/vs-procsub-XXXXXX") + 1);
   sprintf(path, "%s/vs-procsub-XXXXXX", tmp);
   fd = mkstemp(path);
   if (fd < 0)
     {
-      vs_err("%s: %s", path, strerror(errno));
+      vash_err("%s: %s", path, strerror(errno));
       free(path);
       return NULL;
     }
@@ -98,12 +98,12 @@ char *procsub_new(const char *cmd, size_t cmdlen, bool is_output)
   if (g_sh.procsub_n == g_sh.procsub_cap)
     {
       g_sh.procsub_cap = g_sh.procsub_cap > 0 ? g_sh.procsub_cap * 2 : 4;
-      g_sh.procsub = vs_xrealloc(g_sh.procsub, g_sh.procsub_cap * sizeof(*g_sh.procsub));
+      g_sh.procsub = vash_xrealloc(g_sh.procsub, g_sh.procsub_cap * sizeof(*g_sh.procsub));
     }
 
   e = &g_sh.procsub[g_sh.procsub_n++];
-  e->path = vs_xstrdup(path);
-  e->cmd = is_output ? vs_xstrndup(cmd, cmdlen) : NULL;
+  e->path = vash_xstrdup(path);
+  e->cmd = is_output ? vash_xstrndup(cmd, cmdlen) : NULL;
   return path;
 }
 

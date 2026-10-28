@@ -24,30 +24,30 @@
 #include "vaporshell.h"
 #include "platform.h"
 
-struct shell_s *vs_plat_state_create(void)
+struct shell_s *vash_plat_state_create(void)
 {
-  memset(&g_vs_state, 0, sizeof(g_vs_state));
-  return &g_vs_state;
+  memset(&g_vash_state, 0, sizeof(g_vash_state));
+  return &g_vash_state;
 }
 
-void vs_plat_state_destroy(void)
+void vash_plat_state_destroy(void)
 {
-  memset(&g_vs_state, 0, sizeof(g_vs_state));
+  memset(&g_vash_state, 0, sizeof(g_vash_state));
 }
 
-const char *vs_plat_fspath(const char *path, char *buf, size_t n)
+const char *vash_plat_fspath(const char *path, char *buf, size_t n)
 {
   (void)buf;
   (void)n;
   return path;
 }
 
-bool vs_plat_isatty(int fd)
+bool vash_plat_isatty(int fd)
 {
   return isatty(fd) != 0;
 }
 
-int vs_plat_columns(void)
+int vash_plat_columns(void)
 {
   struct winsize ws;
 
@@ -59,7 +59,7 @@ int vs_plat_columns(void)
   return -1;
 }
 
-int vs_plat_rows(void)
+int vash_plat_rows(void)
 {
   struct winsize ws;
 
@@ -114,7 +114,7 @@ static void fatal_handlers(bool install)
     }
 }
 
-bool vs_plat_tty_raw(bool on)
+bool vash_plat_tty_raw(bool on)
 {
   struct termios t;
 
@@ -156,7 +156,7 @@ bool vs_plat_tty_raw(bool on)
   return true;
 }
 
-int vs_plat_tty_read(unsigned char *c, int timeout_ms)
+int vash_plat_tty_read(unsigned char *c, int timeout_ms)
 {
   for (; ; )
     {
@@ -191,22 +191,22 @@ int vs_plat_tty_read(unsigned char *c, int timeout_ms)
     }
 }
 
-long vs_plat_uid(void)
+long vash_plat_uid(void)
 {
   return (long)getuid();
 }
 
-long vs_plat_euid(void)
+long vash_plat_euid(void)
 {
   return (long)geteuid();
 }
 
-int vs_plat_hostname(char *buf, size_t n)
+int vash_plat_hostname(char *buf, size_t n)
 {
   return gethostname(buf, n);
 }
 
-const char *vs_plat_ostype(void)
+const char *vash_plat_ostype(void)
 {
   static char os[64];
   struct utsname u;
@@ -233,23 +233,23 @@ const char *vs_plat_ostype(void)
   return os;
 }
 
-bool vs_plat_interactive(void)
+bool vash_plat_interactive(void)
 {
   return isatty(STDIN_FILENO) != 0;
 }
 
-bool vs_plat_have_fork(void)
+bool vash_plat_have_fork(void)
 {
   return true;
 }
 
-pid_t vs_plat_fork(void)
+pid_t vash_plat_fork(void)
 {
   fflush(NULL);                 /* or buffered output would appear twice */
   return fork();
 }
 
-int vs_plat_collate(const char *a, const char *b)
+int vash_plat_collate(const char *a, const char *b)
 {
   int r = strcoll(a, b);
 
@@ -278,7 +278,7 @@ static const char *locale_choice(const char *category_var)
   return (v != NULL && v[0] != '\0') ? v : "C";
 }
 
-void vs_plat_locale_update(void)
+void vash_plat_locale_update(void)
 {
   setlocale(LC_COLLATE, locale_choice("LC_COLLATE"));
   setlocale(LC_CTYPE, locale_choice("LC_CTYPE"));       /* what a character is */
@@ -287,12 +287,12 @@ void vs_plat_locale_update(void)
 
 /* ---- Characters ------------------------------------------------------------- */
 
-bool vs_plat_multibyte(void)
+bool vash_plat_multibyte(void)
 {
   return MB_CUR_MAX > 1;
 }
 
-size_t vs_plat_mbdecode(const char *s, size_t n, long *wc)
+size_t vash_plat_mbdecode(const char *s, size_t n, long *wc)
 {
   mbstate_t st;
   wchar_t w = 0;
@@ -314,7 +314,7 @@ size_t vs_plat_mbdecode(const char *s, size_t n, long *wc)
   return r == 0 ? 1 : r;                /* a NUL character is one byte */
 }
 
-size_t vs_plat_mbencode(long wc, char *out)
+size_t vash_plat_mbencode(long wc, char *out)
 {
   mbstate_t st;
   size_t r;
@@ -324,29 +324,29 @@ size_t vs_plat_mbencode(long wc, char *out)
   return r == (size_t)-1 ? 0 : r;
 }
 
-bool vs_plat_wc_isclass(long wc, const char *name)
+bool vash_plat_wc_isclass(long wc, const char *name)
 {
   wctype_t t = wctype(name);
 
   return t != 0 && iswctype((wint_t)wc, t) != 0;
 }
 
-long vs_plat_wc_toupper(long wc)
+long vash_plat_wc_toupper(long wc)
 {
   return (long)towupper((wint_t)wc);
 }
 
-long vs_plat_wc_tolower(long wc)
+long vash_plat_wc_tolower(long wc)
 {
   return (long)towlower((wint_t)wc);
 }
 
-bool vs_plat_export_all(void)
+bool vash_plat_export_all(void)
 {
   return false;
 }
 
-bool vs_plat_external_fallback(const char *name)
+bool vash_plat_external_fallback(const char *name)
 {
   (void)name;
   return false;                 /* pipeline stages fork instead */
@@ -370,7 +370,7 @@ static bool is_executable_file(const char *path, int *err)
   return true;
 }
 
-char *vs_plat_find_command(const char *name, const char *path_var, int *err)
+char *vash_plat_find_command(const char *name, const char *path_var, int *err)
 {
   struct sbuf_s cand;
   const char *path = path_var != NULL ? path_var : "/usr/bin:/bin";
@@ -383,7 +383,7 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
 
   if (strchr(name, '/') != NULL)
     {
-      return is_executable_file(name, err) ? vs_xstrdup(name) : NULL;
+      return is_executable_file(name, err) ? vash_xstrdup(name) : NULL;
     }
 
   sb_init(&cand);
@@ -416,7 +416,7 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
   return NULL;
 }
 
-int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
+int vash_plat_spawn(const char *path, char *const argv[], char *const envp[],
                   int in_fd, int out_fd, const int *close_fds, int nclose,
                   pid_t *pid)
 {
@@ -445,17 +445,17 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
   return ret;
 }
 
-int vs_plat_exec(const char *path, char *const argv[], char *const envp[])
+int vash_plat_exec(const char *path, char *const argv[], char *const envp[])
 {
   return execve(path, argv, envp);
 }
 
-int vs_plat_dup_high(int fd)
+int vash_plat_dup_high(int fd)
 {
   return fcntl(fd, F_DUPFD_CLOEXEC, 10);
 }
 
-char *vs_plat_capture_via_self(const char *text, int *status)
+char *vash_plat_capture_via_self(const char *text, int *status)
 {
   (void)text;
   *status = 1;

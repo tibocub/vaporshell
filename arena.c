@@ -29,7 +29,7 @@ struct arena_s
 
 struct arena_s *arena_new(void)
 {
-  struct arena_s *a = vs_xmalloc(sizeof(*a));
+  struct arena_s *a = vash_xmalloc(sizeof(*a));
 
   a->chunks = NULL;
   a->refs = 1;
@@ -47,7 +47,7 @@ void *arena_alloc(struct arena_s *a, size_t n)
     {
       size_t size = n > CHUNK_SIZE ? n : CHUNK_SIZE;
 
-      c = vs_xmalloc(sizeof(*c) + size);
+      c = vash_xmalloc(sizeof(*c) + size);
       c->size = size;
       c->used = 0;
       c->next = a->chunks;

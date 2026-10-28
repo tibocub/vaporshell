@@ -62,9 +62,9 @@ static void set_enabled(const char *name, bool enabled)
     }
 
   {
-    struct disabled_s *d = vs_xmalloc(sizeof(*d));
+    struct disabled_s *d = vash_xmalloc(sizeof(*d));
 
-    d->name = vs_xstrdup(name);
+    d->name = vash_xstrdup(name);
     d->next = g_sh.disabled_builtins;
     g_sh.disabled_builtins = d;
   }
@@ -78,9 +78,9 @@ static const struct builtin_s *find_any(const char *name)
 {
   const struct builtin_s *b;
 
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
-      if ((b->modes & vs_mode_bit()) != 0 && strcmp(b->name, name) == 0)
+      if ((b->modes & vash_mode_bit()) != 0 && strcmp(b->name, name) == 0)
         {
           return b;
         }
@@ -105,16 +105,16 @@ static void list_builtins(bool all)
   size_t n = 0;
   size_t i;
 
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
       n++;
     }
 
-  names = vs_xmalloc(n * sizeof(*names));
+  names = vash_xmalloc(n * sizeof(*names));
   n = 0;
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
-      if ((b->modes & vs_mode_bit()) != 0)
+      if ((b->modes & vash_mode_bit()) != 0)
         {
           names[n++] = b->name;
         }
@@ -164,7 +164,7 @@ int bi_enable(int argc, char **argv)
         }
       else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-d") == 0)
         {
-          vs_err("enable: -f: loadable builtins are not supported here");
+          vash_err("enable: -f: loadable builtins are not supported here");
           return 1;
         }
       else if (strcmp(argv[i], "-s") == 0)
@@ -175,7 +175,7 @@ int bi_enable(int argc, char **argv)
         }
       else
         {
-          vs_err("enable: %s: invalid option", argv[i]);
+          vash_err("enable: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -190,7 +190,7 @@ int bi_enable(int argc, char **argv)
     {
       if (find_any(argv[i]) == NULL)
         {
-          vs_err("enable: %s: not a shell builtin", argv[i]);
+          vash_err("enable: %s: not a shell builtin", argv[i]);
           status = 1;
           continue;
         }

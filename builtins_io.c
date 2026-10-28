@@ -61,7 +61,7 @@ static void put_utf8(struct sbuf_s *out, unsigned long cp)
  * character, as both shells do.
  */
 
-size_t vs_esc_one(const char *s, unsigned flags, struct sbuf_s *out,
+size_t vash_esc_one(const char *s, unsigned flags, struct sbuf_s *out,
                   bool *stop)
 {
   size_t n;
@@ -199,7 +199,7 @@ int bi_echo(int argc, char **argv)
   bool stop = false;
   int i = 1;
 
-  if (vs_feat(VF_ECHO_XPG))
+  if (vash_feat(VF_ECHO_XPG))
     {
       /* dash: only a lone -n, escapes always on. */
 
@@ -255,7 +255,7 @@ int bi_echo(int argc, char **argv)
           if (escapes && *s == '\\')
             {
               s++;
-              s += vs_esc_one(s, flags, &out, &stop);
+              s += vash_esc_one(s, flags, &out, &stop);
             }
           else
             {
@@ -333,7 +333,7 @@ static long long pf_number(struct pf_s *pf, const char *s, bool is_unsigned)
 
   if (end == s || *end != '\0' || errno == ERANGE)
     {
-      vs_err("printf: %s: invalid number", s);
+      vash_err("printf: %s: invalid number", s);
       pf->status = 1;
     }
 
@@ -344,7 +344,7 @@ static long long pf_number(struct pf_s *pf, const char *s, bool is_unsigned)
 
 static void pf_run(struct pf_s *pf, const char *fmt)
 {
-  unsigned eflags = vs_feat(VF_PRINTF_EXT) ? (ESC_OCT_PLAIN | ESC_HEXU | ESC_E)
+  unsigned eflags = vash_feat(VF_PRINTF_EXT) ? (ESC_OCT_PLAIN | ESC_HEXU | ESC_E)
                                            : ESC_OCT_PLAIN;
   const char *p = fmt;
 
@@ -353,7 +353,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
       if (*p == '\\')
         {
           p++;
-          p += vs_esc_one(p, eflags, &pf->out, &pf->stop);
+          p += vash_esc_one(p, eflags, &pf->out, &pf->stop);
           continue;
         }
 
@@ -418,7 +418,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
               }
           }
 
-        if (*p == '(' && vs_feat(VF_PRINTF_EXT))
+        if (*p == '(' && vash_feat(VF_PRINTF_EXT))
           {
             /* %(strftime-format)T: the format is everything up to the ')'
              * that balances this '(' -- parentheses inside it nest, so
@@ -456,7 +456,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
 
             if (depth != 0 || p[1] != 'T')
               {
-                vs_err("printf: `%c': invalid time format specification",
+                vash_err("printf: `%c': invalid time format specification",
                        p[1] != '\0' ? p[1] : '\0');
                 pf->status = 1;
                 pf->stop = true;
@@ -536,7 +536,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
               char *out;
               int wneed = snprintf(NULL, 0, spec, need > 0 ? buf : "");
 
-              out = vs_xmalloc((size_t)wneed + 1);
+              out = vash_xmalloc((size_t)wneed + 1);
               snprintf(out, (size_t)wneed + 1, spec, need > 0 ? buf : "");
               sb_adds(&pf->out, out);
               free(out);
@@ -548,7 +548,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
         conv = *p;
         if (conv == '\0')
           {
-            vs_err("printf: `%%': missing format character");
+            vash_err("printf: `%%': missing format character");
             pf->status = 1;
             pf->stop = true;
             return;
@@ -619,7 +619,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 one[0] = (a != NULL) ? a[0] : '\0';
                 one[1] = '\0';
                 need = snprintf(NULL, 0, spec, one);
-                buf = vs_xmalloc((size_t)need + 1);
+                buf = vash_xmalloc((size_t)need + 1);
                 snprintf(buf, (size_t)need + 1, spec, one);
                 sb_adds(&pf->out, buf);
                 free(buf);
@@ -636,10 +636,10 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 int need;
                 char *buf;
 
-                if (conv == 'q' && !vs_feat(VF_PRINTF_EXT))
+                if (conv == 'q' && !vash_feat(VF_PRINTF_EXT))
                   {
-                    vs_err("printf: `%c': invalid format character", conv);
-                    pf->status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+                    vash_err("printf: `%c': invalid format character", conv);
+                    pf->status = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
                     pf->stop = true;
                     return;
                   }
@@ -650,7 +650,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
 
                 if (conv == 'b')
                   {
-                    unsigned bflags = ESC_STOP | (vs_feat(VF_PRINTF_EXT)
+                    unsigned bflags = ESC_STOP | (vash_feat(VF_PRINTF_EXT)
                                       ? (ESC_HEXU | ESC_E)
                                       : (ESC_OCT_PLAIN | ESC_E));
                     bool bstop = false;
@@ -660,7 +660,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                         if (*str == '\\')
                           {
                             str++;
-                            str += vs_esc_one(str, bflags, &tmp, &bstop);
+                            str += vash_esc_one(str, bflags, &tmp, &bstop);
                           }
                         else
                           {
@@ -689,7 +689,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
 
                     if (ctrl)
                       {
-                        char *qw = vs_quote_word(str);
+                        char *qw = vash_quote_word(str);
 
                         sb_adds(&tmp, qw);
                         free(qw);
@@ -725,7 +725,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 spec[sl++] = 's';
                 spec[sl] = '\0';
                 need = snprintf(NULL, 0, spec, tmp.s != NULL ? tmp.s : "");
-                buf = vs_xmalloc((size_t)need + 1);
+                buf = vash_xmalloc((size_t)need + 1);
                 snprintf(buf, (size_t)need + 1, spec, tmp.s != NULL ? tmp.s : "");
                 sb_adds(&pf->out, buf);
                 free(buf);
@@ -735,8 +735,8 @@ static void pf_run(struct pf_s *pf, const char *fmt)
               break;
 
             default:
-              vs_err("printf: `%c': invalid format character", conv);
-              pf->status = vs_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
+              vash_err("printf: `%c': invalid format character", conv);
+              pf->status = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
               pf->stop = true;
               return;
           }
@@ -752,11 +752,11 @@ int bi_printf(int argc, char **argv)
   int i = 1;
   int status;
 
-  if (vs_feat(VF_PRINTF_EXT) && i < argc && strcmp(argv[i], "-v") == 0)
+  if (vash_feat(VF_PRINTF_EXT) && i < argc && strcmp(argv[i], "-v") == 0)
     {
       if (i + 1 >= argc || !is_valid_name(argv[i + 1], strlen(argv[i + 1])))
         {
-          vs_err("printf: usage: printf [-v var] format [arguments]");
+          vash_err("printf: usage: printf [-v var] format [arguments]");
           return 2;
         }
 
@@ -770,14 +770,14 @@ int bi_printf(int argc, char **argv)
     }
   else if (i < argc && argv[i][0] == '-' && argv[i][1] != '\0')
     {
-      vs_err("printf: %s: invalid option", argv[i]);
+      vash_err("printf: %s: invalid option", argv[i]);
       return 2;
     }
 
   if (i >= argc)
     {
-      vs_err("printf: usage: printf %sformat [arguments]",
-             vs_feat(VF_PRINTF_EXT) ? "[-v var] " : "");
+      vash_err("printf: usage: printf %sformat [arguments]",
+             vash_feat(VF_PRINTF_EXT) ? "[-v var] " : "");
       return 2;
     }
 

@@ -60,21 +60,21 @@ struct builtin_s
   int (*fn)(int argc, char **argv);
   bool special;               /* POSIX special builtin */
   const char *help;
-  unsigned modes;             /* VS_M_* profiles this builtin exists in */
+  unsigned modes;             /* VASH_M_* profiles this builtin exists in */
 };
 
-extern const struct builtin_s g_vs_builtins[];     /* name == NULL terminated */
+extern const struct builtin_s g_vash_builtins[];     /* name == NULL terminated */
 const struct builtin_s *builtin_find(const char *name);
 
 /* A special builtin failed in a way POSIX makes fatal: end a non-interactive
  * shell if the profile says so (VF_SPECIAL_ERR_FATAL).
  */
 
-void vs_special_error(void);
+void vash_special_error(void);
 
 /* builtins.c: `set -o NAME` / `+o NAME`; returns -1 for an unknown name. */
 
-int vs_set_named_option(const char *name, bool on);
+int vash_set_named_option(const char *name, bool on);
 
 /* help.c, test.c, traps.c */
 
@@ -82,19 +82,19 @@ int bi_help(int argc, char **argv);
 int bi_test(int argc, char **argv);
 /* Subshells without fork() -- inproc.c. */
 
-bool vs_inproc_enabled(void);
-int vs_inproc_subshell(struct node_s *body);
-char *vs_inproc_cmdsub(const char *text, size_t len, int *status);
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen);
-void *vs_inproc_feed(int fd, char *buf, size_t len);   /* a handle for _wait, or NULL */
-void vs_inproc_feed_wait(void *handle);
+bool vash_inproc_enabled(void);
+int vash_inproc_subshell(struct node_s *body);
+char *vash_inproc_cmdsub(const char *text, size_t len, int *status);
+int vash_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen);
+void *vash_inproc_feed(int fd, char *buf, size_t len);   /* a handle for _wait, or NULL */
+void vash_inproc_feed_wait(void *handle);
 void trap_subshell_enter(void);
 void trap_run_err(int status);
 void trap_run_debug(void);
 void trap_run_return(void);
 void trap_subshell_leave(const struct shell_s *saved);
 
-int vs_option_state(const char *name);
+int vash_option_state(const char *name);
 
 /* Backslash escapes (builtins_io.c): 's' points just after the backslash.
  * Appends what it denotes to 'out' and returns how many characters it used.
@@ -106,7 +106,7 @@ int vs_option_state(const char *name);
 #define ESC_E         0x8     /* \e and \E */
 #define ESC_CTRL      0x10    /* \cX is a control character ($'...') */
 
-size_t vs_esc_one(const char *s, unsigned flags, struct sbuf_s *out, bool *stop);
+size_t vash_esc_one(const char *s, unsigned flags, struct sbuf_s *out, bool *stop);
 int bi_echo(int argc, char **argv);
 int bi_getopts(int argc, char **argv);
 int bi_local(int argc, char **argv);
@@ -127,13 +127,13 @@ int bi_read(int argc, char **argv);                /* builtins.c: also used by s
  * menu out and turns typed text into an index, the way bash's does.
  */
 
-void vs_select_menu(char *const *items, int n);
-int vs_select_parse(const char *reply, int n);      /* 1..n: that choice; 0: invalid; -1: empty (redisplay) */
+void vash_select_menu(char *const *items, int n);
+int vash_select_parse(const char *reply, int n);      /* 1..n: that choice; 0: invalid; -1: empty (redisplay) */
 int bi_local_decl(int argc, char **argv);
 int bi_export_decl(int argc, char **argv);
 int bi_readonly_decl(int argc, char **argv);
-void vs_print_array_body(const struct arr_s *a);
-void vs_print_dq(const char *s);                     /* "..." or $'...' */      /* builtins.c: ([0]="x" ...) */
+void vash_print_array_body(const struct arr_s *a);
+void vash_print_dq(const char *s);                     /* "..." or $'...' */      /* builtins.c: ([0]="x" ...) */
 bool asg_ref_isset(const char *text);                /* -v name / name[i] / name[@] */
 int asg_unset_ref(const char *text, bool *handled);  /* unset name[i]; handled=false if not that form */
 size_t asg_subscript_end(const char *s, size_t len, size_t open);   /* the ] for a [ */
@@ -146,7 +146,7 @@ int bi_pushd(int argc, char **argv);
 int bi_popd(int argc, char **argv);
 int bi_dirs(int argc, char **argv);
 void dirstack_free(void);
-void vs_shopt_defaults(void);
+void vash_shopt_defaults(void);
 int bi_alias(int argc, char **argv);
 int bi_unalias(int argc, char **argv);
 #ifdef VAPORSHELL_POSIX

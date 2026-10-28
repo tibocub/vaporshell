@@ -38,23 +38,23 @@ bool is_tbx_command(const char *name);        /* dispatch.c */
  * lock.
  */
 
-#define VS_MAX_INSTANCES 16
+#define VASH_MAX_INSTANCES 16
 
 static struct
 {
   pid_t pid;                    /* 0: free */
   struct shell_s *sh;
-} g_instances[VS_MAX_INSTANCES];
+} g_instances[VASH_MAX_INSTANCES];
 
-struct shell_s *vs_plat_state_create(void)
+struct shell_s *vash_plat_state_create(void)
 {
-  struct shell_s *sh = vs_xmalloc(sizeof(*sh));
+  struct shell_s *sh = vash_xmalloc(sizeof(*sh));
   pid_t me = getpid();
   int i;
 
   memset(sh, 0, sizeof(*sh));
   sched_lock();
-  for (i = 0; i < VS_MAX_INSTANCES; i++)
+  for (i = 0; i < VASH_MAX_INSTANCES; i++)
     {
       if (g_instances[i].pid == 0)
         {
@@ -71,12 +71,12 @@ struct shell_s *vs_plat_state_create(void)
   exit(1);
 }
 
-struct shell_s *vs_state(void)
+struct shell_s *vash_state(void)
 {
   pid_t me = getpid();
   int i;
 
-  for (i = 0; i < VS_MAX_INSTANCES; i++)
+  for (i = 0; i < VASH_MAX_INSTANCES; i++)
     {
       if (g_instances[i].pid == me)
         {
@@ -84,15 +84,15 @@ struct shell_s *vs_state(void)
         }
     }
 
-  return vs_plat_state_create();       /* a task we have not seen: start fresh */
+  return vash_plat_state_create();       /* a task we have not seen: start fresh */
 }
 
-void vs_plat_state_destroy(void)
+void vash_plat_state_destroy(void)
 {
   pid_t me = getpid();
   int i;
 
-  for (i = 0; i < VS_MAX_INSTANCES; i++)
+  for (i = 0; i < VASH_MAX_INSTANCES; i++)
     {
       if (g_instances[i].pid == me)
         {
@@ -134,9 +134,9 @@ static bool has_dot_component(const char *path)
   return false;
 }
 
-const char *vs_plat_fspath(const char *path, char *buf, size_t n)
+const char *vash_plat_fspath(const char *path, char *buf, size_t n)
 {
-  char cwd[VS_PATH_MAX];
+  char cwd[VASH_PATH_MAX];
 
   if (!has_dot_component(path))
     {
@@ -144,7 +144,7 @@ const char *vs_plat_fspath(const char *path, char *buf, size_t n)
     }
 
   if (getcwd(cwd, sizeof(cwd)) == NULL ||
-      vs_path_normalize(cwd, path, buf, n) != 0)
+      vash_path_normalize(cwd, path, buf, n) != 0)
     {
       return path;
     }
@@ -152,17 +152,17 @@ const char *vs_plat_fspath(const char *path, char *buf, size_t n)
   return buf;
 }
 
-int vs_plat_columns(void)
+int vash_plat_columns(void)
 {
   return -1;                 /* no ioctl(TIOCGWINSZ) here; $COLUMNS is the only lever */
 }
 
-bool vs_plat_isatty(int fd)
+bool vash_plat_isatty(int fd)
 {
   return isatty(fd) != 0;
 }
 
-int vs_plat_rows(void)
+int vash_plat_rows(void)
 {
   return -1;
 }
@@ -176,7 +176,7 @@ int vs_plat_rows(void)
 static struct termios g_cooked;
 static bool g_is_raw;
 
-bool vs_plat_tty_raw(bool on)
+bool vash_plat_tty_raw(bool on)
 {
   struct termios t;
 
@@ -212,7 +212,7 @@ bool vs_plat_tty_raw(bool on)
   return true;
 }
 
-int vs_plat_tty_read(unsigned char *c, int timeout_ms)
+int vash_plat_tty_read(unsigned char *c, int timeout_ms)
 {
   for (; ; )
     {
@@ -247,39 +247,39 @@ int vs_plat_tty_read(unsigned char *c, int timeout_ms)
     }
 }
 
-long vs_plat_uid(void)
+long vash_plat_uid(void)
 {
   return 0;
 }
 
-long vs_plat_euid(void)
+long vash_plat_euid(void)
 {
   return 0;
 }
 
-int vs_plat_hostname(char *buf, size_t n)
+int vash_plat_hostname(char *buf, size_t n)
 {
   (void)buf;
   (void)n;
   return -1;                      /* NuttX has no portable hostname */
 }
 
-const char *vs_plat_ostype(void)
+const char *vash_plat_ostype(void)
 {
   return "nuttx";
 }
 
-bool vs_plat_interactive(void)
+bool vash_plat_interactive(void)
 {
   return true;
 }
 
-bool vs_plat_have_fork(void)
+bool vash_plat_have_fork(void)
 {
   return false;
 }
 
-pid_t vs_plat_fork(void)
+pid_t vash_plat_fork(void)
 {
   errno = ENOSYS;
   return -1;
@@ -291,58 +291,58 @@ pid_t vs_plat_fork(void)
  * nothing needs every variable exported any more.
  */
 
-int vs_plat_collate(const char *a, const char *b)
+int vash_plat_collate(const char *a, const char *b)
 {
   return strcmp(a, b);                   /* no locales: byte order */
 }
 
-void vs_plat_locale_update(void)
+void vash_plat_locale_update(void)
 {
 }
 
-bool vs_plat_export_all(void)
+bool vash_plat_export_all(void)
 {
   return false;
 }
 
 /* No locales, so a character is a byte (see mb.c). */
 
-bool vs_plat_multibyte(void)
+bool vash_plat_multibyte(void)
 {
   return false;
 }
 
-size_t vs_plat_mbdecode(const char *s, size_t n, long *wc)
+size_t vash_plat_mbdecode(const char *s, size_t n, long *wc)
 {
   (void)n;
   *wc = (unsigned char)s[0];
   return 1;
 }
 
-size_t vs_plat_mbencode(long wc, char *out)
+size_t vash_plat_mbencode(long wc, char *out)
 {
   out[0] = (char)wc;
   return 1;
 }
 
-bool vs_plat_wc_isclass(long wc, const char *name)
+bool vash_plat_wc_isclass(long wc, const char *name)
 {
   (void)wc;
   (void)name;
   return false;
 }
 
-long vs_plat_wc_toupper(long wc)
+long vash_plat_wc_toupper(long wc)
 {
   return wc;
 }
 
-long vs_plat_wc_tolower(long wc)
+long vash_plat_wc_tolower(long wc)
 {
   return wc;
 }
 
-bool vs_plat_external_fallback(const char *name)
+bool vash_plat_external_fallback(const char *name)
 {
   return is_tbx_command(name);
 }
@@ -357,7 +357,7 @@ bool vs_plat_external_fallback(const char *name)
  * (-S, VAR=value) are not supported.
  */
 
-#define VS_SHEBANG_MAX 128
+#define VASH_SHEBANG_MAX 128
 
 static bool read_shebang(const char *path, char *line, size_t size)
 {
@@ -447,7 +447,7 @@ static const char *shebang_argv(char *line, const char *path,
  * a tbx command.
  */
 
-char *vs_plat_find_command(const char *name, const char *path_var, int *err)
+char *vash_plat_find_command(const char *name, const char *path_var, int *err)
 {
   const char *path = path_var != NULL ? path_var : "/bin";
   struct sbuf_s cand;
@@ -461,10 +461,10 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
 
   if (strchr(name, '/') != NULL)
     {
-      char fbuf[VS_PATH_MAX];
-      const char *real = vs_plat_fspath(name, fbuf, sizeof(fbuf));
+      char fbuf[VASH_PATH_MAX];
+      const char *real = vash_plat_fspath(name, fbuf, sizeof(fbuf));
 
-      return stat(real, &st) == 0 ? vs_xstrdup(real) : NULL;
+      return stat(real, &st) == 0 ? vash_xstrdup(real) : NULL;
     }
 
   sb_init(&cand);
@@ -482,8 +482,8 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
       sb_adds(&cand, name);
       if (stat(cand.s, &st) == 0)
         {
-          char head[VS_SHEBANG_MAX];
-          char *found = vs_xstrdup(S_ISREG(st.st_mode) &&
+          char head[VASH_SHEBANG_MAX];
+          char *found = vash_xstrdup(S_ISREG(st.st_mode) &&
                                    read_shebang(cand.s, head, sizeof(head))
                                    ? cand.s : name);
 
@@ -500,10 +500,10 @@ char *vs_plat_find_command(const char *name, const char *path_var, int *err)
     }
 
   sb_free(&cand);
-  return is_tbx_command(name) ? vs_xstrdup(name) : NULL;
+  return is_tbx_command(name) ? vash_xstrdup(name) : NULL;
 }
 
-int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
+int vash_plat_spawn(const char *path, char *const argv[], char *const envp[],
                   int in_fd, int out_fd, const int *close_fds, int nclose,
                   pid_t *pid)
 {
@@ -528,7 +528,7 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
     }
 
   {
-    char line[VS_SHEBANG_MAX];
+    char line[VASH_SHEBANG_MAX];
     char *sb[40];
     const char *interp;
 
@@ -575,7 +575,7 @@ int vs_plat_spawn(const char *path, char *const argv[], char *const envp[],
   return ret;
 }
 
-int vs_plat_exec(const char *path, char *const argv[], char *const envp[])
+int vash_plat_exec(const char *path, char *const argv[], char *const envp[])
 {
   (void)path;
   (void)argv;
@@ -584,7 +584,7 @@ int vs_plat_exec(const char *path, char *const argv[], char *const envp[])
   return -1;
 }
 
-int vs_plat_dup_high(int fd)
+int vash_plat_dup_high(int fd)
 {
   /* Prefer a descriptor >= 10 so it cannot collide with one a script uses
    * (`exec 3>file`); plain dup() (the lowest free) is the fallback.
@@ -595,7 +595,7 @@ int vs_plat_dup_high(int fd)
   return hi >= 0 ? hi : dup(fd);
 }
 
-char *vs_plat_capture_via_self(const char *text, int *status)
+char *vash_plat_capture_via_self(const char *text, int *status)
 {
   int pipefd[2];
   posix_spawn_file_actions_t actions;
@@ -627,7 +627,7 @@ char *vs_plat_capture_via_self(const char *text, int *status)
     size_t k = 1;
 
     opts[0] = '-';
-    if (g_sh.opt_e && vs_feat(VF_ERREXIT_IN_CMDSUB)) opts[k++] = 'e';
+    if (g_sh.opt_e && vash_feat(VF_ERREXIT_IN_CMDSUB)) opts[k++] = 'e';
     if (g_sh.opt_u) opts[k++] = 'u';
     if (g_sh.opt_f) opts[k++] = 'f';
     if (g_sh.opt_x) opts[k++] = 'x';
@@ -635,7 +635,7 @@ char *vs_plat_capture_via_self(const char *text, int *status)
     opts[k] = '\0';
 
     argv[na++] = (char *)g_sh.self;
-    if (vs_mode_get() == VS_PROFILE_POSIX)
+    if (vash_mode_get() == VASH_PROFILE_POSIX)
       {
         argv[na++] = "--posix";
       }

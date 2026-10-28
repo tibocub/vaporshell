@@ -139,7 +139,7 @@ static bool *impl_slot(enum so_id_e id)
 
 /* Called once by shell_init(): every option at bash's default. */
 
-void vs_shopt_defaults(void)
+void vash_shopt_defaults(void)
 {
   int i;
 
@@ -164,8 +164,8 @@ static bool so_get(int i)
         return *impl_slot(g_so[i].id);
 
       case SO_MAP:
-        return g_so[i].id == SO_INHERIT_ERREXIT ? vs_feat(VF_ERREXIT_IN_CMDSUB)
-                                                : vs_feat(VF_ECHO_XPG);
+        return g_so[i].id == SO_INHERIT_ERREXIT ? vash_feat(VF_ERREXIT_IN_CMDSUB)
+                                                : vash_feat(VF_ECHO_XPG);
 
       case SO_NOOP:
         return g_sh.so_generic[i] != 0;
@@ -213,7 +213,7 @@ static int so_set(int i, bool on)
             return 0;                      /* already how it is: nothing to do */
           }
 
-        vs_err("shopt: %s: not implemented", g_so[i].name);
+        vash_err("shopt: %s: not implemented", g_so[i].name);
         return 1;
     }
 }
@@ -263,8 +263,8 @@ int bi_shopt(int argc, char **argv)
               case 'p': print = true; break;
               case 'o': oflag = true; break;
               default:
-                vs_err("shopt: -%c: invalid option", *f);
-                vs_err("shopt: usage: shopt [-pqsu] [-o] [optname ...]");
+                vash_err("shopt: -%c: invalid option", *f);
+                vash_err("shopt: usage: shopt [-pqsu] [-o] [optname ...]");
                 return 2;
             }
         }
@@ -272,7 +272,7 @@ int bi_shopt(int argc, char **argv)
 
   if (set && unset)
     {
-      vs_err("shopt: cannot set and unset shell options simultaneously");
+      vash_err("shopt: cannot set and unset shell options simultaneously");
       return 1;
     }
 
@@ -294,11 +294,11 @@ int bi_shopt(int argc, char **argv)
 
       for (; i < argc; i++)
         {
-          int st = vs_option_state(argv[i]);
+          int st = vash_option_state(argv[i]);
 
           if (st < 0)
             {
-              vs_err("shopt: %s: invalid option name", argv[i]);
+              vash_err("shopt: %s: invalid option name", argv[i]);
               status = 1;
               continue;
             }
@@ -370,7 +370,7 @@ int bi_shopt(int argc, char **argv)
 
       if (k < 0)
         {
-          vs_err("shopt: %s: invalid shell option name", argv[i]);
+          vash_err("shopt: %s: invalid shell option name", argv[i]);
           status = 1;
           continue;
         }

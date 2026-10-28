@@ -71,7 +71,7 @@ static char *describe_node(const struct node_s *n)
       sb_adds(&sb, "(command)");
     }
 
-  return sb.s != NULL ? sb_take(&sb) : vs_xstrdup("");
+  return sb.s != NULL ? sb_take(&sb) : vash_xstrdup("");
 }
 
 int job_add(pid_t pid, const char *cmd)
@@ -81,13 +81,13 @@ int job_add(pid_t pid, const char *cmd)
   if (g_sh.njobs == g_sh.jobs_cap)
     {
       g_sh.jobs_cap = g_sh.jobs_cap > 0 ? g_sh.jobs_cap * 2 : 8;
-      g_sh.jobs = vs_xrealloc(g_sh.jobs, g_sh.jobs_cap * sizeof(*g_sh.jobs));
+      g_sh.jobs = vash_xrealloc(g_sh.jobs, g_sh.jobs_cap * sizeof(*g_sh.jobs));
     }
 
   j = &g_sh.jobs[g_sh.njobs++];
   j->id = ++g_sh.next_job_id;
   j->pid = pid;
-  j->cmd = vs_xstrdup(cmd != NULL ? cmd : "(command)");
+  j->cmd = vash_xstrdup(cmd != NULL ? cmd : "(command)");
   j->state = JOB_RUNNING;
   j->status = 0;
   j->notified = false;
@@ -371,9 +371,9 @@ int bi_jobs(int argc, char **argv)
         {
           changed_only = true;
         }
-      else if (strcmp(argv[i], "--") != 0 && vs_feat(VF_BASH_SYNTAX))
+      else if (strcmp(argv[i], "--") != 0 && vash_feat(VF_BASH_SYNTAX))
         {
-          vs_err("jobs: %s: invalid option", argv[i]);
+          vash_err("jobs: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -419,7 +419,7 @@ int bi_fg(int argc, char **argv)
   j = job_find_spec(argc > 1 ? argv[1] : NULL, &bad);
   if (j == NULL)
     {
-      vs_err("fg: %s: no such job", argc > 1 ? argv[1] : "current");
+      vash_err("fg: %s: no such job", argc > 1 ? argv[1] : "current");
       return 1;
     }
 
@@ -463,13 +463,13 @@ int bi_bg(int argc, char **argv)
   j = job_find_spec(argc > 1 ? argv[1] : NULL, &bad);
   if (j == NULL)
     {
-      vs_err("bg: %s: no such job", argc > 1 ? argv[1] : "current");
+      vash_err("bg: %s: no such job", argc > 1 ? argv[1] : "current");
       return 1;
     }
 
   if (j->state != JOB_STOPPED)
     {
-      vs_err("bg: job %d already in background", j->id);
+      vash_err("bg: job %d already in background", j->id);
       return 1;
     }
 
@@ -521,7 +521,7 @@ int bi_disown(int argc, char **argv)
 
       if (j == NULL)
         {
-          vs_err("disown: %s: no such job", argv[i]);
+          vash_err("disown: %s: no such job", argv[i]);
           return 1;
         }
 
@@ -533,7 +533,7 @@ int bi_disown(int argc, char **argv)
 
 /* fn(spec, command, arg) for every job, spec being "%N". For completion. */
 
-void vs_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg)
+void vash_each_job(void (*fn)(const char *spec, const char *cmd, void *arg), void *arg)
 {
   size_t i;
 

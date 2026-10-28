@@ -50,7 +50,7 @@ int bi_getopts(int argc, char **argv)
 
   if (argc < 3)
     {
-      vs_err("getopts: usage: getopts optstring name [arg ...]");
+      vash_err("getopts: usage: getopts optstring name [arg ...]");
       return 2;
     }
 
@@ -134,7 +134,7 @@ int bi_getopts(int argc, char **argv)
             var_unset("OPTARG");
             if (quiet_var == NULL || strcmp(quiet_var, "0") != 0)
               {
-                vs_err("illegal option -- %c", c);
+                vash_err("illegal option -- %c", c);
               }
           }
 
@@ -180,7 +180,7 @@ int bi_getopts(int argc, char **argv)
                 var_unset("OPTARG");
                 if (quiet_var == NULL || strcmp(quiet_var, "0") != 0)
                   {
-                    vs_err("option requires an argument -- %c", c);
+                    vash_err("option requires an argument -- %c", c);
                   }
 
                 set_opt_result(name, "?", optind_now);
@@ -194,7 +194,7 @@ int bi_getopts(int argc, char **argv)
         return 0;
       }
 
-    if (vs_feat(VF_OPTARG_EMPTY))
+    if (vash_feat(VF_OPTARG_EMPTY))
       {
         var_set("OPTARG", "");
       }
@@ -225,14 +225,14 @@ int bi_local(int argc, char **argv)
   int status = 0;
   int i;
 
-  if (vs_feat(VF_BASH_SYNTAX))
+  if (vash_feat(VF_BASH_SYNTAX))
     {
       return bi_local_decl(argc, argv);     /* attributes and arrays: declare.c */
     }
 
   if (g_sh.func_depth == 0)
     {
-      vs_err("local: can only be used in a function");
+      vash_err("local: can only be used in a function");
       return 1;
     }
 
@@ -244,15 +244,15 @@ int bi_local(int argc, char **argv)
 
       if (!is_valid_name(argv[i], nlen))
         {
-          vs_err("local: `%s': not a valid identifier", argv[i]);
-          vs_special_error();           /* local is a special builtin: dash ends the shell */
+          vash_err("local: `%s': not a valid identifier", argv[i]);
+          vash_special_error();           /* local is a special builtin: dash ends the shell */
           status = 1;
           continue;
         }
 
-      name = vs_xstrndup(argv[i], nlen);
+      name = vash_xstrndup(argv[i], nlen);
       if (var_local_declare(name, eq != NULL ? eq + 1 : NULL,
-                            vs_feat(VF_LOCAL_INHERITS)) != 0)
+                            vash_feat(VF_LOCAL_INHERITS)) != 0)
         {
           status = 1;
         }
@@ -272,7 +272,7 @@ static void print_time(clock_t t, long hz)
   long whole = (long)(t / (clock_t)hz);
   long frac = (long)(t % (clock_t)hz);
 
-  if (vs_feat(VF_BASH_INFO_FORMATS))
+  if (vash_feat(VF_BASH_INFO_FORMATS))
     {
       printf("%ldm%ld.%03lds", whole / 60, whole % 60, frac * 1000 / hz);
     }
@@ -291,7 +291,7 @@ int bi_times(int argc, char **argv)
   (void)argv;
   if (times(&t) == (clock_t)-1 || hz <= 0)
     {
-      vs_err("times: %s", strerror(errno));
+      vash_err("times: %s", strerror(errno));
       return 1;
     }
 
@@ -320,7 +320,7 @@ int bi_ulimit(int argc, char **argv)
 {
   /* -c and -f count blocks: 1024 bytes in bash, 512 in dash (measured). */
 
-  long blk = vs_feat(VF_BASH_INFO_FORMATS) ? 1024 : 512;
+  long blk = vash_feat(VF_BASH_INFO_FORMATS) ? 1024 : 512;
   const struct ulim_s table[] =
   {
     { 'c', RLIMIT_CORE,   blk,  "core file size" },
@@ -373,7 +373,7 @@ int bi_ulimit(int argc, char **argv)
 
               if (k == sizeof(table) / sizeof(table[0]))
                 {
-                  vs_err("ulimit: -%c: invalid option", *o);
+                  vash_err("ulimit: -%c: invalid option", *o);
                   return 2;
                 }
             }
@@ -393,7 +393,7 @@ int bi_ulimit(int argc, char **argv)
 
   if (getrlimit(sel->resource, &rl) != 0)
     {
-      vs_err("ulimit: %s", strerror(errno));
+      vash_err("ulimit: %s", strerror(errno));
       return 1;
     }
 
@@ -427,7 +427,7 @@ int bi_ulimit(int argc, char **argv)
 
         if (*argv[i] == '\0' || *end != '\0')
           {
-            vs_err("ulimit: %s: invalid number", argv[i]);
+            vash_err("ulimit: %s: invalid number", argv[i]);
             return 1;
           }
 
@@ -448,7 +448,7 @@ int bi_ulimit(int argc, char **argv)
 
     if (setrlimit(sel->resource, &rl) != 0)
       {
-        vs_err("ulimit: %s: cannot modify limit: %s", sel->desc, strerror(errno));
+        vash_err("ulimit: %s: cannot modify limit: %s", sel->desc, strerror(errno));
         return 1;
       }
   }

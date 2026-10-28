@@ -39,13 +39,13 @@ static char *read_prompted(const char *prompt, bool continuation)
   char *plain;
   ssize_t n;
 
-  if (vs_ledit_usable())
+  if (vash_ledit_usable())
     {
-      return vs_ledit_read(prompt, continuation);
+      return vash_ledit_read(prompt, continuation);
     }
 
-  plain = vs_xstrdup(prompt);
-  vs_prompt_strip(plain);
+  plain = vash_xstrdup(prompt);
+  vash_prompt_strip(plain);
 
   /* Prompts go to stderr on a host, like other shells, so stdout stays clean. */
 
@@ -93,7 +93,7 @@ static char *interactive_next_line(void *ctx, bool continuation)
       ps = continuation ? "> " : DEFAULT_PS1;
     }
 
-  expanded = vs_prompt_expand(ps);
+  expanded = vash_prompt_expand(ps);
   line = read_prompted(expanded, continuation);
   free(expanded);
   return line;
@@ -108,7 +108,7 @@ static char *stdin_next_line(void *ctx, bool continuation)
 
 static int usage_error(const char *what, const char *arg)
 {
-  vs_err("%s: %s", arg, what);
+  vash_err("%s: %s", arg, what);
   return 2;
 }
 
@@ -141,7 +141,7 @@ static int shell_main(int argc, char *argv[])
     base = (base != NULL) ? base + 1 : argv[0];
     if (strcmp(base, "sh") == 0 || var_get("POSIXLY_CORRECT") != NULL)
       {
-        vs_mode_set(VS_PROFILE_POSIX);
+        vash_mode_set(VASH_PROFILE_POSIX);
       }
   }
 
@@ -187,14 +187,14 @@ static int shell_main(int argc, char *argv[])
 
       if (strcmp(argv[i], "--posix") == 0)
         {
-          vs_mode_set(VS_PROFILE_POSIX);
+          vash_mode_set(VASH_PROFILE_POSIX);
           continue;
         }
 
       if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "+o") == 0)
         {
           if (i + 1 >= argc ||
-              vs_set_named_option(argv[i + 1], argv[i][0] == '-') != 0)
+              vash_set_named_option(argv[i + 1], argv[i][0] == '-') != 0)
             {
               return usage_error("invalid option name", argv[i]);
             }
@@ -258,13 +258,13 @@ static int shell_main(int argc, char *argv[])
   {
     struct parser_s p;
 
-    g_sh.interactive = force_interactive || vs_plat_interactive();
+    g_sh.interactive = force_interactive || vash_plat_interactive();
     if (g_sh.interactive)
       {
-        vs_hist_init();
-        if (g_sh.profile != VS_PROFILE_POSIX)
+        vash_hist_init();
+        if (g_sh.profile != VASH_PROFILE_POSIX)
           {
-            vs_rc_load(login || argv[0][0] == '-', norc, rcfile);
+            vash_rc_load(login || argv[0][0] == '-', norc, rcfile);
           }
       }
 
@@ -274,7 +274,7 @@ static int shell_main(int argc, char *argv[])
     parser_free(&p);
     if (g_sh.interactive)
       {
-        vs_hist_save();
+        vash_hist_save();
       }
 
     if (g_sh.interactive && g_sh.unwind == UW_NONE)

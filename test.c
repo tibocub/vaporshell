@@ -60,7 +60,7 @@ static void t_fail(struct tst_s *t, const char *msg)
 {
   if (!t->err)
     {
-      vs_err("test: %s", msg);
+      vash_err("test: %s", msg);
       t->err = true;
     }
 }
@@ -80,7 +80,7 @@ static bool is_binary(const char *s)
         {
           /* == is a bash extension; POSIX test only has = . */
 
-          return strcmp(s, "==") != 0 || vs_feat(VF_TEST_EXT);
+          return strcmp(s, "==") != 0 || vash_feat(VF_TEST_EXT);
         }
     }
 
@@ -91,7 +91,7 @@ static bool is_unary(const char *s)
 {
   return s[0] == '-' && s[1] != '\0' && s[2] == '\0' &&
          (strchr("bcdefghLnprsSuwxzOGkt", s[1]) != NULL ||
-          (s[1] == 'v' && vs_feat(VF_TEST_EXT)));    /* -v var: bash */
+          (s[1] == 'v' && vash_feat(VF_TEST_EXT)));    /* -v var: bash */
 }
 
 static bool to_long(struct tst_s *t, const char *s, long *out)
@@ -116,25 +116,25 @@ static bool file_test(struct tst_s *t, char op, const char *path)
   (void)t;
   if (op == 'L' || op == 'h')
     {
-      return lstat(VS_FS(path), &st) == 0 && S_ISLNK(st.st_mode);
+      return lstat(VASH_FS(path), &st) == 0 && S_ISLNK(st.st_mode);
     }
 
   if (op == 'r')
     {
-      return access(VS_FS(path), R_OK) == 0;
+      return access(VASH_FS(path), R_OK) == 0;
     }
 
   if (op == 'w')
     {
-      return access(VS_FS(path), W_OK) == 0;
+      return access(VASH_FS(path), W_OK) == 0;
     }
 
   if (op == 'x')
     {
-      return access(VS_FS(path), X_OK) == 0;
+      return access(VASH_FS(path), X_OK) == 0;
     }
 
-  if (stat(VS_FS(path), &st) != 0)
+  if (stat(VASH_FS(path), &st) != 0)
     {
       return false;
     }
@@ -190,8 +190,8 @@ static bool binary(struct tst_s *t, const char *a, const char *op, const char *b
     {
       struct stat sa;
       struct stat sb;
-      bool ha = stat(VS_FS(a), &sa) == 0;
-      bool hb = stat(VS_FS(b), &sb) == 0;
+      bool ha = stat(VASH_FS(a), &sa) == 0;
+      bool hb = stat(VASH_FS(b), &sb) == 0;
 
       if (op[1] == 'e')
         {
@@ -359,7 +359,7 @@ int bi_bracket(int argc, char **argv)
 {
   if (argc < 2 || strcmp(argv[argc - 1], "]") != 0)
     {
-      vs_err("[: missing `]'");
+      vash_err("[: missing `]'");
       return 2;
     }
 

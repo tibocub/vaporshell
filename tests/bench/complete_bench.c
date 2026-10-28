@@ -1,4 +1,4 @@
-/* complete_bench.c -- time vs_complete() on a prefix: `make -f posix.mk bench`.
+/* complete_bench.c -- time vash_complete() on a prefix: `make -f posix.mk bench`.
  * usage: complete_bench "line so far" [rounds]   (the first round is reported
  * separately: it pays for whatever is cached afterwards)
  */
@@ -44,12 +44,12 @@ int main(int argc, char **argv)
 
   shell_init("bench");
   t0 = now_ms();
-  n = vs_complete(line, (int)strlen(line), ins, sizeof(ins), &del, &skip, count, NULL);
+  n = vash_complete(line, (int)strlen(line), ins, sizeof(ins), &del, &skip, count, NULL);
   first = now_ms() - t0;
   t0 = now_ms();
   for (i = 0; i < rounds; i++)
     {
-      vs_complete(line, (int)strlen(line), ins, sizeof(ins), &del, &skip, count, NULL);
+      vash_complete(line, (int)strlen(line), ins, sizeof(ins), &del, &skip, count, NULL);
     }
 
   printf("\"%s\": %d candidates, first %.2f ms, then %.3f ms each (%d rounds)\n",

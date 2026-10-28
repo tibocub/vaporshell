@@ -11,7 +11,7 @@ through bash, dash, and vaporshell, and compare output.
 in bash mode against bash and in --posix mode against dash), so NuttX gets
 the coverage the Linux build has. --brief prints one line per test and full
 output only for failures; --jobs N runs N simulators at once; --tally FILE
-(or $VS_TALLY) appends counts for tests/check-all.sh; the exit status is 1 if
+(or $VASH_TALLY) appends counts for tests/check-all.sh; the exit status is 1 if
 any test differs.
 
 Dev-only tooling (like update-compat-log.py in vaporOS-nuttx), not
@@ -156,7 +156,7 @@ def wait_for(master_fd, needle, timeout, poll_interval=0.05):
 _STAGE_IDS = itertools.count()
 
 
-def run_vaporshell(nuttx_dir, script_path, vs_opts="", boot_timeout=8, cmd_timeout=8,
+def run_vaporshell(nuttx_dir, script_path, vash_opts="", boot_timeout=8, cmd_timeout=8,
                    run_timeout=15):
     nuttx_dir = Path(nuttx_dir)
     nuttx_bin = nuttx_dir / "nuttx"
@@ -191,7 +191,7 @@ def run_vaporshell(nuttx_dir, script_path, vs_opts="", boot_timeout=8, cmd_timeo
         # test's output does not work: the echo comes back garbled.
         tag = f"{os.getpid()}x{next(_STAGE_IDS)}"
         mark_s, mark_e = f"@@S{tag}@@", f"@@E{tag}@@"
-        inner = f"vaporshell {vs_opts + ' ' if vs_opts else ''}/data/{staged_name} 2>/dev/null"
+        inner = f"vaporshell {vash_opts + ' ' if vash_opts else ''}/data/{staged_name} 2>/dev/null"
         command = f'vaporshell -c "echo {mark_s}; {inner}; echo -n {mark_e}"'
         os.write(master, command.encode() + b"\n")
         # wait_for() starts each call with a fresh, empty local buffer --
@@ -259,9 +259,9 @@ def requirements(test_path):
     return reqs
 
 
-def compute(test_path, nuttx_dir, ref, vs_opts):
+def compute(test_path, nuttx_dir, ref, vash_opts):
     """Runs one test everywhere it should run; returns a result dict."""
-    r = {"path": Path(test_path), "ref": ref, "opts": vs_opts}
+    r = {"path": Path(test_path), "ref": ref, "opts": vash_opts}
     r["ref_out"], r["ref_err"], r["ref_rc"] = run_native(REFS[ref], test_path)
     other = "dash" if ref == "bash" else "bash"
     r["other_out"], r["other_err"], r["other_rc"] = run_native(REFS[other], test_path)
@@ -277,21 +277,21 @@ def compute(test_path, nuttx_dir, ref, vs_opts):
         r["missing"] = sorted(missing)
         return r
 
-    r["vs_out"] = run_vaporshell(nuttx_dir, test_path, vs_opts)
-    r["verdict"] = "pass" if r["vs_out"] == r["ref_out"] else "fail"
+    r["vash_out"] = run_vaporshell(nuttx_dir, test_path, vash_opts)
+    r["verdict"] = "pass" if r["vash_out"] == r["ref_out"] else "fail"
     return r
 
 
-def compute_or_fail(test_path, nuttx_dir, ref, vs_opts):
+def compute_or_fail(test_path, nuttx_dir, ref, vash_opts):
     """compute(), but a crash in the runner is a failed test, not a missing one: a suite
     that dies must not vanish from the totals and leave them looking clean."""
     try:
-        return compute(test_path, nuttx_dir, ref, vs_opts)
+        return compute(test_path, nuttx_dir, ref, vash_opts)
     except Exception as e:  # noqa: BLE001 -- whatever it was, the test did not pass
         msg = f"(the runner crashed on this test: {e!r})\n"
-        return {"path": Path(test_path), "ref": ref, "opts": vs_opts, "verdict": "fail",
+        return {"path": Path(test_path), "ref": ref, "opts": vash_opts, "verdict": "fail",
                 "ref_out": "", "ref_err": "", "ref_rc": "?", "other": "?", "other_out": "",
-                "other_err": "", "other_rc": "?", "vs_out": msg}
+                "other_err": "", "other_rc": "?", "vash_out": msg}
 
 
 def show_verbose(r):
@@ -315,7 +315,7 @@ def show_verbose(r):
         print(f"\n--- vaporshell: {yellow}SKIP{reset} on NuttX (needs: {' '.join(r['missing'])}) ---")
     else:
         print("\n--- vaporshell ---")
-        print(r["vs_out"], end="")
+        print(r["vash_out"], end="")
         print(f"\n[verdict] {green + 'PASS' if r['verdict'] == 'pass' else red + 'DIFFERS'}{reset}")
 
 
@@ -327,7 +327,7 @@ def show_brief(r):
         print(f"{yellow}skip{reset}  {name} (needs: {' '.join(r['missing'])})")
     elif r["verdict"] == "fail":
         print(f"{red}FAIL{reset}  {name}")
-        diff = list(difflib.unified_diff(r["ref_out"].splitlines(), r["vs_out"].splitlines(),
+        diff = list(difflib.unified_diff(r["ref_out"].splitlines(), r["vash_out"].splitlines(),
                                          f"{r['ref']}", "vaporshell", lineterm="", n=1))
         for line in diff[:24]:
             print("      " + line)
@@ -335,11 +335,11 @@ def show_brief(r):
             print(f"      ... ({len(diff) - 24} more lines)")
 
 
-def run_group(label, tests, nuttx_dir, ref, vs_opts, args, tally):
+def run_group(label, tests, nuttx_dir, ref, vash_opts, args, tally):
     """Runs a list of tests, printing results in order; returns (pass, fail, skip)."""
     counts = {"pass": 0, "fail": 0, "skip": 0, "none": 0}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        for r in pool.map(lambda t: compute_or_fail(t, nuttx_dir, ref, vs_opts), tests):
+        for r in pool.map(lambda t: compute_or_fail(t, nuttx_dir, ref, vash_opts), tests):
             (show_brief if args.brief else show_verbose)(r)
             counts[r["verdict"]] += 1
             if r["verdict"] == "fail" and tally:
@@ -379,8 +379,8 @@ def main():
     parser.add_argument("--brief", action="store_true",
                         help="One line per test; full output only for failures")
     parser.add_argument("--jobs", type=int, default=1, help="Simulators to run at once (default 1)")
-    parser.add_argument("--tally", default=os.environ.get("VS_TALLY"),
-                        help="Append G/F count lines here (default: $VS_TALLY)")
+    parser.add_argument("--tally", default=os.environ.get("VASH_TALLY"),
+                        help="Append G/F count lines here (default: $VASH_TALLY)")
     parser.add_argument("--nuttx-dir", default=None,
                         help="Path to a built nuttx/ directory (contains the nuttx binary, hostfs "
                              "enabled). Omit to skip vaporshell and just compare bash vs dash.")

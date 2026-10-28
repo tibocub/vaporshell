@@ -52,7 +52,7 @@ struct cg_s
   int hits;
 };
 
-/* When set, candidates go here instead of to stdout (vs_comp_from_spec). */
+/* When set, candidates go here instead of to stdout (vash_comp_from_spec). */
 
 static void (*g_sink)(void *ctx, const char *word, const char *desc);
 static void *g_sink_ctx;
@@ -116,7 +116,7 @@ static void emit_name(const char *name, void *arg)
 static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, const char *suf)
 {
   const char *ifs = " \t\n";
-  char *copy = vs_xstrdup(words);
+  char *copy = vash_xstrdup(words);
   char *tok = strtok(copy, ifs);
 
   while (tok != NULL)
@@ -136,11 +136,11 @@ static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, con
 static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, const char *suf)
 {
   const char *slash = strrchr(c->pfx, '/');
-  char *dirpart = slash != NULL ? vs_xstrndup(c->pfx, (size_t)(slash - c->pfx) + 1)
-                                : vs_xstrdup("");
+  char *dirpart = slash != NULL ? vash_xstrndup(c->pfx, (size_t)(slash - c->pfx) + 1)
+                                : vash_xstrdup("");
   const char *leaf = slash != NULL ? slash + 1 : c->pfx;
   size_t leaflen = strlen(leaf);
-  char fbuf[VS_PATH_MAX];
+  char fbuf[VASH_PATH_MAX];
   DIR *d;
   struct dirent *de;
 
@@ -148,7 +148,7 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
    * accepts, while entries are still printed with the original 'dirpart'.
    */
 
-  d = opendir(vs_plat_fspath(dirpart[0] != '\0' ? dirpart : ".", fbuf, sizeof(fbuf)));
+  d = opendir(vash_plat_fspath(dirpart[0] != '\0' ? dirpart : ".", fbuf, sizeof(fbuf)));
   if (d == NULL)
     {
       free(dirpart);
@@ -167,7 +167,7 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
         }
 
       snprintf(full, sizeof(full), "%s%s", dirpart, de->d_name);
-      isdir = (dirs_only || g_sink != NULL) && vs_dirent_isdir(de, full);
+      isdir = (dirs_only || g_sink != NULL) && vash_dirent_isdir(de, full);
       if (dirs_only && !isdir)
         {
           continue;
@@ -210,9 +210,9 @@ static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
   const struct builtin_s *b;
   struct func_s *f;
 
-  for (b = g_vs_builtins; b->name != NULL; b++)
+  for (b = g_vash_builtins; b->name != NULL; b++)
     {
-      if ((b->modes & vs_mode_bit()) != 0 && builtin_is_enabled(b->name))
+      if ((b->modes & vash_mode_bit()) != 0 && builtin_is_enabled(b->name))
         {
           emit(c, b->name, pre, suf);
         }
@@ -223,7 +223,7 @@ static void gen_commands(struct cg_s *c, const char *pre, const char *suf)
       emit(c, f->name, pre, suf);
     }
 
-  vs_each_path_command(emit_name, &em);
+  vash_each_path_command(emit_name, &em);
 }
 
 static void emit_job(const char *spec, const char *cmd, void *arg)
@@ -241,24 +241,24 @@ static void gen_cdpath(struct cg_s *c, const char *pre, const char *suf)
   while (cdpath != NULL && *cdpath != '\0' && strchr(c->pfx, '/') == NULL)
     {
       size_t n = strcspn(cdpath, ":");
-      char dir[VS_PATH_MAX];
+      char dir[VASH_PATH_MAX];
 
       if (n > 0 && n < sizeof(dir) - 2)
         {
-          char fbuf[VS_PATH_MAX];
+          char fbuf[VASH_PATH_MAX];
           DIR *d;
           struct dirent *de;
 
           memcpy(dir, cdpath, n);
           dir[n] = '\0';
-          d = opendir(vs_plat_fspath(dir, fbuf, sizeof(fbuf)));
+          d = opendir(vash_plat_fspath(dir, fbuf, sizeof(fbuf)));
           while (d != NULL && (de = readdir(d)) != NULL)
             {
               struct stat st;
-              char full[VS_PATH_MAX];
+              char full[VASH_PATH_MAX];
 
               if (de->d_name[0] != '.' && snprintf(full, sizeof(full), "%s/%s", dir, de->d_name) < (int)sizeof(full) &&
-                  stat(vs_plat_fspath(full, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode))
+                  stat(vash_plat_fspath(full, fbuf, sizeof(fbuf)), &st) == 0 && S_ISDIR(st.st_mode))
                 {
                   emit(c, de->d_name, pre, suf);
                 }
@@ -278,7 +278,7 @@ static void gen_cdpath(struct cg_s *c, const char *pre, const char *suf)
  * getpwent() needs CONFIG_LIBC_PASSWD_FILE and there is no user database yet.
  */
 
-void vs_each_user(void (*fn)(const char *name, void *arg), void *arg)
+void vash_each_user(void (*fn)(const char *name, void *arg), void *arg)
 {
 #ifdef VAPORSHELL_POSIX
   struct passwd *pw;
@@ -320,9 +320,9 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     {
       const struct builtin_s *b;
 
-      for (b = g_vs_builtins; b->name != NULL; b++)
+      for (b = g_vash_builtins; b->name != NULL; b++)
         {
-          if ((b->modes & vs_mode_bit()) != 0 && builtin_is_enabled(b->name))
+          if ((b->modes & vash_mode_bit()) != 0 && builtin_is_enabled(b->name))
             {
               emit(c, b->name, pre, suf);
             }
@@ -360,11 +360,11 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     }
   else if (strcmp(action, "job") == 0)
     {
-      vs_each_job(emit_job, &(struct emit_s){ c, pre, suf });
+      vash_each_job(emit_job, &(struct emit_s){ c, pre, suf });
     }
   else if (strcmp(action, "user") == 0)
     {
-      vs_each_user(emit_name, &(struct emit_s){ c, pre, suf });
+      vash_each_user(emit_name, &(struct emit_s){ c, pre, suf });
     }
   else if (strcmp(action, "cdpath") == 0)
     {
@@ -376,7 +376,7 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
       char dashed[16];
       int i;
 
-      for (i = 0; c->pfx[0] == '-' && (n = vs_signal_name(i)) != NULL; i++)   /* only for kill -<Tab> */
+      for (i = 0; c->pfx[0] == '-' && (n = vash_signal_name(i)) != NULL; i++)   /* only for kill -<Tab> */
         {
           snprintf(dashed, sizeof(dashed), "-%s", n);
           emit(c, dashed, pre, suf);
@@ -384,7 +384,7 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     }
   else
     {
-      vs_err("compgen: %s: invalid action name", action);
+      vash_err("compgen: %s: invalid action name", action);
       c->n = -1;
     }
 }
@@ -488,7 +488,7 @@ int bi_compgen(int argc, char **argv)
         }
       else if (a[0] == '-')
         {
-          vs_err("compgen: %s: invalid option", a);
+          vash_err("compgen: %s: invalid option", a);
           return 2;
         }
       else
@@ -561,7 +561,7 @@ static void print_spec(const struct complete_spec_s *s)
 
 int bi_complete(int argc, char **argv)
 {
-  int fish = vs_complete_fish(argc, argv);
+  int fish = vash_complete_fish(argc, argv);
   bool list = false;
   bool remove = false;
   struct sbuf_s opts;
@@ -645,7 +645,7 @@ int bi_complete(int argc, char **argv)
                 }
               else
                 {
-                  vs_err("complete: %s: no completion specification", argv[i]);
+                  vash_err("complete: %s: no completion specification", argv[i]);
                   nnames = -1;
                 }
             }
@@ -668,8 +668,8 @@ int bi_complete(int argc, char **argv)
 
       if (s == NULL)
         {
-          s = vs_xmalloc(sizeof(*s));
-          s->name = vs_xstrdup(argv[i]);
+          s = vash_xmalloc(sizeof(*s));
+          s->name = vash_xstrdup(argv[i]);
           s->next = g_sh.complete_specs;
           g_sh.complete_specs = s;
         }
@@ -678,7 +678,7 @@ int bi_complete(int argc, char **argv)
           free(s->opts);
         }
 
-      s->opts = vs_xstrdup(opts.s != NULL ? opts.s : "");
+      s->opts = vash_xstrdup(opts.s != NULL ? opts.s : "");
       nnames++;
     }
 
@@ -695,7 +695,7 @@ int bi_compopt(int argc, char **argv)
 {
   (void)argc;
   (void)argv;
-  vs_err("compopt: not currently executing completion function");
+  vash_err("compopt: not currently executing completion function");
   return 1;
 }
 
@@ -742,7 +742,7 @@ static int split_opts(const char *o, char **v, int max)
             }
         }
 
-      v[n++] = b.s != NULL ? sb_take(&b) : vs_xstrdup("");
+      v[n++] = b.s != NULL ? sb_take(&b) : vash_xstrdup("");
     }
 
   return n;
@@ -750,7 +750,7 @@ static int split_opts(const char *o, char **v, int max)
 
 /* bash's COMP_WORDS / COMP_CWORD / COMP_LINE / COMP_POINT for a complete -F function. */
 
-void vs_set_comp_vars(const char *line, int point)
+void vash_set_comp_vars(const char *line, int point)
 {
   struct arr_s *words = arr_new();
   int i = 0;
@@ -778,7 +778,7 @@ void vs_set_comp_vars(const char *line, int point)
         }
 
       {
-        char *w = vs_xmalloc((size_t)(i - start) + 1);
+        char *w = vash_xmalloc((size_t)(i - start) + 1);
 
         memcpy(w, line + start, (size_t)(i - start));
         w[i - start] = '\0';
@@ -807,7 +807,7 @@ void vs_set_comp_vars(const char *line, int point)
 
 /* Candidates for 'word' (the last word of line[0..point)) from the spec
  * registered for 'cmd'. False if there is none. A -F function is the slow
- * lane: it runs in this shell, stopped after $VS_COMPLETION_TIMEOUT ms (default 300; complete.c).
+ * lane: it runs in this shell, stopped after $VASH_COMPLETION_TIMEOUT ms (default 300; complete.c).
  */
 
 /* What the shell's own commands complete to, when the user has not said
@@ -831,7 +831,7 @@ static const struct complete_spec_s g_default_specs[] =
 };
 
 /* The spec for 'cmd': one registered with `complete`; else a file
- * <dir>/<cmd>.vsh from $VS_COMPLETION_PATH (default
+ * <dir>/<cmd>.vash from $VASH_COMPLETION_PATH (default
  * ~/.config/vaporshell/completions:/etc/vaporshell/completions), run once the
  * first time the command is completed; else the shell's own defaults.
  */
@@ -839,12 +839,12 @@ static const struct complete_spec_s g_default_specs[] =
 static const struct complete_spec_s *spec_for(const char *cmd)
 {
   const struct complete_spec_s *s = find_spec(cmd);
-  const char *dirs = var_get("VS_COMPLETION_PATH");
+  const char *dirs = var_get("VASH_COMPLETION_PATH");
   const char *home = var_get("HOME");
   struct sbuf_s dflt;
   size_t i;
 
-  if (s != NULL || vs_fish_known(cmd))
+  if (s != NULL || vash_fish_known(cmd))
     {
       return s;
     }
@@ -871,18 +871,18 @@ static const struct complete_spec_s *spec_for(const char *cmd)
       sb_addn(&file, dirs, len);
       sb_addc(&file, '/');
       sb_adds(&file, cmd);
-      sb_adds(&file, ".vsh");
-      if (vs_rc_source(file.s))
+      sb_adds(&file, ".vash");
+      if (vash_rc_source(file.s))
         {
           s = find_spec(cmd);
-          if (s == NULL && !vs_fish_known(cmd))
+          if (s == NULL && !vash_fish_known(cmd))
             {
-              vs_fish_mark(cmd);                /* sourced: do not run it again */
+              vash_fish_mark(cmd);                /* sourced: do not run it again */
             }
         }
 
       sb_free(&file);
-      if (s != NULL || vs_fish_known(cmd))
+      if (s != NULL || vash_fish_known(cmd))
         {
           sb_free(&dflt);
           return s;
@@ -903,14 +903,14 @@ static const struct complete_spec_s *spec_for(const char *cmd)
   return NULL;
 }
 
-int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
-                      vs_comp_list_f sink, void *ctx)
+int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                      vash_comp_list_f sink, void *ctx)
 {
   const struct complete_spec_s *spec = spec_for(cmd);
   char *ov[48];
   char *av[52];
   const char *func = NULL;
-  int found = vs_comp_fish(cmd, line, point, word, sink, ctx);
+  int found = vash_comp_fish(cmd, line, point, word, sink, ctx);
   int n;
   int i;
 
@@ -954,7 +954,7 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
                     }
                 }
 
-              return VS_SPEC_FOUND;
+              return VASH_SPEC_FOUND;
             }
         }
 #endif
@@ -986,7 +986,7 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
       const struct arr_s *r;
       long k;
 
-      vs_set_comp_vars(line, point);
+      vash_set_comp_vars(line, point);
       var_unset("COMPREPLY");
       fa[0] = (char *)func;
       fa[1] = (char *)cmd;
@@ -1010,5 +1010,5 @@ int vs_comp_from_spec(const char *cmd, const char *line, int point, const char *
       free(ov[i]);
     }
 
-  return found | VS_SPEC_FOUND;
+  return found | VASH_SPEC_FOUND;
 }

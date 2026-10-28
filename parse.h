@@ -20,7 +20,7 @@
  * 'continuation' is false for the first line of a new command.
  */
 
-typedef char *(*vs_line_fn)(void *ctx, bool continuation);
+typedef char *(*vash_line_fn)(void *ctx, bool continuation);
 
 enum tok_e
 {
@@ -75,7 +75,7 @@ struct lexer_s
   size_t len;
   size_t cap;
   size_t pos;
-  vs_line_fn getline;         /* NULL for in-memory text */
+  vash_line_fn getline;         /* NULL for in-memory text */
   void *ctx;
   bool fresh;                 /* the next fetched line starts a command */
   struct arena_s *arena;
@@ -117,7 +117,7 @@ enum parse_result_e
   PARSE_ERR                   /* message in p->err */
 };
 
-void parser_init(struct parser_s *p, vs_line_fn fn, void *ctx);
+void parser_init(struct parser_s *p, vash_line_fn fn, void *ctx);
 void parser_init_mem(struct parser_s *p, const char *text, size_t len);
 void parser_free(struct parser_s *p);
 
@@ -135,7 +135,7 @@ void parser_discard(struct parser_s *p);
 
 /* lexer.c */
 
-void lexer_init(struct lexer_s *lx, vs_line_fn fn, void *ctx);
+void lexer_init(struct lexer_s *lx, vash_line_fn fn, void *ctx);
 void lexer_free(struct lexer_s *lx);
 int lex_token(struct lexer_s *lx, struct token_s *tok);
 bool lex_fetch(struct lexer_s *lx);
@@ -158,6 +158,6 @@ int ws_skip_dollar(const char *s, size_t len, size_t i, size_t *end);
 
 /* Is 'w' a keyword that starts or ends a compound command (if, done, [[ ...)? */
 
-bool vs_parser_reserved_word(const char *w);
+bool vash_parser_reserved_word(const char *w);
 
 #endif

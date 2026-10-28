@@ -101,7 +101,7 @@ static bool asg_scan(const char *text, struct asg_pos_s *p)
     }
 
   p->name_len = i;
-  if (text[i] == '[' && vs_feat(VF_BASH_SYNTAX))
+  if (text[i] == '[' && vash_feat(VF_BASH_SYNTAX))
     {
       size_t close = asg_subscript_end(text, len, i);
 
@@ -116,7 +116,7 @@ static bool asg_scan(const char *text, struct asg_pos_s *p)
       i = close + 1;
     }
 
-  if (text[i] == '+' && text[i + 1] == '=' && vs_feat(VF_BASH_SYNTAX))
+  if (text[i] == '+' && text[i + 1] == '=' && vash_feat(VF_BASH_SYNTAX))
     {
       p->append = true;
       i++;
@@ -158,13 +158,13 @@ static bool asg_split(const char *raw, struct asg_s *a)
       return false;
     }
 
-  a->name = vs_xstrndup(raw, p.name_len);
+  a->name = vash_xstrndup(raw, p.name_len);
   a->has_sub = p.has_sub;
   a->sub = raw + p.sub_off;
   a->sub_len = p.sub_len;
   a->append = p.append;
   a->val = raw + p.val_off;
-  a->compound = !p.has_sub && a->val[0] == '(' && vs_feat(VF_BASH_SYNTAX);
+  a->compound = !p.has_sub && a->val[0] == '(' && vash_feat(VF_BASH_SYNTAX);
   return true;
 }
 
@@ -197,15 +197,15 @@ static char *appended(const char *name, const struct subref_s *r, const char *va
       char buf[32];
 
       snprintf(buf, sizeof(buf), "%ld", arith_of(cur) + arith_of(val));
-      return vs_xstrdup(buf);
+      return vash_xstrdup(buf);
     }
 
   if (cur == NULL)
     {
-      return vs_xstrdup(val);
+      return vash_xstrdup(val);
     }
 
-  both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
+  both = vash_xmalloc(strlen(cur) + strlen(val) + 1);
   strcpy(both, cur);
   strcat(both, val);
   return both;
@@ -309,7 +309,7 @@ static char *literal_word(const char *s, size_t len, size_t *pos)
     }
 
   *pos = i;
-  return vs_xstrndup(s + start, i - start);
+  return vash_xstrndup(s + start, i - start);
 }
 
 /* `[sub]=value` or `[sub]+=value` as an element of an array literal. */
@@ -364,13 +364,13 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
 
   if (vlen < 2 || a->val[vlen - 1] != ')')
     {
-      vs_err("%s: syntax error in array assignment", a->name);
+      vash_err("%s: syntax error in array assignment", a->name);
       return 1;
     }
 
   if (assoc && var_array(a->name, false) != NULL && !var_is_assoc(a->name))
     {
-      vs_err("%s: cannot convert indexed to associative array", a->name);
+      vash_err("%s: cannot convert indexed to associative array", a->name);
       return 1;
     }
 
@@ -409,7 +409,7 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
       if (literal_subscript(w, &sub_len, &app, &val_off))
         {
           char *val = expand_assign_str(w + val_off);
-          char *sub = vs_xstrndup(w + 1, sub_len);
+          char *sub = vash_xstrndup(w + 1, sub_len);
 
           saw_sub = true;
           if (val == NULL)
@@ -427,7 +427,7 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
                 }
               else if (cur != NULL)
                 {
-                  char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
+                  char *both = vash_xmalloc(strlen(cur) + strlen(val) + 1);
 
                   strcpy(both, cur);
                   strcat(both, val);
@@ -455,7 +455,7 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
 
                   if (cur != NULL)
                     {
-                      char *both = vs_xmalloc(strlen(cur) + strlen(val) + 1);
+                      char *both = vash_xmalloc(strlen(cur) + strlen(val) + 1);
 
                       strcpy(both, cur);
                       strcat(both, val);
@@ -491,7 +491,7 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
             {
               for (k = 0; k < f.n; k++)
                 {
-                  fv_add(&plain, vs_xstrdup(f.v[k]));
+                  fv_add(&plain, vash_xstrdup(f.v[k]));
                 }
             }
           else
@@ -514,7 +514,7 @@ static int assign_compound(const struct asg_s *a, bool force_assoc)
 
       if (saw_sub)
         {
-          vs_err("%s: %s: must use subscript when assigning associative array",
+          vash_err("%s: %s: must use subscript when assigning associative array",
                  a->name, plain.v[0]);
           status = 1;
         }
@@ -570,7 +570,7 @@ int assign_apply(const char *raw)
 
   if (!asg_split(raw, &a))
     {
-      vs_err("%s: not an assignment", raw);
+      vash_err("%s: not an assignment", raw);
       return 1;
     }
 
@@ -602,7 +602,7 @@ int assign_apply_decl(const char *arg, bool is_raw, bool force_assoc)
 
   if (!asg_split(arg, &a))
     {
-      vs_err("%s: not an assignment", arg);
+      vash_err("%s: not an assignment", arg);
       return 1;
     }
 
@@ -643,7 +643,7 @@ static bool split_ref(const char *text, char **name, const char **sub, size_t *s
   size_t len = strlen(text);
   size_t i = 0;
 
-  if (!name_start_ch(text[0]) || !vs_feat(VF_BASH_SYNTAX))
+  if (!name_start_ch(text[0]) || !vash_feat(VF_BASH_SYNTAX))
     {
       return false;
     }
@@ -658,7 +658,7 @@ static bool split_ref(const char *text, char **name, const char **sub, size_t *s
       return false;
     }
 
-  *name = vs_xstrndup(text, i);
+  *name = vash_xstrndup(text, i);
   *sub = text + i + 1;
   *sublen = len - i - 2;
   return true;
@@ -741,7 +741,7 @@ int asg_unset_ref(const char *text, bool *handled)
         }
       else if (r.key == NULL && !var_is_array(name) && var_get(name) != NULL && r.idx != 0)
         {
-          vs_err("unset: %s: not an array variable", name);
+          vash_err("unset: %s: not an array variable", name);
           status = 1;
         }
       else
@@ -768,7 +768,7 @@ char *asg_target_name(const char *arg, bool *is_asg)
   if (asg_scan(arg, &p))
     {
       *is_asg = true;
-      return vs_xstrndup(arg, p.name_len);
+      return vash_xstrndup(arg, p.name_len);
     }
 
   *is_asg = false;
@@ -783,7 +783,7 @@ char *asg_target_name(const char *arg, bool *is_asg)
 
       if (arg[i] == '\0')
         {
-          return vs_xstrdup(arg);
+          return vash_xstrdup(arg);
         }
     }
 
@@ -813,7 +813,7 @@ char *assign_decl_word(const char *raw, bool *is_raw)
   *is_raw = a.compound;
   if (a.compound)
     {
-      return vs_xstrdup(raw);
+      return vash_xstrdup(raw);
     }
 
   val = expand_assign_str(a.val);
@@ -823,7 +823,7 @@ char *assign_decl_word(const char *raw, bool *is_raw)
     }
 
   plen = (size_t)(a.val - raw);
-  out = vs_xmalloc(plen + strlen(val) + 1);
+  out = vash_xmalloc(plen + strlen(val) + 1);
   memcpy(out, raw, plen);
   strcpy(out + plen, val);
   free(val);

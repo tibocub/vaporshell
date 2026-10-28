@@ -12,7 +12,7 @@
  * read its own pipe (NuttX pipes hold 1 KiB by default), so a helper thread
  * drains it; that thread touches no shell state.
  *
- * The same code runs on a host OS when VS_INPROC is set in the environment,
+ * The same code runs on a host OS when VASH_INPROC is set in the environment,
  * which is how the test suites exercise it against bash and dash.
  *
  * What is different from a real subshell: it is not concurrent (so a
@@ -41,10 +41,10 @@
 #  define HAVE_INPROC 0
 #endif
 
-bool vs_inproc_enabled(void)
+bool vash_inproc_enabled(void)
 {
 #if HAVE_INPROC
-  return g_sh.force_inproc || !vs_plat_have_fork();
+  return g_sh.force_inproc || !vash_plat_have_fork();
 #else
   return false;
 #endif
@@ -64,10 +64,10 @@ static struct var_s *clone_vars(const struct var_s *v)
 
   for (; v != NULL; v = v->next)
     {
-      struct var_s *c = vs_xmalloc(sizeof(*c));
+      struct var_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(v->name);
-      c->value = v->value != NULL ? vs_xstrdup(v->value) : NULL;
+      c->name = vash_xstrdup(v->name);
+      c->value = v->value != NULL ? vash_xstrdup(v->value) : NULL;
       c->arr = v->arr != NULL ? arr_clone(v->arr) : NULL;
       c->flags = v->flags;
       c->next = NULL;
@@ -99,10 +99,10 @@ static struct func_s *clone_funcs(const struct func_s *f)
 
   for (; f != NULL; f = f->next)
     {
-      struct func_s *c = vs_xmalloc(sizeof(*c));
+      struct func_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(f->name);
-      c->src = vs_xstrdup(f->src);
+      c->name = vash_xstrdup(f->name);
+      c->src = vash_xstrdup(f->src);
       c->body = f->body;
       c->arena = f->arena;
       arena_retain(c->arena);
@@ -135,10 +135,10 @@ static struct alias_s *clone_aliases(const struct alias_s *a)
 
   for (; a != NULL; a = a->next)
     {
-      struct alias_s *c = vs_xmalloc(sizeof(*c));
+      struct alias_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(a->name);
-      c->value = vs_xstrdup(a->value);
+      c->name = vash_xstrdup(a->name);
+      c->value = vash_xstrdup(a->value);
       c->next = NULL;
       *tail = c;
       tail = &c->next;
@@ -167,9 +167,9 @@ static struct disabled_s *clone_disabled(const struct disabled_s *d)
 
   for (; d != NULL; d = d->next)
     {
-      struct disabled_s *c = vs_xmalloc(sizeof(*c));
+      struct disabled_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(d->name);
+      c->name = vash_xstrdup(d->name);
       c->next = NULL;
       *tail = c;
       tail = &c->next;
@@ -197,10 +197,10 @@ static struct complete_spec_s *clone_complete_specs(const struct complete_spec_s
 
   for (; s != NULL; s = s->next)
     {
-      struct complete_spec_s *c = vs_xmalloc(sizeof(*c));
+      struct complete_spec_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(s->name);
-      c->opts = vs_xstrdup(s->opts);
+      c->name = vash_xstrdup(s->name);
+      c->opts = vash_xstrdup(s->opts);
       c->next = NULL;
       *tail = c;
       tail = &c->next;
@@ -229,10 +229,10 @@ static struct hash_s *clone_hash(const struct hash_s *h)
 
   for (; h != NULL; h = h->next)
     {
-      struct hash_s *c = vs_xmalloc(sizeof(*c));
+      struct hash_s *c = vash_xmalloc(sizeof(*c));
 
-      c->name = vs_xstrdup(h->name);
-      c->path = vs_xstrdup(h->path);
+      c->name = vash_xstrdup(h->name);
+      c->path = vash_xstrdup(h->path);
       c->hits = h->hits;
       c->next = NULL;
       *tail = c;
@@ -260,7 +260,7 @@ static void free_hash(struct hash_s *h)
 struct snap_s
 {
   struct shell_s saved;             /* a shallow copy: the parent's pointers */
-  char cwd[VS_PATH_MAX];
+  char cwd[VASH_PATH_MAX];
   bool has_cwd;
   mode_t mask;
   int fd[SNAP_FDS];                 /* a high duplicate, or -1 if it was closed */
@@ -290,7 +290,7 @@ static void snap_enter(struct snap_s *s)
 
       s->fdflags[i] = fl;
       s->internal[i] = fl >= 0 && (fl & FD_CLOEXEC) != 0;
-      s->fd[i] = (fl >= 0 && !s->internal[i]) ? vs_plat_dup_high(i) : -1;
+      s->fd[i] = (fl >= 0 && !s->internal[i]) ? vash_plat_dup_high(i) : -1;
     }
 
   /* The subshell works on copies; the originals stay reachable through
@@ -309,11 +309,11 @@ static void snap_enter(struct snap_s *s)
 
       /* Same shape as pos_set(): at least one slot, even when empty. */
 
-      g_sh.pos = vs_xmalloc((size_t)(s->saved.npos > 0 ? s->saved.npos : 1) *
+      g_sh.pos = vash_xmalloc((size_t)(s->saved.npos > 0 ? s->saved.npos : 1) *
                             sizeof(char *));
       for (k = 0; k < s->saved.npos; k++)
         {
-          g_sh.pos[k] = vs_xstrdup(s->saved.pos[k]);
+          g_sh.pos[k] = vash_xstrdup(s->saved.pos[k]);
         }
     }
 
@@ -321,10 +321,10 @@ static void snap_enter(struct snap_s *s)
     {
       int k;
 
-      g_sh.dirstack = vs_xmalloc((size_t)s->saved.ndirs * sizeof(char *));
+      g_sh.dirstack = vash_xmalloc((size_t)s->saved.ndirs * sizeof(char *));
       for (k = 0; k < s->saved.ndirs; k++)
         {
-          g_sh.dirstack[k] = vs_xstrdup(s->saved.dirstack[k]);
+          g_sh.dirstack[k] = vash_xstrdup(s->saved.dirstack[k]);
         }
     }
   else
@@ -373,7 +373,7 @@ static void snap_leave(struct snap_s *s)
 
   trap_subshell_leave(&s->saved);
   g_sh = s->saved;
-  vs_plat_locale_update();          /* the parent's LC_ALL etc. are back */
+  vash_plat_locale_update();          /* the parent's LC_ALL etc. are back */
 
   for (i = 0; i < SNAP_FDS; i++)
     {
@@ -394,7 +394,7 @@ static void snap_leave(struct snap_s *s)
         }
     }
 
-  if (s->has_cwd && chdir(s->cwd) != 0 && chdir(VS_FS(s->cwd)) != 0)
+  if (s->has_cwd && chdir(s->cwd) != 0 && chdir(VASH_FS(s->cwd)) != 0)
     {
       /* the directory is gone: stay where we are */
     }
@@ -489,10 +489,10 @@ static int capture_begin(struct capture_s *c)
 
   /* Keep the read end out of 0-9 so a script's `exec 3>f` cannot hit it. */
 
-  hi = vs_plat_dup_high(fds[0]);
+  hi = vash_plat_dup_high(fds[0]);
   close(fds[0]);
   c->rfd = hi >= 0 ? hi : -1;
-  c->save_fd = vs_plat_dup_high(STDOUT_FILENO);
+  c->save_fd = vash_plat_dup_high(STDOUT_FILENO);
   if (c->rfd < 0 || c->save_fd < 0)
     {
       goto fail;
@@ -539,7 +539,7 @@ static char *capture_end(struct capture_s *c, size_t *len)
   if (c->buf == NULL || c->failed)
     {
       free(c->buf);
-      return vs_xstrdup("");
+      return vash_xstrdup("");
     }
 
   c->buf[c->len] = '\0';
@@ -548,7 +548,7 @@ static char *capture_end(struct capture_s *c, size_t *len)
 
 /* ---- The two entry points ---------------------------------------------------- */
 
-int vs_inproc_subshell(struct node_s *body)
+int vash_inproc_subshell(struct node_s *body)
 {
   struct snap_s s;
   int status;
@@ -564,7 +564,7 @@ int vs_inproc_subshell(struct node_s *body)
  * (malloc'd, trailing newlines still there). *status gets its exit status.
  */
 
-char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
+char *vash_inproc_cmdsub(const char *text, size_t len, int *status)
 {
   struct snap_s s;
   struct capture_s cap;
@@ -573,13 +573,13 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
   snap_enter(&s);
   if (capture_begin(&cap) != 0)
     {
-      vs_err("command substitution: %s", strerror(errno));
+      vash_err("command substitution: %s", strerror(errno));
       snap_leave(&s);
       *status = 1;
-      return vs_xstrdup("");
+      return vash_xstrdup("");
     }
 
-  if (!vs_feat(VF_ERREXIT_IN_CMDSUB))
+  if (!vash_feat(VF_ERREXIT_IN_CMDSUB))
     {
       g_sh.opt_e = false;           /* bash's default: $(...) does not inherit -e */
     }
@@ -597,7 +597,7 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
  * pipeline writes.
  */
 
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
+int vash_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
 {
   struct snap_s s;
   struct capture_s cap;
@@ -613,7 +613,7 @@ int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
     {
       if (capture_begin(&cap) != 0)
         {
-          vs_err("pipeline: %s", strerror(errno));
+          vash_err("pipeline: %s", strerror(errno));
           snap_leave(&s);
           *out = NULL;
           return 1;
@@ -639,7 +639,7 @@ int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
  * subshell's cleanup closes every descriptor opened inside it: were the
  * thread still running by then, that number would be free for the next
  * pipeline to reuse, and this thread's own close() would land on the new
- * pipe. So the caller gets a handle and waits for it (vs_inproc_feed_wait)
+ * pipe. So the caller gets a handle and waits for it (vash_inproc_feed_wait)
  * once the stages are done and their read ends are closed.
  */
 
@@ -688,11 +688,11 @@ static void *feed_main(void *arg)
   return NULL;
 }
 
-/* Returns a handle for vs_inproc_feed_wait(), or NULL if there was nothing to
+/* Returns a handle for vash_inproc_feed_wait(), or NULL if there was nothing to
  * feed (fd is closed and buf freed either way).
  */
 
-void *vs_inproc_feed(int fd, char *buf, size_t len)
+void *vash_inproc_feed(int fd, char *buf, size_t len)
 {
   struct feed_s *f;
   pthread_attr_t at;
@@ -705,7 +705,7 @@ void *vs_inproc_feed(int fd, char *buf, size_t len)
       return NULL;
     }
 
-  f = vs_xmalloc(sizeof(*f));
+  f = vash_xmalloc(sizeof(*f));
   f->fd = fd;
   f->buf = buf;
   f->len = len;
@@ -726,7 +726,7 @@ void *vs_inproc_feed(int fd, char *buf, size_t len)
 
 /* Waits for the feeder to have written what it could and closed its end. */
 
-void vs_inproc_feed_wait(void *handle)
+void vash_inproc_feed_wait(void *handle)
 {
   struct feed_s *f = handle;
 
@@ -739,13 +739,13 @@ void vs_inproc_feed_wait(void *handle)
 
 #else /* !HAVE_INPROC */
 
-int vs_inproc_subshell(struct node_s *body)
+int vash_inproc_subshell(struct node_s *body)
 {
   (void)body;
   return 1;
 }
 
-char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
+char *vash_inproc_cmdsub(const char *text, size_t len, int *status)
 {
   (void)text;
   (void)len;
@@ -753,7 +753,7 @@ char *vs_inproc_cmdsub(const char *text, size_t len, int *status)
   return NULL;
 }
 
-int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
+int vash_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
 {
   (void)stage;
   (void)in_fd;
@@ -762,7 +762,7 @@ int vs_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen)
   return 1;
 }
 
-void *vs_inproc_feed(int fd, char *buf, size_t len)
+void *vash_inproc_feed(int fd, char *buf, size_t len)
 {
   (void)buf;
   (void)len;
@@ -770,7 +770,7 @@ void *vs_inproc_feed(int fd, char *buf, size_t len)
   return NULL;
 }
 
-void vs_inproc_feed_wait(void *handle)
+void vash_inproc_feed_wait(void *handle)
 {
   (void)handle;
 }

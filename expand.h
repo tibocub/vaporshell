@@ -55,8 +55,8 @@ int expand_subscript(const char *sub, size_t n, const char *name, long *idx);
 /* The same for any array: an associative one takes the text as a string key. */
 
 int expand_subref(const char *sub, size_t n, const char *name, struct subref_s *r);
-char *vs_quote_word(const char *v);        /* malloc'd: 'it'\\''s' or $'a\\tb' */
-void vs_brace_expand(const char *word, struct fieldv_s *out);      /* brace.c */
+char *vash_quote_word(const char *v);        /* malloc'd: 'it'\\''s' or $'a\\tb' */
+void vash_brace_expand(const char *word, struct fieldv_s *out);      /* brace.c */
 char *expand_word_str(const char *raw);       /* no split, no glob */
 char *expand_assign_str(const char *raw);     /* also ~ after ':' and '=' */
 char *expand_heredoc(const char *body);

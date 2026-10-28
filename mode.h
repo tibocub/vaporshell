@@ -5,11 +5,11 @@
  * differs between dialects is a named *feature bit* that the core asks
  * about at the exact place the behaviour differs:
  *
- *     if (vs_feat(VF_SPECIAL_ERR_FATAL)) ...
+ *     if (vash_feat(VF_SPECIAL_ERR_FATAL)) ...
  *
  * A profile (bash, posix, later others) is nothing but a preset of those
  * bits, so `--posix`, `set -o posix`, being invoked as `sh` and
- * POSIXLY_CORRECT all reduce to one call, vs_mode_set(). Individual bits
+ * POSIXLY_CORRECT all reduce to one call, vash_mode_set(). Individual bits
  * can later be flipped on their own (bash's shopt options are exactly
  * this), so a dialect is never "a second engine".
  *
@@ -26,7 +26,7 @@
 
 #include "vaporshell.h"
 
-enum vs_feature_e
+enum vash_feature_e
 {
   /* Semantics that differ between bash's default and POSIX. */
 
@@ -65,28 +65,28 @@ enum vs_feature_e
   VF_COUNT                  /* must stay <= 32 */
 };
 
-enum vs_profile_e
+enum vash_profile_e
 {
-  VS_PROFILE_BASH,          /* the default */
-  VS_PROFILE_POSIX
+  VASH_PROFILE_BASH,          /* the default */
+  VASH_PROFILE_POSIX
 };
 
 /* Bit masks for tagging table entries (builtins, ...) with the profiles
  * they belong to.
  */
 
-#define VS_M_BASH  0x1u
-#define VS_M_POSIX 0x2u
-#define VS_M_ALL   (VS_M_BASH | VS_M_POSIX)
+#define VASH_M_BASH  0x1u
+#define VASH_M_POSIX 0x2u
+#define VASH_M_ALL   (VASH_M_BASH | VASH_M_POSIX)
 
-static inline bool vs_feat(enum vs_feature_e f)
+static inline bool vash_feat(enum vash_feature_e f)
 {
   return (g_sh.features & (1UL << (unsigned)f)) != 0;
 }
 
-void vs_mode_set(enum vs_profile_e p);
-enum vs_profile_e vs_mode_get(void);
-unsigned vs_mode_bit(void);                   /* VS_M_BASH or VS_M_POSIX */
-const char *vs_mode_name(void);
+void vash_mode_set(enum vash_profile_e p);
+enum vash_profile_e vash_mode_get(void);
+unsigned vash_mode_bit(void);                   /* VASH_M_BASH or VASH_M_POSIX */
+const char *vash_mode_name(void);
 
 #endif

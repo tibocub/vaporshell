@@ -175,8 +175,8 @@ int bi_mapfile(int argc, char **argv)
 
           if (strchr("dnOsuCc", opt) == NULL)
             {
-              vs_err("%s: -%c: invalid option", word, opt);
-              vs_err("%s: usage: %s [-d delim] [-n count] [-O origin] [-s count] [-t] "
+              vash_err("%s: -%c: invalid option", word, opt);
+              vash_err("%s: usage: %s [-d delim] [-n count] [-O origin] [-s count] [-t] "
                      "[-u fd] [-C callback] [-c quantum] [array]", word, word);
               return 2;
             }
@@ -192,7 +192,7 @@ int bi_mapfile(int argc, char **argv)
             }
           else
             {
-              vs_err("%s: -%c: option requires an argument", word, opt);
+              vash_err("%s: -%c: option requires an argument", word, opt);
               return 2;
             }
 
@@ -205,7 +205,7 @@ int bi_mapfile(int argc, char **argv)
               case 'n':
                 if (!parse_count(val, &count))
                   {
-                    vs_err("%s: %s: invalid line count", word, val);
+                    vash_err("%s: %s: invalid line count", word, val);
                     return 1;
                   }
 
@@ -214,7 +214,7 @@ int bi_mapfile(int argc, char **argv)
               case 's':
                 if (!parse_count(val, &skip))
                   {
-                    vs_err("%s: %s: invalid line count", word, val);
+                    vash_err("%s: %s: invalid line count", word, val);
                     return 1;
                   }
 
@@ -223,7 +223,7 @@ int bi_mapfile(int argc, char **argv)
               case 'O':
                 if (!parse_count(val, &origin))
                   {
-                    vs_err("%s: %s: invalid array origin", word, val);
+                    vash_err("%s: %s: invalid array origin", word, val);
                     return 1;
                   }
 
@@ -236,7 +236,7 @@ int bi_mapfile(int argc, char **argv)
 
                   if (!parse_count(val, &n) || n > 1023)
                     {
-                      vs_err("%s: %s: invalid file descriptor specification", word, val);
+                      vash_err("%s: %s: invalid file descriptor specification", word, val);
                       return 1;
                     }
 
@@ -252,7 +252,7 @@ int bi_mapfile(int argc, char **argv)
               default:
                 if (!parse_count(val, &quantum) || quantum == 0)
                   {
-                    vs_err("%s: %s: invalid callback quantum", word, val);
+                    vash_err("%s: %s: invalid callback quantum", word, val);
                     return 1;
                   }
 
@@ -268,26 +268,26 @@ int bi_mapfile(int argc, char **argv)
 
   if (!is_valid_name(name, strlen(name)))
     {
-      vs_err("%s: `%s': not a valid identifier", word, name);
+      vash_err("%s: `%s': not a valid identifier", word, name);
       return 1;
     }
 
   if (var_is_assoc(name))
     {
-      vs_err("%s: %s: not an indexed array", word, name);
+      vash_err("%s: %s: not an indexed array", word, name);
       return 1;
     }
 
   v = var_lookup(name);
   if (v != NULL && (v->flags & VF_READONLY) != 0)
     {
-      vs_err("%s: readonly variable", name);
+      vash_err("%s: readonly variable", name);
       return 1;
     }
 
   if (fcntl(fd, F_GETFL) < 0)
     {
-      vs_err("%s: %d: invalid file descriptor: %s", word, fd, strerror(errno));
+      vash_err("%s: %d: invalid file descriptor: %s", word, fd, strerror(errno));
       return 1;
     }
 

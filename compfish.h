@@ -14,22 +14,22 @@
  * them; else the status of the call.
  */
 
-int vs_complete_fish(int argc, char **argv);
+int vash_complete_fish(int argc, char **argv);
 
-/* Candidates for 'word' from the fish-style specs of 'cmd' (the VS_SPEC_* bits). */
+/* Candidates for 'word' from the fish-style specs of 'cmd' (the VASH_SPEC_* bits). */
 
-int vs_comp_fish(const char *cmd, const char *line, int point, const char *word,
-                 vs_comp_list_f sink, void *ctx);
+int vash_comp_fish(const char *cmd, const char *line, int point, const char *word,
+                 vash_comp_list_f sink, void *ctx);
 
 /* Has 'cmd' any fish-style spec, or was its completion file already run? */
 
-bool vs_fish_known(const char *cmd);
-void vs_fish_mark(const char *cmd);
+bool vash_fish_known(const char *cmd);
+void vash_fish_mark(const char *cmd);
 
 /* compgen.c: COMP_WORDS & co. for a condition or a -F function. */
 
-void vs_set_comp_vars(const char *line, int point);
+void vash_set_comp_vars(const char *line, int point);
 
-void vs_fish_free(void);
+void vash_fish_free(void);
 
 #endif

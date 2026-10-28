@@ -26,12 +26,12 @@ DASH_REF=${DASH_REF:-dash}
 rc=0
 
 # Standalone: keep our own tally so the run ends with one TOTAL line. Under
-# a wrapper (tests/check-all.sh) VS_TALLY is already set and it does the total.
-if [ -z "$VS_TALLY" ]; then
-    VS_TALLY=$(mktemp "${TMPDIR:-/tmp}/vaporshell-tally.XXXXXX") || exit 2
-    export VS_TALLY
+# a wrapper (tests/check-all.sh) VASH_TALLY is already set and it does the total.
+if [ -z "$VASH_TALLY" ]; then
+    VASH_TALLY=$(mktemp "${TMPDIR:-/tmp}/vaporshell-tally.XXXXXX") || exit 2
+    export VASH_TALLY
     own_tally=1
-    trap 'rm -f "$VS_TALLY"' EXIT INT TERM
+    trap 'rm -f "$VASH_TALLY"' EXIT INT TERM
 fi
 
 [ -x "$VS" ] || { echo "usage: $0 path/to/vaporshell" >&2; exit 2; }
@@ -65,21 +65,21 @@ if command -v "$DASH_REF" >/dev/null 2>&1; then
 fi
 
 # The same suites again with subshells and $(...) run in-process, the way
-# they must on NuttX (which has no fork). VS_INPROC is a test hook; see
-# inproc.c. Skipped if the caller already set it, or with VS_SKIP_INPROC=1.
-if [ -z "$VS_INPROC" ] && [ -z "$VS_SKIP_INPROC" ]; then
-    printf '%s-- in-process subshells (VS_INPROC=1) --%s\n' "$C_BOLD" "$C_RESET"
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
-    VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+# they must on NuttX (which has no fork). VASH_INPROC is a test hook; see
+# inproc.c. Skipped if the caller already set it, or with VASH_SKIP_INPROC=1.
+if [ -z "$VASH_INPROC" ] && [ -z "$VASH_SKIP_INPROC" ]; then
+    printf '%s-- in-process subshells (VASH_INPROC=1) --%s\n' "$C_BOLD" "$C_RESET"
+    VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
+    VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
     if command -v "$DASH_REF" >/dev/null 2>&1; then
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
-        VS_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
+        VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
+        VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
     fi
 fi
 
 if [ -n "$own_tally" ]; then
     echo
-    tally_report "$VS_TALLY" 1 || rc=1
+    tally_report "$VASH_TALLY" 1 || rc=1
 fi
 
 exit $rc

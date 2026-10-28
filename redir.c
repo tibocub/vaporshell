@@ -27,7 +27,7 @@
 
 static void save_add(struct redir_saved_s *sv, int fd, int saved)
 {
-  sv->e = vs_xrealloc(sv->e, (size_t)(sv->n + 1) * sizeof(sv->e[0]));
+  sv->e = vash_xrealloc(sv->e, (size_t)(sv->n + 1) * sizeof(sv->e[0]));
   sv->e[sv->n].fd = fd;
   sv->e[sv->n].saved = saved;
   sv->n++;
@@ -130,12 +130,12 @@ static int install_fd(struct redir_saved_s *sv, bool persist, int fd, int src)
     {
       /* A negative result just means fd was not open: undoing closes it. */
 
-      save_add(sv, fd, vs_plat_dup_high(fd));
+      save_add(sv, fd, vash_plat_dup_high(fd));
     }
 
   if (src != fd && dup2(src, fd) < 0)
     {
-      vs_err("%d: %s", fd, strerror(errno));
+      vash_err("%d: %s", fd, strerror(errno));
       return -1;
     }
 
@@ -164,7 +164,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
 
   if (r->op == R_HEREDOC)
     {
-      char *text = r->hd_quoted ? vs_xstrdup(r->hd_body != NULL ? r->hd_body : "")
+      char *text = r->hd_quoted ? vash_xstrdup(r->hd_body != NULL ? r->hd_body : "")
                                 : expand_heredoc(r->hd_body != NULL ? r->hd_body : "");
 
       if (text == NULL)
@@ -176,7 +176,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
       free(text);
       if (src < 0)
         {
-          vs_err("here-document: %s", strerror(errno));
+          vash_err("here-document: %s", strerror(errno));
           return -1;
         }
     }
@@ -202,7 +202,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
       sb_free(&text);
       if (src < 0)
         {
-          vs_err("here-string: %s", strerror(errno));
+          vash_err("here-string: %s", strerror(errno));
           return -1;
         }
     }
@@ -229,7 +229,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
               probe = dup(src);
               if (probe < 0)
                 {
-                  vs_err("%s: bad file descriptor", word);
+                  vash_err("%s: bad file descriptor", word);
                   free(word);
                   return -1;
                 }
@@ -238,7 +238,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
             }
           else
             {
-              vs_err("%s: ambiguous redirect", word);
+              vash_err("%s: ambiguous redirect", word);
               free(word);
               return -1;
             }
@@ -255,9 +255,9 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
                   {
                     struct stat st;
 
-                    if (stat(VS_FS(word), &st) == 0 && S_ISREG(st.st_mode))
+                    if (stat(VASH_FS(word), &st) == 0 && S_ISREG(st.st_mode))
                       {
-                        vs_err("%s: cannot overwrite existing file", word);
+                        vash_err("%s: cannot overwrite existing file", word);
                         free(word);
                         return -1;
                       }
@@ -273,10 +273,10 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
               default:        break;
             }
 
-          src = open(VS_FS(word), flags, 0666);
+          src = open(VASH_FS(word), flags, 0666);
           if (src < 0)
             {
-              vs_err("%s: %s", word, strerror(errno));
+              vash_err("%s: %s", word, strerror(errno));
               free(word);
               return -1;
             }
@@ -289,7 +289,7 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
     {
       if (!persist)
         {
-          save_add(sv, fd, vs_plat_dup_high(fd));
+          save_add(sv, fd, vash_plat_dup_high(fd));
         }
 
       close(fd);

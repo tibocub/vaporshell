@@ -32,7 +32,7 @@ static void ar_fail(struct ar_s *a, const char *msg)
 {
   if (!a->err)
     {
-      vs_err("arithmetic: %s", msg);
+      vash_err("arithmetic: %s", msg);
       a->err = true;
     }
 }
@@ -167,7 +167,7 @@ static bool read_lvalue(struct ar_s *a, struct lv_s *lv)
   lv->assoc = false;
   lv->key[0] = '\0';
   lv->idx = 0;
-  if (*a->p == '[' && vs_feat(VF_BASH_SYNTAX) && var_is_assoc(lv->name))
+  if (*a->p == '[' && vash_feat(VF_BASH_SYNTAX) && var_is_assoc(lv->name))
     {
       /* an associative array: `u[foo]` names the key foo, not the variable foo */
 
@@ -194,7 +194,7 @@ static bool read_lvalue(struct ar_s *a, struct lv_s *lv)
       return true;
     }
 
-  if (*a->p == '[' && vs_feat(VF_BASH_SYNTAX))
+  if (*a->p == '[' && vash_feat(VF_BASH_SYNTAX))
     {
       long idx;
 
@@ -217,7 +217,7 @@ static bool read_lvalue(struct ar_s *a, struct lv_s *lv)
           idx += top + 1;
           if (idx < 0 || top < 0)
             {
-              vs_err("%s[%ld]: bad array subscript", lv->name, idx - top - 1);
+              vash_err("%s[%ld]: bad array subscript", lv->name, idx - top - 1);
               lv->bad = true;               /* a warning, not an error: as in bash */
             }
         }
@@ -322,7 +322,7 @@ static long parse_primary(struct ar_s *a)
         }
 
       v = strtol(a->p, &end, base);
-      if (*end == '#' && base == 10 && vs_feat(VF_ARITH_EXT) && v >= 2 && v <= 64)
+      if (*end == '#' && base == 10 && vash_feat(VF_ARITH_EXT) && v >= 2 && v <= 64)
         {
           /* base#digits: 0-9 a-z A-Z @ _ (bases above 36 tell case apart) */
 
@@ -381,7 +381,7 @@ static long parse_primary(struct ar_s *a)
         }
 
       ws(a);
-      if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
+      if (vash_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
                                     strncmp(a->p, "--", 2) == 0))
         {
           long old = lv_value(a, &lv);
@@ -423,7 +423,7 @@ static long ipow(struct ar_s *a, long base, long exp)
 static long parse_prefix(struct ar_s *a)
 {
   ws(a);
-  if (vs_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
+  if (vash_feat(VF_ARITH_EXT) && (strncmp(a->p, "++", 2) == 0 ||
                                 strncmp(a->p, "--", 2) == 0) && id_start(a->p[2]))
     {
       struct lv_s lv;
@@ -474,7 +474,7 @@ static long parse_unary(struct ar_s *a)
   long base = parse_prefix(a);
 
   ws(a);
-  if (vs_feat(VF_ARITH_EXT) && a->p[0] == '*' && a->p[1] == '*' && a->p[2] != '=')
+  if (vash_feat(VF_ARITH_EXT) && a->p[0] == '*' && a->p[1] == '*' && a->p[2] != '=')
     {
       a->p += 2;
       return ipow(a, base, parse_unary(a));
@@ -697,7 +697,7 @@ static long parse_assign(struct ar_s *a)
           q++;
         }
 
-      if (*q == '[' && vs_feat(VF_BASH_SYNTAX))
+      if (*q == '[' && vash_feat(VF_BASH_SYNTAX))
         {
           q = skip_subscript(q);
         }
@@ -763,7 +763,7 @@ static long parse_comma(struct ar_s *a)
   long v = parse_assign(a);
 
   ws(a);
-  while (vs_feat(VF_ARITH_EXT) && *a->p == ',' && !a->err)
+  while (vash_feat(VF_ARITH_EXT) && *a->p == ',' && !a->err)
     {
       a->p++;
       v = parse_assign(a);

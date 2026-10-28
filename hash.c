@@ -39,15 +39,15 @@ static void hash_put(const char *name, const char *path, int hits)
 
   if (h == NULL)
     {
-      h = vs_xmalloc(sizeof(*h));
-      h->name = vs_xstrdup(name);
+      h = vash_xmalloc(sizeof(*h));
+      h->name = vash_xstrdup(name);
       h->path = NULL;
       h->next = g_sh.hash;
       g_sh.hash = h;
     }
 
   free(h->path);
-  h->path = vs_xstrdup(path);
+  h->path = vash_xstrdup(path);
   h->hits = hits;
 }
 
@@ -87,7 +87,7 @@ char *hash_find_command(const char *name, const char *path_var, int *err)
 
   if (strchr(name, '/') != NULL)
     {
-      return vs_plat_find_command(name, path_var, err);
+      return vash_plat_find_command(name, path_var, err);
     }
 
   h = hash_get(name);
@@ -96,13 +96,13 @@ char *hash_find_command(const char *name, const char *path_var, int *err)
       if (access(h->path, X_OK) == 0)
         {
           h->hits++;
-          return vs_xstrdup(h->path);
+          return vash_xstrdup(h->path);
         }
 
       hash_drop(name);
     }
 
-  path = vs_plat_find_command(name, path_var, err);
+  path = vash_plat_find_command(name, path_var, err);
   if (path != NULL && strchr(path, '/') != NULL)
     {
       hash_put(name, path, 1);
@@ -117,7 +117,7 @@ int bi_hash(int argc, char **argv)
   int status = 0;
   const char *ppath = NULL;
   bool cleared = false;
-  bool bash = vs_feat(VF_BASH_INFO_FORMATS);
+  bool bash = vash_feat(VF_BASH_INFO_FORMATS);
 
   for (; i < argc && argv[i][0] == '-' && argv[i][1] != '\0'; i++)
     {
@@ -141,7 +141,7 @@ int bi_hash(int argc, char **argv)
             {
               if (hash_get(argv[i]) == NULL)
                 {
-                  vs_err("hash: %s: not found", argv[i]);
+                  vash_err("hash: %s: not found", argv[i]);
                   status = 1;
                 }
               else
@@ -154,7 +154,7 @@ int bi_hash(int argc, char **argv)
         }
       else
         {
-          vs_err("hash: %s: invalid option", argv[i]);
+          vash_err("hash: %s: invalid option", argv[i]);
           return 2;
         }
     }
@@ -163,7 +163,7 @@ int bi_hash(int argc, char **argv)
     {
       if (i >= argc)
         {
-          vs_err("hash: -p: name required");
+          vash_err("hash: -p: name required");
           return 1;
         }
 
@@ -216,10 +216,10 @@ int bi_hash(int argc, char **argv)
       char *path;
 
       hash_drop(argv[i]);
-      path = vs_plat_find_command(argv[i], var_get("PATH"), &err);
+      path = vash_plat_find_command(argv[i], var_get("PATH"), &err);
       if (path == NULL)
         {
-          vs_err("hash: %s: not found", argv[i]);
+          vash_err("hash: %s: not found", argv[i]);
           status = 1;
           continue;
         }

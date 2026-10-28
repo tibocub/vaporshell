@@ -42,7 +42,7 @@ and MacOS as well.
   POSIX and half-does something else.
 - Small and fast ("bash, but fast"). Every interactive feature's size
   cost is measured (no compile-time switches: what only some users
-  need is an optional `.vsh` file); completion is native code plus
+  need is an optional `.vash` file); completion is native code plus
   declarative, lazily loaded specs rather than shell functions that fork
   helpers. See `docs/interactive.md`.
 - Once that's solid: steal the bash/fish quality-of-life features that
@@ -91,7 +91,7 @@ vaporshell/
                       and stand-in <nuttx/...> headers
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
-  completions/        optional completion specs (git, ssh) for $VS_COMPLETION_PATH
+  completions/        optional completion specs (git, ssh) for $VASH_COMPLETION_PATH
   docs/interactive.md the interactive-shell plan + status (prompt, editor, history, completion, rc files)
   docs/design.md      the design doc -- read this first for anything non-trivial
   tests/              own/ (vs bash and dash), modes/ (per-mode suites),
@@ -141,7 +141,7 @@ can declare what NuttX cannot do with a `# requires: ...` line (see
 `NUTTX_LACKS` in `run-differential.py`); those are reported as skipped.
 
 Everything in `libapps.a` shares one flat symbol namespace, so give any new
-global a `vs_`/`g_vs_` style name; `symcheck` finds the ones that clash
+global a `vash_`/`g_vash_` style name; `symcheck` finds the ones that clash
 (the first version collided with NuttX's own `g_builtins`).
 
 Standalone (Linux, macOS, BSD), from a plain checkout:
@@ -229,7 +229,7 @@ variables are visible inside `$(...)` and builtins work in pipelines. What
 differs from a real subshell: it is not concurrent (an endless in-process
 producer piped into `head` never ends), `&` only works for external
 programs, and nested `$(...)` uses the shell's own task stack (raise the
-stack size for deeply nested scripts). This needs pthreads. `VS_INPROC=1` runs
+stack size for deeply nested scripts). This needs pthreads. `VASH_INPROC=1` runs
 the same code on a host, which `make check` uses to test it against bash and
 dash.
 
@@ -426,13 +426,13 @@ Done, in `ledit.c`, `history.c`, `complete.c`, `compgen.c`, `compfish.c`,
       `bind` / `~/.inputrc` key bindings
 - [x] tab completion with a selectable menu: commands (cached `$PATH`
       table), paths, variables, jobs, `~user`, `CDPATH`, per-command specs
-      (bash `complete` and fish-style flags, lazy `.vsh` files), case-
+      (bash `complete` and fish-style flags, lazy `.vash` files), case-
       insensitive and substring fallback matching
 - [x] fish-style autosuggestion from history and syntax highlighting
       (command valid/invalid, quotes, existing paths, comments)
 - [x] reverse search (`Ctrl-R`)
 - [x] persistent history, `!!` / `!$` / `!n` / `!prefix` / `^a^b` expansion
-- [x] `.bashrc`-style startup (`~/.vaporshellrc`, `~/.vsh_profile`, `/etc/vaporshell/vsh.conf`)
+- [x] `.bashrc`-style startup (`~/.vashrc`, then `~/.bashrc` / the login files unless `LOAD_BASH_FILES=0`; `/etc/vaporshell/vash.conf`)
 - [x] prompt escapes (`\u \h \w \$ ...`), `PROMPT_COMMAND`, `PROMPT_DIRTRIM`
 
 

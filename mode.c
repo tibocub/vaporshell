@@ -31,12 +31,12 @@
    BIT(VF_LOCAL_INHERITS) | BIT(VF_ALIAS_SCRIPTS) | BIT(VF_OPTARG_EMPTY) | \
    BIT(VF_NOTFOUND_127))
 
-void vs_mode_set(enum vs_profile_e p)
+void vash_mode_set(enum vash_profile_e p)
 {
   g_sh.profile = (int)p;
-  g_sh.features = (p == VS_PROFILE_POSIX) ? POSIX_FEATURES : BASH_FEATURES;
+  g_sh.features = (p == VASH_PROFILE_POSIX) ? POSIX_FEATURES : BASH_FEATURES;
 
-  if (p == VS_PROFILE_POSIX)
+  if (p == VASH_PROFILE_POSIX)
     {
       /* Like bash: scripts (and child shells) can tell. */
 
@@ -47,17 +47,17 @@ void vs_mode_set(enum vs_profile_e p)
     }
 }
 
-enum vs_profile_e vs_mode_get(void)
+enum vash_profile_e vash_mode_get(void)
 {
-  return (enum vs_profile_e)g_sh.profile;
+  return (enum vash_profile_e)g_sh.profile;
 }
 
-unsigned vs_mode_bit(void)
+unsigned vash_mode_bit(void)
 {
-  return g_sh.profile == VS_PROFILE_POSIX ? VS_M_POSIX : VS_M_BASH;
+  return g_sh.profile == VASH_PROFILE_POSIX ? VASH_M_POSIX : VASH_M_BASH;
 }
 
-const char *vs_mode_name(void)
+const char *vash_mode_name(void)
 {
-  return g_sh.profile == VS_PROFILE_POSIX ? "posix" : "bash";
+  return g_sh.profile == VASH_PROFILE_POSIX ? "posix" : "bash";
 }

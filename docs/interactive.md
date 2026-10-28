@@ -10,9 +10,9 @@ the status tables below in the same commit.
 ## Principles
 
 1. **Small.** Every feature's cost is measured (`size`, see "Budget") and
-   anything useful to only some users is an optional `.vsh` file, not code.
-   Behaviours that cost run time switch off with a variable (`VS_AUTOSUGGEST`,
-   `VS_HIGHLIGHT`, ...). There are no compile-time switches: the whole editor,
+   anything useful to only some users is an optional `.vash` file, not code.
+   Behaviours that cost run time switch off with a variable (`VASH_AUTOSUGGEST`,
+   `VASH_HIGHLIGHT`, ...). There are no compile-time switches: the whole editor,
    completion and fish specs are 17 + 6 + 3 KB of flash, and nothing allocates
    until it is used, while the constraint on the RP2040 is its 264 KB of RAM,
    not its flash. Add switches only if flash ever gets tight.
@@ -23,7 +23,7 @@ the status tables below in the same commit.
    no startup work that is not needed to print the first prompt, everything
    else loaded lazily.
 3. **One editor, two platforms.** The same editor runs on Linux and on
-   vaporOS. All OS differences go through `platform.h` (`vs_plat_tty_*`), like
+   vaporOS. All OS differences go through `platform.h` (`vash_plat_tty_*`), like
    the rest of the shell. NuttX's `apps/system/readline` is *not* used by the
    editor: it cannot redraw under our control, so no suggestions, highlighting
    or pager, and it needs patches that have already stopped applying.
@@ -41,9 +41,9 @@ the status tables below in the same commit.
 | Interpreter (bash + POSIX modes) | essentially complete, see the coverage docs |
 | Prompt | escapes, promptvars, `PROMPT_COMMAND`, `PROMPT_DIRTRIM` (Tier 1) |
 | Line editing | own editor (`ledit.c`) on Linux and vaporOS; verified on the simulator and on the RP2040 over USB |
-| History | in-memory + `HISTFILE` (default `~/.vsh_history`); `history` builtin; `fc -l/-s`; `!` expansion (see below) |
+| History | in-memory + `HISTFILE` (default `~/.vash_history`); `history` builtin; `fc -l/-s`; `!` expansion (see below) |
 | Completion | `complete.c`: command names from a cached sorted `$PATH` table, paths, `$VARIABLES`, and per-command specs registered with `complete` (`-W -A -f -d -P -S -X` and `-F` functions); asks before listing more than 100; `compgen` works in scripts; `bind` is real (`bind.c`) |
-| Startup files | `/etc/vaporshell/vsh.conf`, then `~/.inputrc`, then `~/.vaporshellrc` (`$VS_RC`); `~/.vsh_profile` for `--login`; `--norc`, `--rcfile` |
+| Startup files | `/etc/vaporshell/vash.conf`, `~/.inputrc`, `~/.vashrc` (`$VASH_RC`), then the bash files unless `LOAD_BASH_FILES=0`; `--norc`, `--rcfile` |
 | Job control | `jobs`/`fg`/`bg`/`wait`/`disown`; no Ctrl-Z (NuttX has no process groups) |
 
 ## Feature list and status
@@ -57,7 +57,7 @@ the status tables below in the same commit.
 | `PS1`/`PS2` backslash escapes (`\u \h \H \w \W \$ \t \T \@ \A \d \! \# \j \s \v \V \n \r \e \a \\ \[ \]`, `\nnn`, `\D{fmt}`), also `${PS1@P}` | ✓ (`prompt.c`; `\l` prints `tty`) | `\[ \]` give the editor the true display width |
 | `$PS1` parameter/command expansion (`promptvars`) | ✓ (no `shopt promptvars` switch yet) | |
 | `PROMPT_COMMAND`, `PROMPT_DIRTRIM` | ✓ (`PROMPT_COMMAND` as a string, not an array) | |
-| Raw-terminal seam in `platform.h` | ✓ (`vs_plat_tty_raw/read`, `vs_plat_rows`) | enter/leave raw mode, read a byte with timeout, columns |
+| Raw-terminal seam in `platform.h` | ✓ (`vash_plat_tty_raw/read`, `vash_plat_rows`) | enter/leave raw mode, read a byte with timeout, columns |
 | Editor core: insert/delete, cursor motion, UTF-8 aware, wide characters | ✓ (`ledit.c`) | `mb.c` already decodes characters |
 | Emacs keys (Ctrl-A/E/B/F/D/H/K/U/W/Y/T/L, Alt-B/F/D/U/L/C/Backspace) | ✓ | |
 | Arrows, Home/End/Delete, Ctrl/Alt-arrows | ✓ | |
@@ -70,29 +70,29 @@ the status tables below in the same commit.
 | `!!`, `!$`, `!n`, `!-n`, `!prefix`, `!?text?`, `!^ !*`, `:n`, `^a^b^` history expansion | ✓ (`history.c`) | interactive only, on the line as typed (the expanded line is shown, like bash); not inside single quotes or after a backslash; words split on blanks (quotes not understood); `set +H` turns it off; no `:s/a/b/` modifiers |
 | Ctrl-C at the prompt; Ctrl-C reaches the foreground child | ◐ prompt ✓ (at a `>` continuation prompt it drops the whole command, like bash); child ✗ (editor is out of raw mode while it runs, so the tty sends SIGINT as usual on Linux) | needs care without process groups |
 | `COLUMNS`/`LINES`, SIGWINCH | ◐ | width is re-read on every redraw, so a resize heals at the next key; `$COLUMNS` fallback; no `$LINES` |
-| Bracketed paste | ✓ (on by default on Linux; `VS_BRACKETED_PASTE=1` on vaporOS, off until verified there) | |
+| Bracketed paste | ✓ (on by default on Linux; `VASH_BRACKETED_PASTE=1` on vaporOS, off until verified there) | |
 
 ### Tier 2: startup files and configuration
 
 | Feature | Status | Notes |
 |---|---|---|
-| `/etc/vaporshell/vsh.conf`, then `$VS_RC` or `~/.vaporshellrc` | ✓ (`rcfile.c`) | where `$HOME` is unset (vaporOS today) `/data` stands in |
-| Login shell (`-l`, `--login`, or argv[0] starting with `-`) and `~/.vsh_profile` | ✓ | |
+| `/etc/vaporshell/vash.conf`, then `$VASH_RC` or `~/.vashrc` | ✓ (`rcfile.c`) | where `$HOME` is unset (vaporOS today) `/data` stands in |
+| Login shell (`-l`, `--login`, or argv[0] starting with `-`): `/etc/profile`, first of `~/.bash_profile` `~/.bash_login` `~/.profile` | ✓ | unless `LOAD_BASH_FILES=0` |
 | `--rcfile FILE` (`--init-file`), `--norc` | ✓ | a failing rc file does not end the session; POSIX mode reads none |
-| `~/.bashrc` | ✓ by design: never read implicitly | opt in with `source ~/.bashrc` from the rc file |
+| `~/.bashrc` | ✓ read after `~/.vashrc` | `LOAD_BASH_FILES=0` in `~/.vashrc` turns the bash files off |
 | `bind` for real (`bind '"\C-x": kill-line'`, `bind -x '"\C-g": code'` with `READLINE_LINE`/`READLINE_POINT`, `-r -l -p`) | ✓ (`bind.c`) | keys are single keys or escape sequences, no chords, no macros; `~/.inputrc` (or `$INPUTRC`) is read before the rc file, and `bind -f FILE` reads one: only `"keys": command` lines count, `set`/`$if` and function names we lack are skipped silently. 36 editor commands under readline's names |
-| `$VS_*` look-and-feel variables (colors, suggestions on/off) | ◐ | `VS_AUTOSUGGEST`, `VS_HIGHLIGHT`, `VS_BRACKETED_PASTE`, `VS_COMPLETION_PATH`, `VS_COMPLETION_TIMEOUT`, `VS_RC`; colors are fixed |
+| `$VASH_*` look-and-feel variables (colors, suggestions on/off) | ◐ | `VASH_AUTOSUGGEST`, `VASH_HIGHLIGHT`, `VASH_BRACKETED_PASTE`, `VASH_COMPLETION_PATH`, `VASH_COMPLETION_TIMEOUT`, `VASH_RC`; colors are fixed |
 | `set -o emacs` / `set -o vi` | ✗ | vi last |
 
 ### Tier 3: fish/zsh quality of life
 
 | Feature | Status | Notes |
 |---|---|---|
-| Autosuggestion from history (grey text; Right/End/Ctrl-F/Ctrl-E accepts) | ✓ | newest matching entry; `VS_AUTOSUGGEST=0` turns it off; Alt-F / Ctrl-Right at the end takes one word of it |
-| Syntax highlighting while typing (valid command / path / quote / error) | ✓ | command words green (runs something) or red (does not); text in quotes yellow (from the opening quote to the closing one, or to the end of the line if it is not closed: no separate error colour); a `#` comment grey; arguments that are existing paths underlined (at most 16 `stat` calls per redraw); `VS_HIGHLIGHT=0` turns it off. Redirection targets are checked like any argument; words with an expansion in them are not marked |
+| Autosuggestion from history (grey text; Right/End/Ctrl-F/Ctrl-E accepts) | ✓ | newest matching entry; `VASH_AUTOSUGGEST=0` turns it off; Alt-F / Ctrl-Right at the end takes one word of it |
+| Syntax highlighting while typing (valid command / path / quote / error) | ✓ | command words green (runs something) or red (does not); text in quotes yellow (from the opening quote to the closing one, or to the end of the line if it is not closed: no separate error colour); a `#` comment grey; arguments that are existing paths underlined (at most 16 `stat` calls per redraw); `VASH_HIGHLIGHT=0` turns it off. Redirection targets are checked like any argument; words with an expansion in them are not marked |
 | Completion menu: grid with selection, Shift-Tab, descriptions | ✓ | opens under the line when Tab adds nothing; Tab/Shift-Tab/arrows move (column-major like bash), Enter takes the choice without running the line, Esc drops it, any other key closes it; scrolls ("rows a-b of n") when it does not fit; descriptions switch it to one column. Checked on the RP2040 |
-| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | any command with a `complete` spec (bash flags, or fish flags `-c -s -l -o -d -a -n -f -x -r -e`); specs load lazily from `$VS_COMPLETION_PATH` (`<cmd>.vsh`, default `~/.config/vaporshell/completions:/etc/vaporshell/completions`) the first time the command is completed, and the shell's own commands have built-in defaults (`cd` → directories, `unset` → variables, `help` → builtins ...). The commands vaporOS runs through tbx (`ls`, `grep`, `sed`, `find` ... 52 of them) complete their options (`ls -<Tab>`): the option names are compiled in from `comp_defaults.h` (about 3 KB, NuttX build only), and `vaporOS-coreutils/completions/*.vsh` has the same with a description per option, for `$VS_COMPLETION_PATH`. Both are generated from toybox's own help text by `vaporOS-coreutils/scripts/gen-completions.py`. Anything useful only to some users is an optional `.vsh` file, not code in the binary: `completions/git.vsh` (subcommands, branches and tags) and `completions/ssh.vsh` (hosts from `~/.ssh/config` and `known_hosts`) are in this repository. `kill -<Tab>` offers signal names (`-A signal`, names from the trap table). Fish-style specs (`compfish.c`): `-a` takes words (`word<TAB>text` gives a word its own description), not command substitutions; conditions are shell code run with `COMP_WORDS` set (slow lane: a function or condition is cut off after `$VS_COMPLETION_TIMEOUT` ms, default 300, checked between commands, so one long external program still blocks); no `-k`, `--wraps` |
-| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ✓ except hostnames | `$VAR`, `${VAR}`, `~`, `~/path`, `~user` (host builds: NuttX has no user database to read), `%N` jobs with their command shown (`fg`, `bg`, `kill`, `wait`, `disown` complete them by default), and `cd`/`pushd` also offer the directories under `$CDPATH`. They are also `compgen -A job`, `-A user` and `-A cdpath`. Hostnames are left to an optional `.vsh` spec (there is no ssh on vaporOS to ask) |
+| Option-aware completion (`git <Tab>`, `ls -<Tab>`) | ◐ | any command with a `complete` spec (bash flags, or fish flags `-c -s -l -o -d -a -n -f -x -r -e`); specs load lazily from `$VASH_COMPLETION_PATH` (`<cmd>.vash`, default `~/.config/vaporshell/completions:/etc/vaporshell/completions`) the first time the command is completed, and the shell's own commands have built-in defaults (`cd` → directories, `unset` → variables, `help` → builtins ...). The commands vaporOS runs through tbx (`ls`, `grep`, `sed`, `find` ... 52 of them) complete their options (`ls -<Tab>`): the option names are compiled in from `comp_defaults.h` (about 3 KB, NuttX build only), and `vaporOS-coreutils/completions/*.vash` has the same with a description per option, for `$VASH_COMPLETION_PATH`. Both are generated from toybox's own help text by `vaporOS-coreutils/scripts/gen-completions.py`. Anything useful only to some users is an optional `.vash` file, not code in the binary: `completions/git.vash` (subcommands, branches and tags) and `completions/ssh.vash` (hosts from `~/.ssh/config` and `known_hosts`) are in this repository. `kill -<Tab>` offers signal names (`-A signal`, names from the trap table). Fish-style specs (`compfish.c`): `-a` takes words (`word<TAB>text` gives a word its own description), not command substitutions; conditions are shell code run with `COMP_WORDS` set (slow lane: a function or condition is cut off after `$VASH_COMPLETION_TIMEOUT` ms, default 300, checked between commands, so one long external program still blocks); no `-k`, `--wraps` |
+| Completion of variables, `~user`, jobs, `cd` CDPATH, hostnames | ✓ except hostnames | `$VAR`, `${VAR}`, `~`, `~/path`, `~user` (host builds: NuttX has no user database to read), `%N` jobs with their command shown (`fg`, `bg`, `kill`, `wait`, `disown` complete them by default), and `cd`/`pushd` also offer the directories under `$CDPATH`. They are also `compgen -A job`, `-A user` and `-A cdpath`. Hostnames are left to an optional `.vash` spec (there is no ssh on vaporOS to ask) |
 | Case-insensitive and substring/fuzzy fallback matching | ✓ | when nothing starts with the word: names that start with it in another case, then names that contain it; they replace what was typed (the menu puts it back on Esc). Commands, files, directories and variables; not the candidates of a `complete` spec, which a spec filters itself. 0.2 ms worst case for a command |
 | Abbreviations (`abbr`) | ✗ | |
 | `..` / `...` / `cd -` / `autocd` | ✗ | |
@@ -119,7 +119,7 @@ history.c           history store, HISTFILE load/save, `history`, `fc`, `!` expa
 complete.c          candidate generation (shared by Tab, compgen and the menu)
 comp_spec.c         declarative specs: `complete -c cmd -s/-l/-a/-n ...`, lazy autoload
 rcfile.c            which startup files, in which order
-platform.h          vs_plat_tty_raw(), vs_plat_tty_read(), ... (NuttX + posix implementations)
+platform.h          vash_plat_tty_raw(), vash_plat_tty_read(), ... (NuttX + posix implementations)
 ```
 
 The editor's contract with the rest of the shell is the existing one:
@@ -135,17 +135,17 @@ current line plus a bounded history; there is no per-key allocation.
 
 ### Platform seam
 
-(NuttX: the console starts in canonical mode with echo, so its driver echoes keys, turns CR into LF and swallows backspace and delete. `vs_plat_tty_raw` clears ECHO, ICANON, ICRNL and ISIG through `tcsetattr`, which works without `CONFIG_SERIAL_TERMIOS`; that option only gates baud and VMIN/VTIME.)
+(NuttX: the console starts in canonical mode with echo, so its driver echoes keys, turns CR into LF and swallows backspace and delete. `vash_plat_tty_raw` clears ECHO, ICANON, ICRNL and ISIG through `tcsetattr`, which works without `CONFIG_SERIAL_TERMIOS`; that option only gates baud and VMIN/VTIME.)
 
 `platform.h` gains:
 
-- `vs_plat_tty_raw(bool on)`: switch the input terminal to raw (no echo, no
+- `vash_plat_tty_raw(bool on)`: switch the input terminal to raw (no echo, no
   line buffering, no signal characters except what we map ourselves).
   Posix: `termios`. NuttX: `termios` where `CONFIG_SERIAL_TERMIOS`, otherwise
   a no-op because NuttX serial devices already deliver bytes immediately.
-- `vs_plat_tty_read(unsigned char *c, int timeout_ms)`: one byte, with a
+- `vash_plat_tty_read(unsigned char *c, int timeout_ms)`: one byte, with a
   timeout (needed to tell a lone ESC from an escape sequence).
-- `vs_plat_columns()` (exists), `vs_plat_rows()`.
+- `vash_plat_columns()` (exists), `vash_plat_rows()`.
 
 ## Completion: how it stays fast
 
@@ -163,7 +163,7 @@ here is the opposite:
    (`complete -c git -n '__vs_seen_subcommand' -a 'commit push ...' -d ...`),
    fish-style flags accepted by the same `complete` builtin that already takes
    bash's `-F`/`-W`/`-A`. A spec is a few bytes and is evaluated in C.
-4. **Lazy loading.** Specs for `cmd` are read from `$VS_COMPLETION_PATH`
+4. **Lazy loading.** Specs for `cmd` are read from `$VASH_COMPLETION_PATH`
    (`~/.config/vaporshell/completions`, `/etc/vaporshell/completions`, ...)
    the first time `cmd` is completed, never at startup. Startup cost stays
    proportional to the rc file, not to the number of supported tools.
@@ -183,18 +183,20 @@ converter that users run on their own fish install.
 
 ## Startup files
 
-Interactive shell, in order, each only if it exists:
+Interactive shell, in order, each only if it exists (none with `--norc`):
 
-1. `/etc/vaporshell/vsh.conf` (system defaults; vaporOS image).
-2. `$VS_RC`, else `~/.vaporshellrc`. On the vaporOS simulator the interim home
-   is the hostfs-backed `/data`; this must move to `$HOME` once real storage
-   and home directories exist (tracked in `design.md`, "Open questions").
-3. Login shells read `~/.vsh_profile` first.
+1. `/etc/vaporshell/vash.conf` (system defaults; vaporOS image), then `~/.inputrc`.
+2. `--rcfile FILE` or `$VASH_RC`: that file, and nothing more.
+3. Otherwise `~/.vashrc`: optional, for settings that must not touch the user's
+   bash setup. It is read first so it can set `LOAD_BASH_FILES=0`.
+4. Unless `LOAD_BASH_FILES=0` (default: on), the bash files: a login shell
+   (`-l`, `--login`, argv[0] starting with `-`) reads `/etc/profile`, then the
+   first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`; any other
+   interactive shell reads `~/.bashrc`.
 
-`~/.bashrc` is **not** read implicitly: bash rc files assume bash-only
-completion machinery and slow prompt hooks. `source ~/.bashrc` in the rc file
-opts in. `--norc` and `--rcfile FILE` behave as in bash. Non-interactive shells
-read nothing (unchanged).
+On the vaporOS simulator the interim home is the hostfs-backed `/data`; this must
+move to `$HOME` once real storage and home directories exist (tracked in
+`design.md`, "Open questions"). Non-interactive shells read nothing.
 
 ## Budget and measurement
 
