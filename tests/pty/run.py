@@ -420,6 +420,7 @@ def _():
     d = os.path.join(TMP, "globtab"); os.makedirs(d, exist_ok=True)
     for n in ("a.sh", "b.sh", "c.txt", "only.md"):
         open(os.path.join(d, n), "w").close()
+    open(os.path.join(TMP, "home.txt"), "w").close()
     s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
     s.type("rm *.sh"); s.send("\t")
     assert s.screen()[0] == "$ rm *.sh" and s.screen()[1].split() == ["a.sh", "b.sh"], s.screen()
@@ -428,6 +429,8 @@ def _():
     s.send(ENTER)
     s.send(CTRL("U")); s.type("echo *.md"); s.send("\t")        # one match: replaced at once
     expect(s, ["$ echo only.md"])
+    s.send(CTRL("U")); s.type("echo ~/*.txt"); s.send("\t")     # under $HOME, the "~" stays
+    expect(s, ["$ echo ~/home.txt"])
     s.close()
 
 

@@ -675,6 +675,20 @@ static void generate(struct cands_s *c, struct gen_s *g)
     }
 }
 
+static void stat_tilde(const char *name, struct stat *st)
+{
+  char path[VASH_PATH_MAX];
+
+  if (name[0] == '~' && name[1] == '/' && var_get("HOME") != NULL)
+    {
+      snprintf(path, sizeof(path), "%s%s", var_get("HOME"), name + 1);
+      name = path;
+    }
+
+  st->st_mode = 0;
+  stat(VASH_FS(name), st);
+}
+
 /* A word with an unquoted glob in it ("rm *.sh"), not in command position:
  * offer what the pattern matches, each replacing the word, like fish. Returns
  * the number of matches, or 0 to complete the word as a name instead.
@@ -696,7 +710,30 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
     }
 
   fv_init(&fv);
-  n = glob_expand(word, NULL, strlen(word), &fv);
+  if (word[0] == '~' && word[1] == '/' && var_get("HOME") != NULL)
+    {
+      /* "~/" and a glob: the pattern is looked up under $HOME, the matches keep the "~" */
+
+      size_t hl = strlen(var_get("HOME"));
+      char *pat = vash_xmalloc(hl + strlen(word));
+
+      sprintf(pat, "%s%s", var_get("HOME"), word + 1);
+      n = glob_expand(pat, NULL, strlen(pat), &fv);
+      free(pat);
+      for (i = 0; i < fv.n; i++)
+        {
+          char *t = vash_xmalloc(strlen(fv.v[i]) + 2);
+
+          sprintf(t, "~%s", fv.v[i] + hl);
+          free(fv.v[i]);
+          fv.v[i] = t;
+        }
+    }
+  else
+    {
+      n = glob_expand(word, NULL, strlen(word), &fv);
+    }
+
   if (n <= 0)
     {
       fv_free(&fv);
@@ -708,8 +745,7 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
     {
       char *tail;
 
-      st.st_mode = 0;
-      stat(VASH_FS(fv.v[0]), &st);
+      stat_tilde(fv.v[0], &st);
       tail = vash_comp_tail(fv.v[0], S_ISDIR(st.st_mode) ? '/' : ' ', 0);
       if (tail != NULL)
         {
@@ -721,8 +757,7 @@ static int complete_glob(const char *line, int len, const char *raw, const char 
     {
       for (i = 0; i < n; i++)
         {
-          st.st_mode = 0;
-          stat(VASH_FS(fv.v[i]), &st);
+          stat_tilde(fv.v[i], &st);
           list(ctx, fv.v[i], NULL, S_ISDIR(st.st_mode) ? '/' : ' ');
           fv.v[i] = NULL;                    /* the callback keeps the string */
         }
