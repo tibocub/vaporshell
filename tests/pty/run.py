@@ -418,10 +418,9 @@ def _():
 @test("Tab on a glob word cycles through its matches, like fish")
 def _():
     d = os.path.join(TMP, "globtab"); os.makedirs(d, exist_ok=True)
-    for n in ("a.sh", "b.sh", "c.txt", "only.md"):
+    for n in ("a.sh", "b.sh", "home.txt", "only.md"):
         open(os.path.join(d, n), "w").close()
-    open(os.path.join(TMP, "home.txt"), "w").close()
-    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0", "HOME": d})
     s.type("rm *.sh"); s.send("\t")
     assert s.screen()[0] == "$ rm *.sh" and s.screen()[1].split() == ["a.sh", "b.sh"], s.screen()
     s.send("\t"); assert s.screen()[0] == "$ rm a.sh", s.screen()
