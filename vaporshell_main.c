@@ -126,6 +126,8 @@ static int finish(int status)
  * SHLVL (nesting depth, exported).
  */
 
+#define BASH_DEFAULT_PS1 "\\s-\\v\\$ "
+
 static void bash_defaults(const char *argv0, bool prompting)
 {
   char path[VASH_PATH_MAX];
@@ -146,7 +148,7 @@ static void bash_defaults(const char *argv0, bool prompting)
 
       if (var_get("PS1") == NULL)
         {
-          var_set("PS1", DEFAULT_PS1);
+          var_set("PS1", BASH_DEFAULT_PS1);       /* what /etc/bashrc looks for to install its own */
         }
 
       if (var_get("PS2") == NULL)
@@ -315,7 +317,16 @@ static int shell_main(int argc, char *argv[])
         vash_hist_init();
         if (g_sh.profile != VASH_PROFILE_POSIX)
           {
-            vash_rc_load(login || argv[0][0] == '-', norc, rcfile);
+            const char *ps1;
+
+            g_sh.so_expand_aliases = true;                  /* bash turns it on when interactive */
+            g_sh.so_login_shell = login || argv[0][0] == '-';
+            vash_rc_load(g_sh.so_login_shell, norc, rcfile);
+            ps1 = var_get("PS1");
+            if (ps1 != NULL && strcmp(ps1, BASH_DEFAULT_PS1) == 0)
+              {
+                var_set("PS1", DEFAULT_PS1);              /* nothing chose one: use ours */
+              }
           }
       }
 

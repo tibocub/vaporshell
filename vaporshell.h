@@ -439,6 +439,7 @@ struct shell_s
   bool so_extglob;
   bool so_globstar;
   bool so_expand_aliases;
+  bool so_login_shell;        /* set once at startup: shopt login_shell */
   bool so_patsub;
   unsigned char so_generic[64];
 

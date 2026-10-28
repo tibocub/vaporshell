@@ -44,6 +44,7 @@ enum so_id_e
   SO_EXTGLOB,
   SO_GLOBSTAR,
   SO_EXPAND_ALIASES,
+  SO_LOGIN_SHELL,
   SO_PATSUB,
   SO_INHERIT_ERREXIT,
   SO_XPG_ECHO
@@ -100,7 +101,7 @@ static const struct
   { "lithist", false, SO_NOOP, SO_NONE },
   { "localvar_inherit", false, SO_UNSUP, SO_NONE },
   { "localvar_unset", false, SO_UNSUP, SO_NONE },
-  { "login_shell", false, SO_UNSUP, SO_NONE },
+  { "login_shell", false, SO_IMPL, SO_LOGIN_SHELL },
   { "mailwarn", false, SO_NOOP, SO_NONE },
   { "no_empty_cmd_completion", false, SO_NOOP, SO_NONE },
   { "nocaseglob", false, SO_IMPL, SO_NOCASEGLOB },
@@ -132,6 +133,7 @@ static bool *impl_slot(enum so_id_e id)
       case SO_EXTGLOB:        return &g_sh.so_extglob;
       case SO_GLOBSTAR:       return &g_sh.so_globstar;
       case SO_EXPAND_ALIASES: return &g_sh.so_expand_aliases;
+      case SO_LOGIN_SHELL: return &g_sh.so_login_shell;
       case SO_PATSUB:         return &g_sh.so_patsub;
       default:                return NULL;
     }

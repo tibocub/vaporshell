@@ -369,6 +369,8 @@ def _():
     s = shell(env={"HOME": home}, args=["--login"])
     time.sleep(0.5)                                  # the machine's own /etc/profile runs first
     assert s.screen()[-1] == "profile>", s.screen()
+    s.type("shopt -q login_shell && echo LOGIN; shopt -q expand_aliases && echo ALIASES"); s.send(ENTER)
+    assert "LOGIN" in s.screen() and "ALIASES" in s.screen(), s.screen()
     s.close()
 
 
