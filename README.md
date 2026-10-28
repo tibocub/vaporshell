@@ -162,6 +162,20 @@ make strict                 # fortify off, -Werror (what Fedora sees)
 ```
 
 
+## VERSIONING
+
+The version lives in `version.h` (`vaporshell --version`, `$VAPORSHELL_VERSION`);
+release tags are `vMAJOR.MINOR.PATCH`.
+
+- `0.X.Y` -> `0.X.Y+1`: fixes and small additions, a drop-in upgrade; any
+  `0.X.*` is compatible with any other `0.X.*`.
+- `0.X.0` -> `0.X+1.0`: new features; things may still break while major is 0.
+- `X.0.0`: a big turn, deep incompatibility with the previous major is allowed.
+- `1.0.0`: declared once the author has daily-driven vaporshell for a few
+  weeks without problems.
+
+Bump `version.h`, commit, then `git tag -a vX.Y.Z`.
+
 ## STATUS
 
 [#status](#status)

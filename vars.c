@@ -21,6 +21,7 @@
 #include "platform.h"
 #include "mode.h"
 #include "exec.h"
+#include "version.h"
 
 #ifdef VAPORSHELL_POSIX
 struct shell_s g_vs_state;
@@ -203,6 +204,11 @@ static const char *bash_var(const char *name)
   if (strcmp(name, "BASH_VERSION") == 0)
     {
       return "5.3.0(1)-vaporshell";
+    }
+
+  if (strcmp(name, "VAPORSHELL_VERSION") == 0)
+    {
+      return VAPORSHELL_VERSION;
     }
 
   if (strcmp(name, "UID") == 0 || strcmp(name, "EUID") == 0)

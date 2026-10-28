@@ -28,6 +28,7 @@
 #include "ledit.h"
 #include "prompt.h"
 #include "rcfile.h"
+#include "version.h"
 
 /* The line editor when standard input is a terminal; else (a forced -i with
  * a pipe) the prompt is written and a plain line read.
@@ -153,6 +154,12 @@ static int shell_main(int argc, char *argv[])
         {
           i++;
           break;
+        }
+
+      if (strcmp(argv[i], "--version") == 0)
+        {
+          printf("vaporshell, version %s\n", VAPORSHELL_VERSION);
+          return 0;
         }
 
       if (strcmp(argv[i], "--login") == 0)
