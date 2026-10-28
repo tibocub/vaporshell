@@ -413,16 +413,24 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
               size_t j = lx->pos + 1;
               int depth = 1;
 
-              while (j < lx->len && depth > 0)
+              for (; ; )
                 {
-                  if (lx->buf[j] == '\\')
+                  while (j < lx->len && depth > 0)
                     {
-                      j += 2;
+                      if (lx->buf[j] == '\\')
+                        {
+                          j += 2;
+                        }
+                      else
+                        {
+                          depth += (lx->buf[j] == '(') - (lx->buf[j] == ')');
+                          j++;
+                        }
                     }
-                  else
+
+                  if (depth == 0 || !lex_more(lx))   /* the pattern may span lines */
                     {
-                      depth += (lx->buf[j] == '(') - (lx->buf[j] == ')');
-                      j++;
+                      break;
                     }
                 }
 

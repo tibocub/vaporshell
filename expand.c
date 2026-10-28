@@ -370,8 +370,82 @@ static void x_scan(struct xctx_s *x, const char *s, size_t len, bool dq,
 static void x_operand(struct xctx_s *x, const char *word, size_t n, bool dq)
 {
   char *copy = vash_xstrndup(word, n);
+  const char *ifs = var_get("IFS");
+  size_t i = 0;
+  size_t start = 0;
 
-  x_scan(x, copy, n, dq, false);
+  if (dq || !x->split)
+    {
+      x_scan(x, copy, n, dq, false);
+      free(copy);
+      return;
+    }
+
+  /* Unquoted, so splitting applies to the operand's own blanks too:
+   * ${v:+-- "$x"} is two words. shortcut: quotes inside a nested ${...}/$(...)
+   * are not looked at when matching its end; fix if a case turns up.
+   */
+
+  if (ifs == NULL)
+    {
+      ifs = " \t\n";
+    }
+
+  while (i <= n)
+    {
+      char c = i < n ? copy[i] : '\0';
+
+      if (c == '\\' && i + 1 < n)
+        {
+          i += 2;
+        }
+      else if (c == '\'' || c == '"')
+        {
+          size_t e;
+
+          if ((c == '\'' ? ws_skip_squote(copy, n, i, &e) : ws_skip_dquote(copy, n, i, &e)) != WS_OK)
+            {
+              e = n;
+            }
+
+          i = e;
+        }
+      else if (c == '$' && i + 1 < n && (copy[i + 1] == '{' || copy[i + 1] == '('))
+        {
+          char open = copy[i + 1];
+          char close = open == '{' ? '}' : ')';
+          int depth = 0;
+
+          for (i++; i < n; i++)
+            {
+              depth += (copy[i] == open) - (copy[i] == close);
+              if (depth == 0)
+                {
+                  i++;
+                  break;
+                }
+            }
+        }
+      else if (i == n || ((c == ' ' || c == '\t' || c == '\n') && strchr(ifs, c) != NULL))
+        {
+          if (i > start)
+            {
+              x_scan(x, copy + start, i - start, false, false);
+            }
+
+          if (i < n)
+            {
+              x_push(x);               /* a blank of the operand ends the field */
+            }
+
+          start = ++i;
+        }
+      else
+        {
+          i++;
+        }
+    }
+
   free(copy);
 }
 
@@ -1326,11 +1400,13 @@ static int cmp_names(const void *a, const void *b)
   return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
+static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq);
+
 static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
 {
   size_t nl = 0;
 
-  while (nl < n && (nl == 0 ? nm_start(in[nl]) : nm_char(in[nl])))
+  while (nl < n && (nl == 0 ? (nm_start(in[nl]) || (in[nl] >= '0' && in[nl] <= '9')) : nm_char(in[nl])))
     {
       nl++;
     }
@@ -1376,6 +1452,15 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
         {
           vash_err("%s: invalid variable name", nm);
           x->error = true;
+          return;
+        }
+
+      if (strchr(val, '[') != NULL)             /* ref="arr[2]": an element */
+        {
+          char *copy = vash_xstrdup(val);
+
+          x_braced(x, copy, strlen(copy), dq);
+          free(copy);
           return;
         }
 
@@ -1454,6 +1539,31 @@ static void x_indirect(struct xctx_s *x, const char *in, size_t n, bool dq)
         }
 
       free(names);
+      return;
+    }
+
+  if (nl > 0 && nl < n && nl < 128 && strchr(":-=?+#%/^,", in[nl]) != NULL)
+    {
+      /* ${!name-word} and the like: the operator applies to the variable name holds */
+
+      char nm[128];
+      char buf[32];
+      const char *val;
+      char *tmp;
+
+      memcpy(nm, in, nl);
+      nm[nl] = '\0';
+      if (!get_param(nm, nl, &val, buf, sizeof(buf)) || val[0] == '\0')
+        {
+          vash_err("%s: invalid indirect expansion", nm);
+          x->error = true;
+          return;
+        }
+
+      tmp = vash_xmalloc(strlen(val) + (n - nl) + 1);
+      sprintf(tmp, "%s%.*s", val, (int)(n - nl), in + nl);
+      x_braced(x, tmp, strlen(tmp), dq);
+      free(tmp);
       return;
     }
 
@@ -1958,7 +2068,7 @@ static void x_braced_inner(struct xctx_s *x, const char *in, size_t n, bool dq)
   const char *word = NULL;
   size_t wn = 0;
 
-  if (vash_feat(VF_PARAM_EXT) && n > 1 && in[0] == '!' && nm_start(in[1]))
+  if (vash_feat(VF_PARAM_EXT) && n > 1 && in[0] == '!' && (nm_start(in[1]) || (in[1] >= '0' && in[1] <= '9')))
     {
       x_indirect(x, in + 1, n - 1, dq);
       return;

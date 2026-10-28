@@ -198,6 +198,18 @@ On the vaporOS simulator the interim home is the hostfs-backed `/data`; this mus
 move to `$HOME` once real storage and home directories exist (tracked in
 `design.md`, "Open questions"). Non-interactive shells read nothing.
 
+## bash_completion
+
+The system `bash_completion` (and its `completions/` files) loads and works when
+sourced from `~/.vashrc`: `. /usr/share/bash-completion/bash_completion`. What it
+needed, all now in: `;;&`/`;&` on their own line, multi-line extglob in `[[ ]]`,
+`${!name-word}` and `${!1}`, `printf -v name[i]`, `local x` twice, `unset` of a
+caller's local (the "upvars" idiom), `compgen -V` and `-W` with expansions,
+`complete -D`/`-a`/`--` (a `-D` function answering 124 reloads the spec),
+`compopt -o nospace`, `type -P`, `caller`. Not done: `compopt -o filenames/nosort`,
+`-E`/`-I` specs being consulted, `COMP_TYPE`/`COMP_KEY`. It is slower than the native
+completion (it is bash code), so it is opt-in: the native completions stay the default.
+
 ## Budget and measurement
 
 Recorded per tier with `size build/vaporshell` (text+data) and, for the speed

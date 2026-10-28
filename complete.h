@@ -46,6 +46,7 @@ int vash_comp_from_spec(const char *cmd, const char *line, int point, const char
 
 void vash_commands_refresh(void);
 bool vash_is_command(const char *name);
+bool vash_comp_nospace(void);   /* compopt -o nospace in the completion function that just ran (compgen.c) */
 void vash_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
 void vash_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 

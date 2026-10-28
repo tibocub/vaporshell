@@ -370,6 +370,25 @@ def _():
     s.close()
 
 
+@test("bash_completion: loads from ~/.vashrc, ls --vers<Tab> and a complete -D lazy load work")
+def _():
+    bc = "/usr/share/bash-completion/bash_completion"
+    if not os.path.exists(bc):
+        return
+    home = os.path.join(TMP, "bchome"); os.makedirs(home, exist_ok=True)
+    open(os.path.join(home, ".vashrc"), "w").write(
+        "LOAD_BASH_FILES=0\n. %s\n"
+        "_lazy() { _fake() { COMPREPLY=(alpha-one alpha-two); }; complete -F _fake fakecmd; return 124; }\n"
+        "complete -F _lazy -D\n" % bc)
+    s = shell(env={"HOME": home, "VASH_AUTOSUGGEST": "0"})
+    time.sleep(1.5)
+    s.type("ls --vers"); s.send("\t")
+    assert s.screen()[-1] == "$ ls --version", s.screen()
+    s.send(CTRL("U")); s.type("fakecmd alpha-t"); s.send("\t")             # -D function loads the spec, 124 retries
+    assert s.screen()[-1] == "$ fakecmd alpha-two", s.screen()
+    s.close()
+
+
 @test("a broken rc file does not end the session")
 def _():
     rc = os.path.join(TMP, "broken.rc")

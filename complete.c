@@ -535,7 +535,20 @@ static void spec_cand(void *ctx, const char *name, const char *desc)
       return;
     }
 
-  cands_add(sc->c, sc->word, name, ' ', desc);
+  if (n > 1 && name[n - 1] == ' ')            /* "word ": the space is the suffix */
+    {
+      char *bare = strndup(name, n - 1);
+
+      if (bare != NULL)
+        {
+          cands_add(sc->c, sc->word, bare, vash_comp_nospace() ? '\0' : ' ', desc);
+          free(bare);
+        }
+
+      return;
+    }
+
+  cands_add(sc->c, sc->word, name, vash_comp_nospace() ? '\0' : ' ', desc);
 }
 
 struct word_ctx_s

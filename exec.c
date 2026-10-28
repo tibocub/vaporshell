@@ -376,6 +376,9 @@ static int call_function(struct func_s *f, int argc, char **argv)
   int nargs = argc - 1;
   int saved_loops;
   struct frame_s frame;
+  struct arena_s *arena = f->arena;          /* the function may unset itself while it runs: */
+  char *fname;                               /* keep what it needs of f, not f */
+  char *fsrc;
 
   if (g_sh.func_depth >= MAX_FUNC_DEPTH)
     {
@@ -391,7 +394,9 @@ static int call_function(struct func_s *f, int argc, char **argv)
 
   old = pos_swap(args, nargs, &old_n);
   g_sh.func_depth++;
-  arena_retain(f->arena);
+  arena_retain(arena);
+  fname = vash_xstrdup(f->name);
+  fsrc = vash_xstrdup(f->src);
 
   /* break/continue are lexical: a loop outside the function is not one the
    * function can leave (bash and dash agree; measured in docs/modes.md).
@@ -399,9 +404,11 @@ static int call_function(struct func_s *f, int argc, char **argv)
 
   saved_loops = g_sh.loop_depth;
   g_sh.loop_depth = 0;
-  frame_push(&frame, f->name, f->src, g_sh.lineno, true);
+  frame_push(&frame, fname, fsrc, g_sh.lineno, true);
   status = exec_node(f->body);
   frame_pop(&frame);
+  free(fname);
+  free(fsrc);
   g_sh.loop_depth = saved_loops;
   if (g_sh.unwind == UW_RETURN)
     {
@@ -409,7 +416,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
       status = g_sh.last_status;
     }
 
-  arena_release(f->arena);
+  arena_release(arena);
   var_locals_pop(g_sh.func_depth);
   g_sh.func_depth--;
   /* RETURN is not inherited by functions: only one set inside this very

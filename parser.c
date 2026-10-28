@@ -152,7 +152,7 @@ static bool at_list_end(struct parser_s *p)
   size_t i;
 
   if (t->type == T_EOF || t->type == T_ERROR || t->type == T_RPAREN ||
-      t->type == T_DSEMI)
+      t->type == T_DSEMI || t->type == T_SEMIAMP || t->type == T_DSEMIAMP)
     {
       return true;
     }

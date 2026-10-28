@@ -754,7 +754,13 @@ int bi_printf(int argc, char **argv)
 
   if (vash_feat(VF_PRINTF_EXT) && i < argc && strcmp(argv[i], "-v") == 0)
     {
-      if (i + 1 >= argc || !is_valid_name(argv[i + 1], strlen(argv[i + 1])))
+      const char *br = i + 1 < argc ? strchr(argv[i + 1], '[') : NULL;
+      size_t vl = i + 1 < argc ? strlen(argv[i + 1]) : 0;
+
+      /* name or name[subscript] */
+
+      if (i + 1 >= argc || !is_valid_name(argv[i + 1], br != NULL ? (size_t)(br - argv[i + 1]) : vl) ||
+          (br != NULL && argv[i + 1][vl - 1] != ']'))
         {
           vash_err("printf: usage: printf [-v var] format [arguments]");
           return 2;
@@ -798,7 +804,35 @@ int bi_printf(int argc, char **argv)
   while (pf.next < pf.argc && pf.used_arg && !pf.stop);
 
   status = pf.status;
-  if (var != NULL)
+  if (var != NULL && strchr(var, '[') != NULL)
+    {
+      struct sbuf_s asg;
+      const char *v = pf.out.s != NULL ? pf.out.s : "";
+
+      sb_init(&asg);                      /* name[i]='value', through the assignment code */
+      sb_adds(&asg, var);
+      sb_adds(&asg, "='");
+      for (; *v != '\0'; v++)
+        {
+          if (*v == '\'')
+            {
+              sb_adds(&asg, "'\\''");
+            }
+          else
+            {
+              sb_addc(&asg, *v);
+            }
+        }
+
+      sb_addc(&asg, '\'');
+      if (assign_apply(asg.s) != 0)
+        {
+          status = 1;
+        }
+
+      sb_free(&asg);
+    }
+  else if (var != NULL)
     {
       if (var_set(var, pf.out.s != NULL ? pf.out.s : "") != 0)
         {

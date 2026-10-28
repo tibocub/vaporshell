@@ -179,16 +179,17 @@ static int bi_eval(int argc, char **argv)
   struct sbuf_s text;
   int i;
   int status;
+  int first = argc > 1 && strcmp(argv[1], "--") == 0 ? 2 : 1;    /* options end */
 
-  if (argc < 2)
+  if (argc <= first)
     {
       return 0;
     }
 
   sb_init(&text);
-  for (i = 1; i < argc; i++)
+  for (i = first; i < argc; i++)
     {
-      if (i > 1)
+      if (i > first)
         {
           sb_addc(&text, ' ');
         }
@@ -1624,9 +1625,29 @@ static int bi_type(int argc, char **argv)
   bool terse = false;
   int i = 1;
 
-  if (i < argc && strcmp(argv[i], "-t") == 0 && vash_feat(VF_BASH_INFO_FORMATS))
+  bool pathonly = false;           /* -P / -p: only a file found in $PATH counts */
+
+  while (i < argc && vash_feat(VF_BASH_INFO_FORMATS) && argv[i][0] == '-' && argv[i][1] != '\0')
     {
-      terse = true;
+      if (strcmp(argv[i], "--") == 0)
+        {
+          i++;
+          break;
+        }
+
+      if (strcmp(argv[i], "-t") == 0)
+        {
+          terse = true;
+        }
+      else if (strcmp(argv[i], "-P") == 0 || strcmp(argv[i], "-p") == 0)
+        {
+          pathonly = true;
+        }
+      else if (strcmp(argv[i], "-a") != 0 && strcmp(argv[i], "-f") != 0)
+        {
+          break;                   /* not ours: the loop below says "not found" */
+        }
+
       i++;
     }
 
@@ -1635,6 +1656,32 @@ static int bi_type(int argc, char **argv)
       char *path;
       const struct alias_s *al = (g_sh.interactive || vash_feat(VF_ALIAS_SCRIPTS) ||
                                   g_sh.so_expand_aliases) ? alias_find(argv[i]) : NULL;
+
+      if (pathonly)
+        {
+          int err = 0;
+
+          path = strchr(argv[i], '/') == NULL ? hash_find_command(argv[i], var_get("PATH"), &err) : NULL;
+          if (path == NULL)
+            {
+              status = 1;
+            }
+          else
+            {
+              if (terse)
+                {
+                  puts("file");
+                }
+              else
+                {
+                  puts(path);
+                }
+
+              free(path);
+            }
+
+          continue;
+        }
 
       if (al != NULL)
         {
@@ -1723,6 +1770,61 @@ static int bi_type(int argc, char **argv)
     }
 
   return status;
+}
+
+/* caller [N]: the call stack as BASH_LINENO / FUNCNAME / BASH_SOURCE give it. */
+
+static int bi_caller(int argc, char **argv)
+{
+  struct frame_s *f;
+  const char *names[64];
+  const char *srcs[64];
+  int lines[64];
+  int n = 0;
+  long k = 0;
+  bool arg = argc > 1;
+
+  for (f = g_sh.frame; f != NULL && n < 62; f = f->up)
+    {
+      names[n] = f->name;
+      srcs[n] = f->src;
+      lines[n++] = f->line;
+    }
+
+  if (g_sh.script_main)
+    {
+      names[n] = "main";
+      srcs[n] = g_sh.cur_script != NULL ? g_sh.cur_script : "";
+      lines[n++] = 0;
+    }
+
+  if (arg)
+    {
+      char *end;
+
+      k = strtol(argv[1], &end, 10);
+      if (*end != '\0' || k < 0)
+        {
+          vash_err("caller: %s: invalid number", argv[1]);
+          return 2;
+        }
+    }
+
+  if (k + 1 >= n)
+    {
+      return 1;
+    }
+
+  if (arg)
+    {
+      printf("%d %s %s\n", lines[k], names[k + 1], srcs[k + 1]);
+    }
+  else
+    {
+      printf("%d %s\n", lines[0], srcs[1]);
+    }
+
+  return 0;
 }
 
 static int bi_wait(int argc, char **argv)
@@ -1974,6 +2076,7 @@ const struct builtin_s g_vash_builtins[] =
   { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell", VASH_M_ALL },
   { "break",    bi_break,    true,  "break [n]: leave a loop", VASH_M_ALL },
   { "continue", bi_continue, true,  "continue [n]: next loop iteration", VASH_M_ALL },
+  { "caller",   bi_caller,   false, "caller [expr]: the call stack", VASH_M_BASH },
   { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command", VASH_M_ALL },
   { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections", VASH_M_ALL },
   { "exit",     bi_exit,     true,  "exit [n]: leave the shell", VASH_M_ALL },

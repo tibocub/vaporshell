@@ -54,6 +54,16 @@ struct cg_s
 
 /* When set, candidates go here instead of to stdout (vash_comp_from_spec). */
 
+/* compopt -o nospace, from the completion function that just ran (see vash_comp_nospace) */
+
+static bool g_comp_running;
+static bool g_comp_nospace;
+
+bool vash_comp_nospace(void)
+{
+  return g_comp_nospace;
+}
+
 static void (*g_sink)(void *ctx, const char *word, const char *desc);
 static void *g_sink_ctx;
 
@@ -113,19 +123,127 @@ static void emit_name(const char *name, void *arg)
   emit(em->c, name, em->pre, em->suf);
 }
 
+/* -W: the list is split at IFS (quotes protect), each word is expanded
+ * (parameters, $(...), arithmetic), and what an unquoted word expands to is
+ * split at IFS again -- compgen -W '$words' works as in bash.
+ * shortcut: a word holding any quote or backslash is kept whole after
+ * expansion; bash would still split its unquoted parts.
+ */
+
 static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, const char *suf)
 {
-  const char *ifs = " \t\n";
-  char *copy = vash_xstrdup(words);
-  char *tok = strtok(copy, ifs);
+  const char *ifs = var_get("IFS") != NULL ? var_get("IFS") : " \t\n";
+  size_t n = strlen(words);
+  size_t i = 0;
 
-  while (tok != NULL)
+  while (i < n)
     {
-      emit(c, tok, pre, suf);
-      tok = strtok(NULL, ifs);
-    }
+      size_t start;
+      bool quoted = false;
+      char q = '\0';
+      char *tok;
+      char *val;
 
-  free(copy);
+      while (i < n && strchr(ifs, words[i]) != NULL && words[i] != '\0')
+        {
+          i++;
+        }
+
+      start = i;
+      for (; i < n; i++)
+        {
+          if (q != '\0')
+            {
+              if (words[i] == q)
+                {
+                  q = '\0';
+                }
+              else if (q == '"' && words[i] == '\\' && i + 1 < n)
+                {
+                  i++;
+                }
+            }
+          else if (words[i] == '\'' || words[i] == '"')
+            {
+              q = words[i];
+              quoted = true;
+            }
+          else if (words[i] == '\\' && i + 1 < n)
+            {
+              i++;
+              quoted = true;
+            }
+          else if (words[i] == '$' && i + 1 < n && (words[i + 1] == '(' || words[i + 1] == '{'))
+            {
+              char open = words[i + 1];
+              char close = open == '(' ? ')' : '}';
+              int depth = 0;
+
+              for (i++; i < n; i++)             /* $(...) and ${...} are part of the word */
+                {
+                  depth += (words[i] == open) - (words[i] == close);
+                  if (depth == 0)
+                    {
+                      break;
+                    }
+                }
+            }
+          else if (strchr(ifs, words[i]) != NULL)
+            {
+              break;
+            }
+        }
+
+      if (i == start)
+        {
+          continue;
+        }
+
+      tok = vash_xstrndup(words + start, i - start);
+      val = expand_word_str(tok);
+      free(tok);
+      if (val == NULL)
+        {
+          continue;
+        }
+
+      if (quoted)
+        {
+          emit(c, val, pre, suf);
+        }
+      else
+        {
+          char *p = val;
+
+          while (*p != '\0')
+            {
+              char *e;
+
+              while (*p != '\0' && strchr(ifs, *p) != NULL)
+                {
+                  p++;
+                }
+
+              e = p;
+              while (*e != '\0' && strchr(ifs, *e) == NULL)
+                {
+                  e++;
+                }
+
+              if (e > p)
+                {
+                  char *w = vash_xstrndup(p, (size_t)(e - p));
+
+                  emit(c, w, pre, suf);
+                  free(w);
+                }
+
+              p = e;
+            }
+        }
+
+      free(val);
+    }
 }
 
 /* -f (any entry) / -d (directories only): the current directory (or the
@@ -389,9 +507,37 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     }
 }
 
+/* compgen -V: the candidates go into an array variable, as quoted words of name=(...) */
+
+static void sink_to_assign(void *ctx, const char *word, const char *desc)
+{
+  struct sbuf_s *b = ctx;
+
+  (void)desc;
+  sb_adds(b, " '");
+  for (; *word != '\0'; word++)
+    {
+      if (*word == '\'')
+        {
+          sb_adds(b, "'\\''");
+        }
+      else
+        {
+          sb_addc(b, *word);
+        }
+    }
+
+  sb_addc(b, '\'');
+}
+
 int bi_compgen(int argc, char **argv)
 {
   struct cg_s c;
+  const char *into = NULL;
+  struct sbuf_s collected;
+  void (*saved_sink)(void *, const char *, const char *) = g_sink;
+  void *saved_ctx = g_sink_ctx;
+  int rc;
   const char *wordlist = NULL;
   const char *pre = NULL;
   const char *suf = NULL;
@@ -438,6 +584,10 @@ int bi_compgen(int argc, char **argv)
       else if (strcmp(a, "-X") == 0 && i + 1 < argc)
         {
           c.glob_x = argv[++i];
+        }
+      else if (strcmp(a, "-V") == 0 && i + 1 < argc)
+        {
+          into = argv[++i];
         }
       else if (strcmp(a, "-A") == 0 && i + 1 < argc)
         {
@@ -500,6 +650,13 @@ int bi_compgen(int argc, char **argv)
   c.pfx = word;
   c.pfxlen = strlen(word);
 
+  sb_init(&collected);
+  if (into != NULL)
+    {
+      g_sink = sink_to_assign;
+      g_sink_ctx = &collected;
+    }
+
   if (wordlist != NULL)
     {
       gen_wordlist(&c, wordlist, pre, suf);
@@ -520,12 +677,29 @@ int bi_compgen(int argc, char **argv)
       gen_action(&c, actions[i], pre, suf);
     }
 
+  g_sink = saved_sink;
+  g_sink_ctx = saved_ctx;
+  if (into != NULL)
+    {
+      struct sbuf_s asg;
+
+      sb_init(&asg);
+      sb_adds(&asg, into);
+      sb_adds(&asg, "=(");
+      sb_adds(&asg, collected.s != NULL ? collected.s : "");
+      sb_adds(&asg, " )");
+      assign_apply(asg.s);
+      sb_free(&asg);
+    }
+
+  sb_free(&collected);
   if (c.n < 0)
     {
       return 2;
     }
 
-  return c.hits > 0 ? 0 : 1;
+  rc = c.hits > 0 ? 0 : 1;
+  return rc;
 }
 
 /* ---- complete / compopt --------------------------------------------------------- */
@@ -567,6 +741,8 @@ int bi_complete(int argc, char **argv)
   struct sbuf_s opts;
   int i = 1;
   int nnames = 0;
+  const char *special = NULL;         /* -D / -E / -I stand in for the names */
+  char *one[2] = { NULL, NULL };
 
   if (fish >= 0)
     {
@@ -586,15 +762,41 @@ int bi_complete(int argc, char **argv)
         {
           remove = true;
         }
+      else if (strcmp(a, "-D") == 0 || strcmp(a, "-E") == 0 || strcmp(a, "-I") == 0)
+        {
+          special = a;
+        }
+      else if (strcmp(a, "--") == 0)
+        {
+          i++;                                /* the names follow, whatever they start with */
+          break;
+        }
       else if (a[0] == '-' && a[1] != '\0')
         {
           sb_adds(&opts, a);
           sb_addc(&opts, ' ');
-          if (i + 1 < argc && argv[i + 1][0] != '-')
+
+          /* only these take an argument; -a -b -c -j -u -v ... do not */
+
+          if (a[2] == '\0' && strchr("AWFCGoPSX", a[1]) != NULL && i + 1 < argc)
             {
-              sb_adds(&opts, "'");
-              sb_adds(&opts, argv[i + 1]);
-              sb_adds(&opts, "' ");
+              const char *arg = argv[i + 1];
+              bool plain = *arg != '\0' && strspn(arg, "abcdefghijklmnopqrstuvwxyz"
+                                                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                                                      "_+,./:=@%-") == strlen(arg);
+
+              if (plain)                      /* bash prints a plain word as it is */
+                {
+                  sb_adds(&opts, arg);
+                  sb_addc(&opts, ' ');
+                }
+              else
+                {
+                  sb_adds(&opts, "'");
+                  sb_adds(&opts, arg);
+                  sb_adds(&opts, "' ");
+                }
+
               i++;
             }
         }
@@ -628,6 +830,14 @@ int bi_complete(int argc, char **argv)
 
       sb_free(&opts);
       return 0;
+    }
+
+  if (special != NULL && i >= argc)
+    {
+      one[1] = (char *)special;           /* the one name */
+      argv = one;
+      argc = 2;
+      i = 1;
     }
 
   if (list || i >= argc)
@@ -693,10 +903,23 @@ int bi_complete(int argc, char **argv)
 
 int bi_compopt(int argc, char **argv)
 {
-  (void)argc;
-  (void)argv;
-  vash_err("compopt: not currently executing completion function");
-  return 1;
+  int i;
+
+  if (!g_comp_running)
+    {
+      vash_err("compopt: not currently executing completion function");
+      return 1;
+    }
+
+  for (i = 1; i + 1 < argc && (argv[i][0] == '-' || argv[i][0] == '+'); i += 2)
+    {
+      if (argv[i][1] == 'o' && strcmp(argv[i + 1], "nospace") == 0)
+        {
+          g_comp_nospace = argv[i][0] == '-';
+        }
+    }
+
+  return 0;
 }
 
 /* ---- Completion from a registered spec ------------------------------------------ */
@@ -903,16 +1126,95 @@ static const struct complete_spec_s *spec_for(const char *cmd)
   return NULL;
 }
 
+/* Run one spec: compgen with its options, then its -F function. The
+ * function's exit status (-1: there is none), for 124 = "retry" below.
+ */
+
+static int run_spec(const struct complete_spec_s *spec, const char *cmd, const char *line,
+                    int point, const char *word, vash_comp_list_f sink, void *ctx)
+{
+  char *ov[48];
+  char *av[52];
+  const char *func = NULL;
+  int status = -1;
+  int n;
+  int i;
+
+  n = split_opts(spec->opts, ov, 48);
+  av[0] = "compgen";
+  for (i = 0; i < n; i++)
+    {
+      av[i + 1] = ov[i];
+      if (strcmp(ov[i], "-F") == 0 && i + 1 < n)
+        {
+          func = ov[i + 1];
+        }
+    }
+
+  av[n + 1] = "--";
+  av[n + 2] = (char *)word;
+  g_sink = sink;
+  g_sink_ctx = ctx;
+  bi_compgen(n + 3, av);
+  g_sink = NULL;
+
+  if (func != NULL && func_find(func) != NULL)
+    {
+      char *fa[4];
+      const struct arr_s *r;
+      long k;
+
+      vash_set_comp_vars(line, point);
+      var_unset("COMPREPLY");
+      g_comp_nospace = false;
+      g_comp_running = true;
+      fa[0] = (char *)func;
+      fa[1] = (char *)cmd;
+      fa[2] = (char *)word;
+      fa[3] = (char *)"";
+      status = run_argv(4, fa, false);
+      g_comp_running = false;
+      r = var_array("COMPREPLY", false);
+      for (k = 0; r != NULL && k <= arr_max_index(r); k++)
+        {
+          const char *e = arr_get(r, k);
+
+          if (e != NULL)
+            {
+              sink(ctx, e, NULL);
+            }
+        }
+    }
+
+  for (i = 0; i < n; i++)
+    {
+      free(ov[i]);
+    }
+
+  return status;
+}
+
 int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                       vash_comp_list_f sink, void *ctx)
 {
   const struct complete_spec_s *spec = spec_for(cmd);
-  char *ov[48];
-  char *av[52];
-  const char *func = NULL;
   int found = vash_comp_fish(cmd, line, point, word, sink, ctx);
-  int n;
-  int i;
+
+  if (spec == NULL && spec_for("-D") != NULL)
+    {
+      /* complete -D: the spec for commands that have none. Its function may
+       * load one (bash-completion does) and answer 124: look again.
+       */
+
+      if (run_spec(spec_for("-D"), cmd, line, point, word, sink, ctx) == 124)
+        {
+          spec = spec_for(cmd);
+        }
+      else
+        {
+          return found | VASH_SPEC_FOUND;
+        }
+    }
 
   if (spec == NULL)
     {
@@ -923,6 +1225,8 @@ int vash_comp_from_spec(const char *cmd, const char *line, int point, const char
 #ifndef VAPORSHELL_POSIX
       if (found == 0 && word[0] == '-')
         {
+          int i;
+
           for (i = 0; i < (int)(sizeof(g_comp_defaults) / sizeof(g_comp_defaults[0])); i++)
             {
               const char *o;
@@ -962,53 +1266,6 @@ int vash_comp_from_spec(const char *cmd, const char *line, int point, const char
       return found;
     }
 
-  n = split_opts(spec->opts, ov, 48);
-  av[0] = "compgen";
-  for (i = 0; i < n; i++)
-    {
-      av[i + 1] = ov[i];
-      if (strcmp(ov[i], "-F") == 0 && i + 1 < n)
-        {
-          func = ov[i + 1];
-        }
-    }
-
-  av[n + 1] = "--";
-  av[n + 2] = (char *)word;
-  g_sink = sink;
-  g_sink_ctx = ctx;
-  bi_compgen(n + 3, av);
-  g_sink = NULL;
-
-  if (func != NULL && func_find(func) != NULL)
-    {
-      char *fa[4];
-      const struct arr_s *r;
-      long k;
-
-      vash_set_comp_vars(line, point);
-      var_unset("COMPREPLY");
-      fa[0] = (char *)func;
-      fa[1] = (char *)cmd;
-      fa[2] = (char *)word;
-      fa[3] = (char *)"";
-      run_argv(4, fa, false);
-      r = var_array("COMPREPLY", false);
-      for (k = 0; r != NULL && k <= arr_max_index(r); k++)
-        {
-          const char *e = arr_get(r, k);
-
-          if (e != NULL)
-            {
-              sink(ctx, e, NULL);
-            }
-        }
-    }
-
-  for (i = 0; i < n; i++)
-    {
-      free(ov[i]);
-    }
-
+  run_spec(spec, cmd, line, point, word, sink, ctx);
   return found | VASH_SPEC_FOUND;
 }

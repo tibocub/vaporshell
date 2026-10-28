@@ -526,6 +526,8 @@ int var_unset_raw(const char *name)
   return unset_exact(name);
 }
 
+static bool local_unset_outer(const char *name);
+
 int var_unset(const char *name)
 {
   char buf[REF_BUF];                   /* outlives the block: `name` may point into it */
@@ -555,6 +557,11 @@ int var_unset(const char *name)
         }
 
       name = rn;
+    }
+
+  if (local_unset_outer(name))
+    {
+      return 0;
     }
 
   return unset_exact(name);
@@ -833,6 +840,11 @@ int var_local_declare(const char *name, const char *value, bool inherit)
         }
     }
 
+  if (l != NULL && value == NULL)
+    {
+      return 0;                        /* `local x` again in the same function keeps x's value */
+    }
+
   if (l == NULL)
     {
       l = vash_xmalloc(sizeof(*l));
@@ -870,40 +882,78 @@ int var_local_declare(const char *name, const char *value, bool inherit)
   return 0;
 }
 
+/* Undo one local: put back what was saved when it was declared. */
+
+static void local_restore(struct local_s *l)
+{
+  struct var_s *v = var_lookup_raw(l->name);     /* the local itself, not what it may refer to */
+
+  if (l->had || l->old_arr != NULL)
+    {
+      if (v == NULL)
+        {
+          v = var_create(l->name);
+        }
+
+      free(v->value);
+      v->value = l->old;
+      arr_free(v->arr);
+      v->arr = l->old_arr;
+      v->flags = l->flags;
+    }
+  else
+    {
+      free(l->old);
+      if (v != NULL)
+        {
+          v->flags &= ~(unsigned)VF_READONLY;
+          var_unset_raw(l->name);
+        }
+    }
+
+  free(l->name);
+  free(l);
+}
+
 void var_locals_pop(int depth)
 {
   while (g_sh.locals != NULL && g_sh.locals->depth >= depth)
     {
       struct local_s *l = g_sh.locals;
-      struct var_s *v = var_lookup_raw(l->name);     /* the local itself, not what it may refer to */
 
       g_sh.locals = l->next;
-      if (l->had || l->old_arr != NULL)
-        {
-          if (v == NULL)
-            {
-              v = var_create(l->name);
-            }
-
-          free(v->value);
-          v->value = l->old;
-          arr_free(v->arr);
-          v->arr = l->old_arr;
-          v->flags = l->flags;
-        }
-      else
-        {
-          free(l->old);
-          if (v != NULL)
-            {
-              v->flags &= ~(unsigned)VF_READONLY;
-              var_unset_raw(l->name);
-            }
-        }
-
-      free(l->name);
-      free(l);
+      local_restore(l);
     }
+}
+
+/* bash's dynamic scope: `unset x` in a function that did not declare x
+ * local, called from one that did, removes that local binding altogether (the
+ * outer value shows again) rather than just emptying it. This is what the
+ * "upvars" idiom of bash_completion relies on. True if it did.
+ */
+
+static bool local_unset_outer(const char *name)
+{
+  struct local_s **pl;
+
+  for (pl = &g_sh.locals; *pl != NULL; pl = &(*pl)->next)
+    {
+      if (strcmp((*pl)->name, name) == 0)
+        {
+          struct local_s *l = *pl;
+
+          if (l->depth >= g_sh.func_depth)
+            {
+              return false;            /* this function's own local: an ordinary unset */
+            }
+
+          *pl = l->next;
+          local_restore(l);
+          return true;
+        }
+    }
+
+  return false;
 }
 
 
