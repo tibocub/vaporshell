@@ -264,7 +264,7 @@ char *vash_prompt_decode(const char *ps)
           case 'W':  add_cwd(&out, true); break;
           case '!':  add_number(&out, g_sh.hist_num + 1); break;
           case '#':  add_number(&out, g_sh.cmd_num + 1); break;
-          case '$':  sb_addc(&out, vash_plat_euid() == 0 ? '#' : '$'); break;
+          case '$':  add_literal(&out, vash_plat_euid() == 0 ? "#" : "$"); break;   /* not a $ for the next step */
 
           case '0': case '1': case '2': case '3':
           case '4': case '5': case '6': case '7':
