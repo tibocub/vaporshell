@@ -21,6 +21,7 @@
 
 #include "vaporshell.h"
 #include "exec.h"
+#include "expand.h"
 #include "platform.h"
 
 #ifdef VAPORSHELL_POSIX
@@ -674,6 +675,63 @@ static void generate(struct cands_s *c, struct gen_s *g)
     }
 }
 
+/* A word with an unquoted glob in it ("rm *.sh"), not in command position:
+ * offer what the pattern matches, each replacing the word, like fish. Returns
+ * the number of matches, or 0 to complete the word as a name instead.
+ */
+
+static int complete_glob(const char *line, int len, const char *raw, const char *word,
+                         char *ins, int inslen, int *del, vs_comp_cand_f list, void *ctx)
+{
+  struct fieldv_s fv;
+  struct stat st;
+  int i;
+  int n;
+
+  if ((raw > line && (raw[-1] == '"' || raw[-1] == '\'')) ||
+      memchr(raw, '\\', (size_t)(line + len - raw)) != NULL ||
+      !pat_has_glob(word, NULL, strlen(word)))
+    {
+      return 0;
+    }
+
+  fv_init(&fv);
+  n = glob_expand(word, NULL, strlen(word), &fv);
+  if (n <= 0)
+    {
+      fv_free(&fv);
+      return 0;
+    }
+
+  *del = (int)(line + len - raw);            /* the pattern goes, as for a looser match */
+  if (n == 1)
+    {
+      char *tail;
+
+      st.st_mode = 0;
+      stat(VS_FS(fv.v[0]), &st);
+      tail = vs_comp_tail(fv.v[0], S_ISDIR(st.st_mode) ? '/' : ' ', 0);
+      if (tail != NULL)
+        {
+          snprintf(ins, (size_t)inslen, "%s", tail);
+          free(tail);
+        }
+    }
+  else
+    {
+      for (i = 0; i < n; i++)
+        {
+          st.st_mode = 0;
+          stat(VS_FS(fv.v[i]), &st);
+          list(ctx, fv.v[i], NULL, S_ISDIR(st.st_mode) ? '/' : ' ');
+          fv.v[i] = NULL;                    /* the callback keeps the string */
+        }
+    }
+
+  fv_free(&fv);
+  return n;
+}
+
 /* Complete the word before the cursor. If nothing starts with it, names that
  * start with it in another case are tried, then names that contain it (in either
  * case): those replace what was typed, which is *del bytes before the cursor.
@@ -749,6 +807,15 @@ int vs_complete(const char *line, int len, char *ins, int inslen, int *del,
   g.len = len;
   g.word = word;
   g.is_cmd = g.prev == line || strchr("|;&(", g.prev[-1]) != NULL;
+
+  if (!g.is_cmd)
+    {
+      n = complete_glob(line, len, w, word, ins, inslen, del, list, ctx);
+      if (n > 0)
+        {
+          return n;
+        }
+    }
 
   for (c.mode = 0; c.mode < 3; c.mode++)
     {
