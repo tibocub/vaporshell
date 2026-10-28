@@ -58,10 +58,16 @@ struct cg_s
 
 static bool g_comp_running;
 static bool g_comp_nospace;
+static bool g_comp_filenames;
 
 bool vash_comp_nospace(void)
 {
   return g_comp_nospace;
+}
+
+bool vash_comp_filenames(void)
+{
+  return g_comp_filenames;
 }
 
 static void (*g_sink)(void *ctx, const char *word, const char *desc);
@@ -719,9 +725,70 @@ static struct complete_spec_s *find_spec(const char *name)
   return NULL;
 }
 
+/* `complete -p` prints in bash's fixed order: -o options, single-letter actions,
+ * -A, -G, -W, -P, -S, -X, -C, -F; the string arguments quoted.
+ */
+
+static int split_opts(const char *o, char **v, int max);
+
 static void print_spec(const struct complete_spec_s *s)
 {
-  printf("complete %s%s\n", s->opts, s->name);
+  static const char *const oorder[] = { "bashdefault", "default", "dirnames", "filenames",
+                                        "noquote", "nosort", "nospace", "plusdirs" };
+  char *v[48];
+  int n = split_opts(s->opts, v, 48);
+  int i;
+  int k;
+  const char *letters = "abcdefgjksuv";
+  const char *argopts = "AGWPSXCF";
+  const char *p;
+
+  printf("complete");
+  for (k = 0; k < (int)(sizeof(oorder) / sizeof(oorder[0])); k++)
+    {
+      for (i = 0; i + 1 < n; i++)
+        {
+          if (strcmp(v[i], "-o") == 0 && strcmp(v[i + 1], oorder[k]) == 0)
+            {
+              printf(" -o %s", oorder[k]);
+            }
+        }
+    }
+
+  for (p = letters; *p != '\0'; p++)
+    {
+      for (i = 0; i < n; i++)
+        {
+          if (v[i][0] == '-' && v[i][1] == *p && v[i][2] == '\0')
+            {
+              printf(" -%c", *p);
+            }
+        }
+    }
+
+  for (p = argopts; *p != '\0'; p++)
+    {
+      for (i = 0; i + 1 < n; i++)
+        {
+          if (v[i][0] == '-' && v[i][1] == *p && v[i][2] == '\0')
+            {
+              if (*p == 'A' || *p == 'F')
+                {
+                  printf(" -%c %s", *p, v[i + 1]);
+                }
+              else
+                {
+                  printf(" -%c '%s'", *p, v[i + 1]);
+                }
+            }
+        }
+    }
+
+  printf(" %s\n", s->name);
+  for (i = 0; i < n; i++)
+    {
+      free(v[i]);
+    }
 }
 
 /* complete [-F func|-C cmd|-W wordlist|-G glob|-A action] [-o opt]... name...
@@ -917,6 +984,10 @@ int bi_compopt(int argc, char **argv)
         {
           g_comp_nospace = argv[i][0] == '-';
         }
+      else if (argv[i][1] == 'o' && strcmp(argv[i + 1], "filenames") == 0)
+        {
+          g_comp_filenames = argv[i][0] == '-';
+        }
     }
 
   return 0;
@@ -1021,6 +1092,8 @@ void vash_set_comp_vars(const char *line, int point)
     }
 
   var_array_replace("COMP_WORDS", words);
+  var_set("COMP_TYPE", "9");                /* TAB: normal completion */
+  var_set("COMP_KEY", "9");
   snprintf(num, sizeof(num), "%d", cword);
   var_set("COMP_CWORD", num);
   var_set("COMP_LINE", line);
@@ -1140,6 +1213,8 @@ static int run_spec(const struct complete_spec_s *spec, const char *cmd, const c
   int n;
   int i;
 
+  g_comp_filenames = strstr(spec->opts, "filenames") != NULL;
+  g_comp_nospace = strstr(spec->opts, "nospace") != NULL;
   n = split_opts(spec->opts, ov, 48);
   av[0] = "compgen";
   for (i = 0; i < n; i++)

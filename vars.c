@@ -768,8 +768,7 @@ void shell_init(const char *arg0)
 
   if (var_get("SHELL") == NULL)
     {
-      var_set("SHELL", "vaporshell");
-      var_set_flags("SHELL", VF_EXPORT);
+      var_set("SHELL", "vaporshell");     /* not exported, as in bash */
     }
 
   if (getcwd(cwd, sizeof(cwd)) != NULL)

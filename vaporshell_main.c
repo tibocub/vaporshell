@@ -122,6 +122,50 @@ static int finish(int status)
   return g_sh.last_status & 0xff;
 }
 
+/* Variables bash always has and rc files test: $BASH (the shell's own path) and
+ * SHLVL (nesting depth, exported).
+ */
+
+static void bash_defaults(const char *argv0, bool prompting)
+{
+  char path[VASH_PATH_MAX];
+  char lvl[16];
+  const char *old = var_get("SHLVL");
+  long n = old != NULL ? strtol(old, NULL, 10) : 0;
+  ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+
+  if (len > 0)
+    {
+      path[len] = '\0';
+      argv0 = path;
+    }
+
+  if (prompting)
+    {
+      /* rc files (and /etc/bashrc) test PS1 to know they are in a prompting shell */
+
+      if (var_get("PS1") == NULL)
+        {
+          var_set("PS1", DEFAULT_PS1);
+        }
+
+      if (var_get("PS2") == NULL)
+        {
+          var_set("PS2", "> ");
+        }
+    }
+
+  if (var_get("COMP_WORDBREAKS") == NULL)
+    {
+      var_set("COMP_WORDBREAKS", " \t\n\"'@><=;|&(:");
+    }
+
+  var_set("BASH", argv0);
+  snprintf(lvl, sizeof(lvl), "%ld", n < 0 || n > 998 ? 0 : n + 1);
+  var_set("SHLVL", lvl);
+  var_set_flags("SHLVL", VF_EXPORT);
+}
+
 static int shell_main(int argc, char *argv[])
 {
   const char *command = NULL;
@@ -213,16 +257,23 @@ static int shell_main(int argc, char *argv[])
           switch (*f)
             {
               case 'c': have_command = true; break;
-              case 'i': force_interactive = true; break;
+              case 'i': force_interactive = true; g_sh.opt_i = true; break;
               case 'l': login = true; break;
               case 'e': g_sh.opt_e = true; break;
               case 'u': g_sh.opt_u = true; break;
               case 'x': g_sh.opt_x = true; break;
               case 'f': g_sh.opt_f = true; break;
               case 'C': g_sh.opt_C = true; break;
+              case 'n': g_sh.opt_n = true; break;
+              case 'v': g_sh.opt_v = true; break;
               default:  return usage_error("invalid option", argv[i]);
             }
         }
+    }
+
+  if (g_sh.profile != VASH_PROFILE_POSIX)
+    {
+      bash_defaults(argv[0], force_interactive || (!have_command && i >= argc && vash_plat_interactive()));
     }
 
   if (have_command)

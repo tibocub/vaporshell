@@ -2611,9 +2611,108 @@ maybe_strip:
 
 /* $(...) and `...`: bash strips trailing newlines from the captured output. */
 
+/* $(<file): bash reads the file itself, when the whole text is one input redirect. */
+
+static char *cmdsub_read_file(const char *text, size_t len)
+{
+  size_t i = 0;
+  size_t j;
+  char *name;
+  char *path;
+  FILE *fp;
+  struct sbuf_s out;
+  char chunk[512];
+  size_t n;
+
+  while (i < len && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n'))
+    {
+      i++;
+    }
+
+  if (i >= len || text[i] != '<' || (i + 1 < len && (text[i + 1] == '<' || text[i + 1] == '(' ||
+                                                      text[i + 1] == '&' || text[i + 1] == '>')))
+    {
+      return NULL;
+    }
+
+  for (i++; i < len && (text[i] == ' ' || text[i] == '\t'); i++)
+    {
+    }
+
+  for (j = i; j < len && strchr(" \t\n;&|()<>", text[j]) == NULL; j++)
+    {
+      if (text[j] == '\'' || text[j] == '"' || text[j] == '$' || text[j] == '`' || text[j] == '\\')
+        {
+          /* quoted/expanded names are fine, but only up to the closing quote:
+           * keep it simple and let the shell's own parser take anything odd.
+           */
+
+          if (text[j] != '"' && text[j] != '$' && text[j] != '\'')
+            {
+              return NULL;
+            }
+        }
+    }
+
+  while (j < len && (text[j] == ' ' || text[j] == '\t' || text[j] == '\n'))
+    {
+      j++;
+    }
+
+  if (j != len || i == len)
+    {
+      return NULL;                         /* more than a lone redirect */
+    }
+
+  {
+    size_t k = len;
+
+    while (k > i && (text[k - 1] == ' ' || text[k - 1] == '\t' || text[k - 1] == '\n'))
+      {
+        k--;
+      }
+
+    name = vash_xstrndup(text + i, k - i);
+  }
+
+  path = expand_word_str(name);
+  free(name);
+  if (path == NULL)
+    {
+      return NULL;
+    }
+
+  fp = fopen(path, "r");
+  if (fp == NULL)
+    {
+      vash_err("%s: %s", path, strerror(errno));
+      free(path);
+      g_sh.last_status = 1;
+      return vash_xstrdup("");
+    }
+
+  free(path);
+  sb_init(&out);
+  while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0)
+    {
+      sb_addn(&out, chunk, n);
+    }
+
+  fclose(fp);
+  while (out.len > 0 && out.s[out.len - 1] == '\n')
+    {
+      out.len--;
+    }
+
+  g_sh.last_status = 0;
+  return out.s != NULL ? sb_take(&out) : vash_xstrdup("");
+}
+
 char *run_cmdsub(const char *text, size_t len)
 {
-  return run_cmdsub_impl(text, len, true);
+  char *r = vash_feat(VF_BASH_SYNTAX) ? cmdsub_read_file(text, len) : NULL;
+
+  return r != NULL ? r : run_cmdsub_impl(text, len, true);
 }
 
 /* <(...): the substituted command's output verbatim, newlines and all --

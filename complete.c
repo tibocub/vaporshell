@@ -517,38 +517,48 @@ static void spec_cand(void *ctx, const char *name, const char *desc)
 {
   struct spec_ctx_s *sc = ctx;
   size_t n = strlen(name);
+  char suffix = vash_comp_nospace() ? '\0' : ' ';
+  char *bare = NULL;
 
   /* compgen's file generators end a directory's name in '/' (it knows from the
-   * directory entry, with no stat): that becomes the suffix.
+   * directory entry, with no stat): that becomes the suffix. A function's
+   * "word " likewise ends in the suffix space.
    */
 
-  if (n > 1 && name[n - 1] == '/')
+  if (n > 1 && (name[n - 1] == '/' || name[n - 1] == ' '))
     {
-      char *bare = strndup(name, n - 1);
-
-      if (bare != NULL)
-        {
-          cands_add(sc->c, sc->word, bare, '/', desc);
-          free(bare);
-        }
-
-      return;
+      suffix = name[n - 1] == '/' ? '/' : suffix;
+      bare = strndup(name, n - 1);
+      name = bare;
     }
 
-  if (n > 1 && name[n - 1] == ' ')            /* "word ": the space is the suffix */
+  if (vash_comp_filenames() && suffix != '/' && name != NULL)
     {
-      char *bare = strndup(name, n - 1);
+      struct stat st;
+      char path[VASH_PATH_MAX];
+      const char *home = var_get("HOME");
 
-      if (bare != NULL)
+      if (name[0] == '~' && name[1] == '/' && home != NULL)
         {
-          cands_add(sc->c, sc->word, bare, vash_comp_nospace() ? '\0' : ' ', desc);
-          free(bare);
+          snprintf(path, sizeof(path), "%s%s", home, name + 1);
+        }
+      else
+        {
+          snprintf(path, sizeof(path), "%s", name);
         }
 
-      return;
+      if (stat(VASH_FS(path), &st) == 0 && S_ISDIR(st.st_mode))
+        {
+          suffix = '/';                        /* -o filenames: a directory gets its slash */
+        }
     }
 
-  cands_add(sc->c, sc->word, name, vash_comp_nospace() ? '\0' : ' ', desc);
+  if (name != NULL)
+    {
+      cands_add(sc->c, sc->word, name, suffix, desc);
+    }
+
+  free(bare);
 }
 
 struct word_ctx_s

@@ -297,7 +297,7 @@ static bool get_param(const char *name, size_t n, const char **val,
             snprintf(buf, bufsz, "%s%s%s%s%s%s",
                      g_sh.opt_e ? "e" : "", g_sh.opt_f ? "f" : "",
                      g_sh.opt_u ? "u" : "", g_sh.opt_x ? "x" : "",
-                     g_sh.opt_C ? "C" : "", g_sh.interactive ? "i" : "");
+                     g_sh.opt_C ? "C" : "", (g_sh.interactive || g_sh.opt_i) ? "i" : "");
             break;
           case '0':
             *val = g_sh.arg0;

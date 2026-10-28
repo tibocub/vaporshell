@@ -349,7 +349,9 @@ def _():
 @test("bash files are read after ~/.vashrc unless it sets LOAD_BASH_FILES=0")
 def _():
     home = os.path.join(TMP, "bashhome"); os.makedirs(home, exist_ok=True)
-    open(os.path.join(home, ".bashrc"), "w").write("PS1='bashrc> '\n")
+    open(os.path.join(home, ".bashrc"), "w").write(
+        "[ -z \"$PS1\" ] && return          # the usual guard: PS1 is set in an interactive shell\n"
+        "[[ $- == *i* && -n $BASH ]] && PS1='bashrc> '\n")
     s = shell(env={"HOME": home})
     expect(s, ["bashrc>"])
     s.close()
@@ -380,12 +382,18 @@ def _():
         "LOAD_BASH_FILES=0\n. %s\n"
         "_lazy() { _fake() { COMPREPLY=(alpha-one alpha-two); }; complete -F _fake fakecmd; return 124; }\n"
         "complete -F _lazy -D\n" % bc)
-    s = shell(env={"HOME": home, "VASH_AUTOSUGGEST": "0"})
+    s = shell(env={"HOME": home, "VASH_AUTOSUGGEST": "0"}, cwd=home)
     time.sleep(1.5)
     s.type("ls --vers"); s.send("\t")
     assert s.screen()[-1] == "$ ls --version", s.screen()
     s.send(CTRL("U")); s.type("fakecmd alpha-t"); s.send("\t")             # -D function loads the spec, 124 retries
     assert s.screen()[-1] == "$ fakecmd alpha-two", s.screen()
+    os.makedirs(os.path.join(home, "subdir"), exist_ok=True)
+    open(os.path.join(home, "subfile.txt"), "w").close()
+    s.send(CTRL("U")); s.type("cat subd"); s.send("\t")                       # -o filenames: a directory gets its slash
+    assert s.screen()[-1] == "$ cat subdir/", s.screen()
+    s.send(CTRL("U")); s.type("cat subf"); s.send("\t")
+    assert s.screen()[-1] == "$ cat subfile.txt", s.screen()
     s.close()
 
 

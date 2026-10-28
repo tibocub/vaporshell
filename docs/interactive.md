@@ -206,8 +206,12 @@ needed, all now in: `;;&`/`;&` on their own line, multi-line extglob in `[[ ]]`,
 `${!name-word}` and `${!1}`, `printf -v name[i]`, `local x` twice, `unset` of a
 caller's local (the "upvars" idiom), `compgen -V` and `-W` with expansions,
 `complete -D`/`-a`/`--` (a `-D` function answering 124 reloads the spec),
-`compopt -o nospace`, `type -P`, `caller`. Not done: `compopt -o filenames/nosort`,
-`-E`/`-I` specs being consulted, `COMP_TYPE`/`COMP_KEY`. It is slower than the native
+`compopt -o nospace/filenames`, `type -P`, `caller`, `$(<file)`, `COMP_TYPE`/`COMP_KEY`/
+`COMP_WORDBREAKS`, and `complete -p` printing in bash's order. Also set at startup, as bash
+does, because rc files test them: `$BASH`, `SHLVL`, a non-empty `PS1`/`PS2` in an interactive
+shell, and `i` in `$-` for `-i` (even with `-c`). Not done: `compopt -o nosort/noquote`,
+`complete -E`/`-I` specs being consulted, `set -x` tracing of `[[ ]]`, `$_`, and
+`/etc/profile.d/which2.sh` (it keys on the executable being called bash or sh). It is slower than the native
 completion (it is bash code), so it is opt-in: the native completions stay the default.
 
 ## Budget and measurement

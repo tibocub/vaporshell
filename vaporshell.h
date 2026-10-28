@@ -391,6 +391,7 @@ struct shell_s
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */
   bool interactive;
+  bool opt_i;                 /* -i given: shows in $- even for -c */
   long long comp_deadline;   /* completion running shell code: stop it after this many ms on the monotonic clock (0: no limit) */
   bool comp_expired;         /* ...and it was stopped */
   bool input_aborted;     /* Ctrl-C at a continuation prompt: drop the half-typed command quietly */
