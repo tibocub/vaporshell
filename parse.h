@@ -93,6 +93,7 @@ struct parser_s
   struct lexer_s lx;
   struct token_s tok;
   bool have;
+  size_t last_end;            /* end offset of the token advance() last consumed */
   int depth;
   char err[160];
   bool err_eof;

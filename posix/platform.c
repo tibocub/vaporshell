@@ -206,6 +206,15 @@ int vash_plat_hostname(char *buf, size_t n)
   return gethostname(buf, n);
 }
 
+/* uname -m, e.g. x86_64: $HOSTTYPE ($MACHTYPE is that plus -pc-<ostype>) */
+
+const char *vash_plat_hosttype(void)
+{
+  static struct utsname u;
+
+  return uname(&u) == 0 ? u.machine : "unknown";
+}
+
 const char *vash_plat_ostype(void)
 {
   static char os[64];

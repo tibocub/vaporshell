@@ -508,8 +508,37 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
 
   if (o.f)
     {
-      vash_err("%s: -f: functions are not supported here", word);
-      return 1;
+      struct func_s *f;
+
+      if (i >= argc)
+        {
+          for (f = g_sh.funcs; f != NULL; f = f->next)
+            {
+              func_print(f);
+            }
+
+          return 0;
+        }
+
+      for (; i < argc; i++)
+        {
+          if (strcmp(argv[i], "--") == 0)
+            {
+              continue;
+            }
+
+          f = func_find(argv[i]);
+          if (f == NULL)
+            {
+              status = 1;
+            }
+          else
+            {
+              func_print(f);
+            }
+        }
+
+      return status;
     }
 
   if (kind == DK_LOCAL && g_sh.func_depth == 0)

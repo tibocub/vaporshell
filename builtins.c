@@ -198,7 +198,9 @@ static int bi_eval(int argc, char **argv)
     }
 
   g_sh.syntax_error = false;
+  g_sh.xdepth++;
   status = run_string(text.s != NULL ? text.s : "", text.len);
+  g_sh.xdepth--;
   sb_free(&text);
   if (g_sh.syntax_error && vash_feat(VF_EVAL_SYNTAX_FATAL) &&
       !g_sh.interactive && g_sh.unwind == UW_NONE)
@@ -302,7 +304,9 @@ static int bi_dot(int argc, char **argv)
 
     frame_push(&frame, "source", file, g_sh.lineno, false);
     g_sh.cur_src = file;
+    g_sh.xdepth++;
     status = run_file(file);
+    g_sh.xdepth--;
     g_sh.cur_src = outer_src;
     frame_pop(&frame);
   }
@@ -639,6 +643,66 @@ static const struct
 };
 
 #define NNAMED ((int)(sizeof(g_named_opts) / sizeof(g_named_opts[0])))
+
+void vash_setopt_each(void (*fn)(const char *name, void *arg), void *arg)
+{
+  int i;
+
+  for (i = 0; i < NNAMED; i++)
+    {
+      if (!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH))
+        {
+          fn(g_named_opts[i].name, arg);
+        }
+    }
+}
+
+static bool named_opt_state(int i);
+
+/* sorted, as bash lists them; braceexpand, hashall and interactive-comments
+ * are always on here
+ */
+
+void vash_shellopts(char *buf, size_t n)
+{
+  int i;
+  size_t len = 0;
+  const char *names[16];
+  int cnt = 0;
+  int a;
+  int b;
+
+  names[cnt++] = "braceexpand";
+  names[cnt++] = "hashall";
+  names[cnt++] = "interactive-comments";
+  for (i = 0; i < NNAMED && cnt < 15; i++)
+    {
+      if ((!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH)) && named_opt_state(i))
+        {
+          names[cnt++] = g_named_opts[i].name;
+        }
+    }
+
+  for (a = 0; a < cnt; a++)
+    {
+      for (b = a + 1; b < cnt; b++)
+        {
+          if (strcmp(names[a], names[b]) > 0)
+            {
+              const char *t = names[a];
+
+              names[a] = names[b];
+              names[b] = t;
+            }
+        }
+    }
+
+  buf[0] = '\0';
+  for (a = 0; a < cnt; a++)
+    {
+      len += (size_t)snprintf(buf + len, n - len, "%s%s", a > 0 ? ":" : "", names[a]);
+    }
+}
 
 static bool named_opt_state(int i)
 {
@@ -1748,6 +1812,11 @@ static int bi_type(int argc, char **argv)
             break;
           case CK_FUNCTION:
             printf("%s is a function\n", argv[i]);
+            if (vash_feat(VF_BASH_INFO_FORMATS) && func_find(argv[i]) != NULL)
+              {
+                func_print(func_find(argv[i]));
+              }
+
             break;
           case CK_EXTERNAL:
             printf("%s is %s\n", argv[i], path);

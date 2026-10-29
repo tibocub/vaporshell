@@ -201,6 +201,7 @@ struct func_s
   char *src;              /* the file it was defined in (BASH_SOURCE while it runs) */
   struct node_s *body;
   struct arena_s *arena;  /* keeps 'body' alive; see arena_retain() */
+  const char *text;       /* the body as written (lives in 'arena'), or NULL */
 };
 
 /* special.c: PIPESTATUS, FUNCNAME, BASH_SOURCE, BASH_LINENO, BASH_VERSINFO */
@@ -340,7 +341,10 @@ char *hash_find_command(const char *name, const char *path_var, int *err);
 void hash_clear(void);
 
 struct func_s *func_find(const char *name);
-void func_define(const char *name, struct node_s *body, struct arena_s *arena);
+void func_define(const char *name, struct node_s *body, struct arena_s *arena, const char *text);
+void vash_shellopts(char *buf, size_t n);       /* $SHELLOPTS: set -o options that are on (builtins.c) */
+void vash_bashopts(char *buf, size_t n);        /* $BASHOPTS: shopt options that are on (shopt.c) */
+void func_print(const struct func_s *f);       /* declare -f: name () and the body */
 void func_unset(const char *name);
 
 void pos_set(char **args, int n);                /* takes ownership of copies */
@@ -466,6 +470,7 @@ struct shell_s
   unsigned long long decl_raw;   /* bit i: argv[i] of the declaration builtin running is an array literal, unexpanded */
 
   int lineno;                 /* line of the command being run: $LINENO */
+  int xdepth;                 /* $(...)/eval/source nesting, for the set -x prefix */
   struct local_s *locals;
   struct alias_s *aliases;
   struct disabled_s *disabled_builtins;   /* enable -n */

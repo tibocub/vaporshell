@@ -52,8 +52,8 @@ static char *make_temp(void)
       tmp = "/tmp";
     }
 
-  path = vash_xmalloc(strlen(tmp) + sizeof("/vs-procsub-XXXXXX") + 1);
-  sprintf(path, "%s/vs-procsub-XXXXXX", tmp);
+  path = vash_xmalloc(strlen(tmp) + sizeof("/vash-procsub-XXXXXX") + 1);
+  sprintf(path, "%s/vash-procsub-XXXXXX", tmp);
   fd = mkstemp(path);
   if (fd < 0)
     {

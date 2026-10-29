@@ -207,10 +207,10 @@ needed, all now in: `;;&`/`;&` on their own line, multi-line extglob in `[[ ]]`,
 caller's local (the "upvars" idiom), `compgen -V` and `-W` with expansions,
 `complete -D`/`-a`/`--` (a `-D` function answering 124 reloads the spec),
 `compopt -o nospace/filenames`, `type -P`, `caller`, `$(<file)`, `COMP_TYPE`/`COMP_KEY`/
-`COMP_WORDBREAKS`, and `complete -p` printing in bash's order. Also set at startup, as bash
+`COMP_WORDBREAKS`, `declare -f` (function bodies print as written), `compgen -A signal/setopt/shopt/helptopic/hostname/export`, a quoted `\]` inside a regex bracket expression (tar's option parser), `COMP_WORDS=... cmd` passing a string when `COMP_WORDS` is an array (pip), and `complete -p` printing in bash's order. Checked by running about 110 command lines (git, ssh, tar, systemctl, rpm, docker...) through bash and vaporshell and diffing the candidates: all but a handful agree (left: `compgen -A signal` lists 31 signals to bash's 68, and the options of builtins come from `help`, which is shorter here). Also set at startup, as bash
 does, because rc files test them: `$BASH`, `SHLVL`, a non-empty `PS1`/`PS2` in an interactive
 shell, and `i` in `$-` for `-i` (even with `-c`). Not done: `compopt -o nosort/noquote`,
-`complete -E`/`-I` specs being consulted, `set -x` tracing of `[[ ]]`, `$_`, and
+`complete -E`/`-I` specs being consulted, `$_`, and
 `/etc/profile.d/which2.sh` (it keys on the executable being called bash or sh). It is slower than the native
 completion (it is bash code), so it is opt-in: the native completions stay the default.
 

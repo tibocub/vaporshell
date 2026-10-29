@@ -31,6 +31,7 @@
 #include "exec.h"
 #include "mode.h"
 #include "platform.h"
+#include "prompt.h"
 
 #define MAX_FUNC_DEPTH 500
 
@@ -190,8 +191,148 @@ static int call_builtin(const struct builtin_s *b, int argc, char **argv)
   return status;
 }
 
+/* ---- set -x ------------------------------------------------------------------
+ *
+ * Each traced line is PS4 (default "+ ") expanded, its first character
+ * repeated once per level of $(...)/eval/source nesting, then the command
+ * with its words quoted so the line could be pasted back.
+ */
+
+static bool xt_needs_quote(const char *s)
+{
+  const char *p;
+
+  if (s[0] == '\0' || s[0] == '~' || s[0] == '#')
+    {
+      return true;
+    }
+
+  for (p = s; *p != '\0'; p++)
+    {
+      if (strchr(" \t\n'\"\\|&;()<>!{}*[]?^$`", *p) != NULL || (unsigned char)*p < 32 || *p == 127)
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+static void xt_quote(struct sbuf_s *b, const char *s)
+{
+  const char *p;
+  bool ctl = false;
+
+  if (!xt_needs_quote(s))
+    {
+      sb_adds(b, s);
+      return;
+    }
+
+  for (p = s; *p != '\0'; p++)
+    {
+      ctl = ctl || (unsigned char)*p < 32 || *p == 127;
+    }
+
+  if (ctl)
+    {
+      sb_adds(b, "$'");
+      for (p = s; *p != '\0'; p++)
+        {
+          char tmp[8];
+          const char *esc = NULL;
+
+          switch (*p)
+            {
+              case '\a': esc = "\\a"; break;
+              case '\b': esc = "\\b"; break;
+              case '\f': esc = "\\f"; break;
+              case '\n': esc = "\\n"; break;
+              case '\r': esc = "\\r"; break;
+              case '\t': esc = "\\t"; break;
+              case '\v': esc = "\\v"; break;
+              case 033:  esc = "\\E"; break;
+              case '\\': esc = "\\\\"; break;
+              case '\'': esc = "\\'"; break;
+              default:
+                if ((unsigned char)*p < 32 || *p == 127)
+                  {
+                    snprintf(tmp, sizeof(tmp), "\\%03o", (unsigned char)*p);
+                    esc = tmp;
+                  }
+
+                break;
+            }
+
+          if (esc != NULL)
+            {
+              sb_adds(b, esc);
+            }
+          else
+            {
+              sb_addc(b, *p);
+            }
+        }
+
+      sb_addc(b, '\'');
+      return;
+    }
+
+  sb_addc(b, '\'');
+  for (p = s; *p != '\0'; p++)
+    {
+      if (*p == '\'')
+        {
+          sb_adds(b, "'\\''");
+        }
+      else
+        {
+          sb_addc(b, *p);
+        }
+    }
+
+  sb_addc(b, '\'');
+}
+
+/* Print one trace line: the prefix, then 'body'. */
+
+static const char *g_ps4_old;           /* `PS4=x` is traced with the PS4 it replaced */
+
+static void xt_line(const char *body)
+{
+  const char *ps4 = g_ps4_old != NULL ? g_ps4_old : var_get("PS4");
+  struct sbuf_s line;
+  char *pre;
+  int i;
+
+  if (ps4 == NULL)
+    {
+      ps4 = "+ ";
+    }
+
+  g_sh.opt_x = false;                  /* no tracing of PS4's own expansion */
+  pre = vash_prompt_expand(ps4);
+  g_sh.opt_x = true;
+  vash_prompt_strip(pre);
+
+  sb_init(&line);
+  for (i = 0; pre[0] != '\0' && i < g_sh.xdepth + 1; i++)
+    {
+      sb_addc(&line, pre[0]);
+    }
+
+  sb_adds(&line, pre[0] != '\0' ? pre + 1 : "");
+  sb_adds(&line, body);
+  sb_addc(&line, '\n');
+  free(pre);
+  fflush(stdout);
+  fwrite(line.s, 1, line.len, stderr);
+  sb_free(&line);
+}
+
 static void xtrace(int argc, char **argv)
 {
+  struct sbuf_s b;
   int i;
 
   if (!g_sh.opt_x)
@@ -199,13 +340,129 @@ static void xtrace(int argc, char **argv)
       return;
     }
 
-  fputs("+", stderr);
+  sb_init(&b);
   for (i = 0; i < argc; i++)
     {
-      fprintf(stderr, " %s", argv[i]);
+      if (i > 0)
+        {
+          sb_addc(&b, ' ');
+        }
+
+      xt_quote(&b, argv[i]);
     }
 
-  fputc('\n', stderr);
+  xt_line(b.s != NULL ? b.s : "");
+  sb_free(&b);
+}
+
+/* name=value (or name+=value) after the assignment was expanded */
+
+static void xtrace_assign(const char *name, bool append, const char *val)
+{
+  struct sbuf_s b;
+
+  if (!g_sh.opt_x)
+    {
+      return;
+    }
+
+  sb_init(&b);
+  sb_adds(&b, name);
+  sb_adds(&b, append ? "+=" : "=");
+  if (val[0] != '\0')
+    {
+      xt_quote(&b, val);
+    }
+
+  xt_line(b.s);
+  sb_free(&b);
+}
+
+/* "prefix text suffix" for compound-command headers: ((  expr  )), for ... */
+
+static void xtrace_text(const char *pre, const char *text, const char *suf)
+{
+  struct sbuf_s b;
+
+  if (!g_sh.opt_x)
+    {
+      return;
+    }
+
+  sb_init(&b);
+  sb_adds(&b, pre);
+  sb_adds(&b, text);
+  sb_adds(&b, suf);
+  xt_line(b.s);
+  sb_free(&b);
+}
+
+/* set while the single test under a `!` is evaluated: it is traced as `[[ ! ... ]]` */
+
+static bool g_xt_neg;
+
+static const char *xt_neg(void)
+{
+  const char *r = g_xt_neg ? "! " : "";
+
+  g_xt_neg = false;
+  return r;
+}
+
+static void xtrace_binary(const char *a, const char *op, const char *b)
+{
+  struct sbuf_s t;
+
+  if (!g_sh.opt_x)
+    {
+      return;
+    }
+
+  sb_init(&t);
+  sb_adds(&t, "[[ ");
+  sb_adds(&t, xt_neg());
+  sb_adds(&t, a);
+  sb_addc(&t, ' ');
+  sb_adds(&t, op);
+  sb_addc(&t, ' ');
+  sb_adds(&t, b);
+  sb_adds(&t, " ]]");
+  xt_line(t.s);
+  sb_free(&t);
+}
+
+/* "for NAME in WORDS" as written, for the trace (select uses the same text) */
+
+static void xtrace_for(const char *kw, const struct node_s *n)
+{
+  struct sbuf_s b;
+  const struct word_s *w;
+
+  if (!g_sh.opt_x)
+    {
+      return;
+    }
+
+  sb_init(&b);
+  sb_adds(&b, kw);
+  sb_addc(&b, ' ');
+  sb_adds(&b, n->name);
+  sb_adds(&b, " in");
+  if (n->flag)
+    {
+      for (w = n->words; w != NULL; w = w->next)
+        {
+          sb_addc(&b, ' ');
+          sb_adds(&b, w->text);
+        }
+    }
+  else
+    {
+      sb_adds(&b, " \"$@\"");
+    }
+
+  xt_line(b.s);
+  sb_free(&b);
 }
 
 /* ---- Command resolution and external programs ---------------------------------- */
@@ -493,11 +750,40 @@ static int exec_assign_only(struct node_s *n)
 
   for (w = n->assigns; w != NULL && g_sh.unwind == UW_NONE; w = w->next)
     {
+      char *old_ps4 = NULL;
+
+      if (g_sh.opt_x && strncmp(w->text, "PS4=", 4) == 0)
+        {
+          old_ps4 = vash_xstrdup(var_get("PS4") != NULL ? var_get("PS4") : "+ ");
+          g_ps4_old = old_ps4;
+        }
+
       if (assign_apply(w->text) != 0)
         {
           status = 1;
           vash_special_error();
         }
+      else if (g_sh.opt_x)
+        {
+          char *name;
+          const char *raw;
+          bool append;
+
+          if (assign_scalar_parts(w->text, &name, &raw, &append))
+            {
+              const char *v = var_get(name);
+
+              xtrace_assign(name, append, v != NULL ? v : "");
+              free(name);
+            }
+          else
+            {
+              xtrace_text("", w->text, "");        /* an array assignment: as written */
+            }
+        }
+
+      g_ps4_old = NULL;
+      free(old_ps4);
     }
 
   if (n->redirs != NULL)
@@ -750,6 +1036,12 @@ static int exec_simple(struct node_s *n)
       tv[ntv].flags = v != NULL ? v->flags : 0;
       ntv++;
 
+      if (v != NULL && v->arr != NULL)
+        {
+          arr_free(v->arr);               /* the command sees a plain string (COMP_WORDS=... cmd) */
+          v->arr = NULL;
+        }
+
       if (var_set(name, val) != 0)
         {
           free(val);
@@ -758,6 +1050,7 @@ static int exec_simple(struct node_s *n)
         }
 
       var_set_flags(name, VF_EXPORT);
+      xtrace_assign(name, append, var_get(name) != NULL ? var_get(name) : "");
       free(val);
     }
 
@@ -881,6 +1174,7 @@ static int exec_for(struct node_s *n)
   for (i = 0; i < items.n; i++)
     {
       debug_hook();                    /* bash: once per iteration */
+      xtrace_for("for", n);
       if (var_for_bind(n->name, items.v[i]) != 0)
         {
           status = 1;
@@ -1060,6 +1354,7 @@ static int exec_select(struct node_s *n)
   int i;
   bool show_menu = true;
 
+  xtrace_for("select", n);
   fv_init(&items);
   if (n->flag)
     {
@@ -1155,6 +1450,8 @@ static int exec_case(struct node_s *n)
     {
       return 1;
     }
+
+  xtrace_text("case ", n->words->text, " in");
 
   for (item = n->items; item != NULL; item = item->next)
     {
@@ -1864,11 +2161,64 @@ static int db_regex(const char *subject, const char *raw)
   regex_t rx;
   size_t i;
   int rc;
+  bool in_br = false;
+  bool br_first = false;
+
+  /* Inside a bracket expression a backslash is just a character, so a
+   * quoted one there is passed bare: [\]\[a-z] is the class []\[a-z].
+   */
 
   sb_init(&re);
   for (i = 0; i < pat.len; i++)
     {
-      if (pat.q != NULL && pat.q[i] && strchr(".[]{}()*+?|^$\\", pat.s[i]) != NULL)
+      bool q = pat.q != NULL && pat.q[i];
+
+      if (!in_br && !q && pat.s[i] == '[')
+        {
+          in_br = true;
+          br_first = true;
+          sb_addc(&re, '[');
+          if (i + 1 < pat.len && pat.s[i + 1] == '^' && !(pat.q != NULL && pat.q[i + 1]))
+            {
+              sb_addc(&re, '^');
+              i++;
+            }
+
+          continue;
+        }
+
+      if (in_br)
+        {
+          if (!q && pat.s[i] == '[' && i + 1 < pat.len && strchr(":.=", pat.s[i + 1]) != NULL)
+            {
+              char kind = pat.s[i + 1];
+
+              sb_addc(&re, '[');
+              sb_addc(&re, kind);
+              for (i += 2; i < pat.len && !(pat.s[i] == kind && i + 1 < pat.len && pat.s[i + 1] == ']'); i++)
+                {
+                  sb_addc(&re, pat.s[i]);
+                }
+
+              sb_addc(&re, kind);
+              sb_addc(&re, ']');
+              i++;
+            }
+          else if (!q && pat.s[i] == ']' && !br_first)
+            {
+              in_br = false;
+              sb_addc(&re, ']');
+            }
+          else
+            {
+              sb_addc(&re, pat.s[i]);
+            }
+
+          br_first = false;
+          continue;
+        }
+
+      if (q && strchr(".[]{}()*+?|^$\\", pat.s[i]) != NULL)
         {
           sb_addc(&re, '\\');
         }
@@ -1877,6 +2227,7 @@ static int db_regex(const char *subject, const char *raw)
     }
 
   pat_free(&pat);
+  xtrace_binary(subject, "=~", re.s != NULL ? re.s : "");
   rc = regcomp(&rx, re.s != NULL ? re.s : "", REG_EXTENDED | (g_sh.so_nocasematch ? REG_ICASE : 0));
   sb_free(&re);
   if (rc != 0)
@@ -1959,6 +2310,20 @@ static int db_test(struct node_s *n)
   if (op[0] == '\0')
     {
       a = expand_word_str(w->text);
+      if (a != NULL && g_sh.opt_x)
+        {
+          struct sbuf_s t;
+
+          sb_init(&t);
+          sb_adds(&t, "[[ ");
+          sb_adds(&t, xt_neg());
+          sb_adds(&t, "-n ");
+          xt_quote(&t, a);
+          sb_adds(&t, " ]]");
+          xt_line(t.s);
+          sb_free(&t);
+        }
+
       r = (a != NULL) ? (a[0] != '\0' ? 0 : 1) : 2;
       free(a);
       return r;
@@ -1972,6 +2337,21 @@ static int db_test(struct node_s *n)
       if (a == NULL)
         {
           return 2;
+        }
+
+      if (g_sh.opt_x)
+        {
+          struct sbuf_s t;
+
+          sb_init(&t);
+          sb_adds(&t, "[[ ");
+          sb_adds(&t, xt_neg());
+          sb_adds(&t, op);
+          sb_addc(&t, ' ');
+          xt_quote(&t, a);
+          sb_adds(&t, " ]]");
+          xt_line(t.s);
+          sb_free(&t);
         }
 
       if (strcmp(op, "-v") == 0)
@@ -2008,6 +2388,16 @@ static int db_test(struct node_s *n)
           return 2;
         }
 
+      if (g_sh.opt_x)
+        {
+          char xs[24];
+          char ys[24];
+
+          snprintf(xs, sizeof(xs), "%ld", x);
+          snprintf(ys, sizeof(ys), "%ld", y);
+          xtrace_binary(xs, op, ys);
+        }
+
       switch (op[1])
         {
           case 'e': return x == y ? 0 : 1;
@@ -2028,6 +2418,14 @@ static int db_test(struct node_s *n)
       struct pat_s pat = expand_pattern(w->next->text);
       bool ext = g_sh.so_extglob;
       bool m;
+
+      if (g_sh.opt_x)
+        {
+          char *ps = vash_xstrndup(pat.s, pat.len);
+
+          xtrace_binary(a, op, ps);
+          free(ps);
+        }
 
       g_sh.so_extglob = true;                  /* always on inside [[ ]] */
       m = pat_match_ci(pat.s, pat.q, pat.len, a, g_sh.so_nocasematch);
@@ -2060,6 +2458,7 @@ static int db_test(struct node_s *n)
       return 2;
     }
 
+  xtrace_binary(a, op, b);
   if (strcmp(op, "<") == 0)
     {
       r = vash_plat_collate(a, b) < 0 ? 0 : 1;      /* [[ ]] sorts by the locale */
@@ -2099,7 +2498,9 @@ static int db_eval(struct node_s *n)
         return r == 1 ? db_eval(n->b) : r;
 
       case N_DB_NOT:
+        g_xt_neg = g_sh.opt_x && n->a->type != N_DB_AND && n->a->type != N_DB_OR && n->a->type != N_DB_NOT;
         r = db_eval(n->a);
+        g_xt_neg = false;
         return r == 2 ? 2 : (r == 0 ? 1 : 0);
 
       default:
@@ -2144,6 +2545,7 @@ static int exec_arith(struct node_s *n)
   bool err;
 
   debug_hook();
+  xtrace_text("(( ", n->words->text, " ))");
   return arith_status(n->words->text, &err);
 }
 
@@ -2160,6 +2562,34 @@ static bool blank_text(const char *s)
   return true;
 }
 
+/* for ((a; b; c)): bash traces each part trimmed */
+
+static void xtrace_arith_part(const char *text)
+{
+  size_t n;
+  char *t;
+
+  if (!g_sh.opt_x)
+    {
+      return;
+    }
+
+  while (*text == ' ' || *text == '\t' || *text == '\n')
+    {
+      text++;
+    }
+
+  n = strlen(text);
+  while (n > 0 && (text[n - 1] == ' ' || text[n - 1] == '\t' || text[n - 1] == '\n'))
+    {
+      n--;
+    }
+
+  t = vash_xstrndup(text, n);
+  xtrace_text("(( ", t, " ))");
+  free(t);
+}
+
 static int exec_arithfor(struct node_s *n)
 {
   struct word_s *init = n->words;
@@ -2170,6 +2600,7 @@ static int exec_arithfor(struct node_s *n)
 
   if (!blank_text(init->text))
     {
+      xtrace_arith_part(init->text);
       arith_status(init->text, &err);
       if (err)
         {
@@ -2182,7 +2613,10 @@ static int exec_arithfor(struct node_s *n)
     {
       if (!blank_text(cond->text))
         {
-          int c = arith_status(cond->text, &err);
+          int c;
+
+          xtrace_arith_part(cond->text);
+          c = arith_status(cond->text, &err);
 
           if (err || c != 0)
             {
@@ -2203,6 +2637,7 @@ static int exec_arithfor(struct node_s *n)
 
       if (!blank_text(step->text))
         {
+          xtrace_arith_part(step->text);
           arith_status(step->text, &err);
           if (err)
             {
@@ -2407,7 +2842,7 @@ int exec_node(struct node_s *n)
         break;
 
       case N_FUNCDEF:
-        func_define(n->name, n->a, n->arena);
+        func_define(n->name, n->a, n->arena, n->text);
         break;
 
       case N_DBRACKET:
@@ -2496,7 +2931,19 @@ static int run_string_child(const char *text, size_t len)
 
 /* ---- Command substitution ----------------------------------------------------------------------- */
 
+static char *run_cmdsub_inner(const char *text, size_t len, bool strip);
+
 static char *run_cmdsub_impl(const char *text, size_t len, bool strip)
+{
+  char *r;
+
+  g_sh.xdepth++;
+  r = run_cmdsub_inner(text, len, strip);
+  g_sh.xdepth--;
+  return r;
+}
+
+static char *run_cmdsub_inner(const char *text, size_t len, bool strip)
 {
   struct sbuf_s out;
   int fds[2];

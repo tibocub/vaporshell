@@ -48,6 +48,8 @@ void vash_commands_refresh(void);
 bool vash_is_command(const char *name);
 bool vash_comp_filenames(void);   /* complete -o filenames / compopt -o filenames: candidates are file names */
 bool vash_comp_nospace(void);   /* compopt -o nospace in the completion function that just ran (compgen.c) */
+void vash_shopt_each(void (*fn)(const char *name, void *arg), void *arg);    /* shopt.c */
+void vash_setopt_each(void (*fn)(const char *name, void *arg), void *arg);   /* builtins.c: set -o names */
 void vash_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
 void vash_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 

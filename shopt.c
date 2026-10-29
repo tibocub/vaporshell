@@ -158,6 +158,33 @@ void vash_shopt_defaults(void)
     }
 }
 
+static bool so_get(int i);
+
+void vash_bashopts(char *buf, size_t n)
+{
+  size_t i;
+  size_t len = 0;
+
+  buf[0] = '\0';
+  for (i = 0; i < sizeof(g_so) / sizeof(g_so[0]); i++)
+    {
+      if (so_get((int)i) && len + strlen(g_so[i].name) + 2 < n)
+        {
+          len += (size_t)snprintf(buf + len, n - len, "%s%s", len > 0 ? ":" : "", g_so[i].name);
+        }
+    }
+}
+
+void vash_shopt_each(void (*fn)(const char *name, void *arg), void *arg)
+{
+  size_t i;
+
+  for (i = 0; i < sizeof(g_so) / sizeof(g_so[0]); i++)
+    {
+      fn(g_so[i].name, arg);
+    }
+}
+
 static bool so_get(int i)
 {
   switch (g_so[i].cls)

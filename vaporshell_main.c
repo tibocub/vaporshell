@@ -157,6 +157,13 @@ static void bash_defaults(const char *argv0, bool prompting)
         }
     }
 
+  if (var_get("PS4") == NULL)
+    {
+      var_set("PS4", "+ ");
+    }
+
+  g_sh.opt_noH = !prompting;                 /* history expansion is an interactive-shell default */
+
   if (var_get("COMP_WORDBREAKS") == NULL)
     {
       var_set("COMP_WORDBREAKS", " \t\n\"'@><=;|&(:");

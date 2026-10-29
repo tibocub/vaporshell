@@ -46,6 +46,11 @@ static struct token_s *peek(struct parser_s *p)
 
 static void advance(struct parser_s *p)
 {
+  if (p->have)
+    {
+      p->last_end = p->tok.end;
+    }
+
   p->have = false;
 }
 
@@ -364,6 +369,7 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
 {
   struct node_s *fn = new_node(p, N_FUNCDEF);
   struct node_s *body;
+  size_t body_start;
 
   advance(p);                     /* ( */
   if (peek(p)->type != T_RPAREN)
@@ -374,6 +380,7 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
 
   advance(p);
   skip_newlines(p);
+  body_start = peek(p)->start;
   body = parse_command(p);
   if (body == NULL)
     {
@@ -390,6 +397,11 @@ static struct node_s *parse_funcdef(struct parser_s *p, char *name)
   fn->name = name;
   fn->a = body;
   fn->arena = p->lx.arena;
+  if (p->lx.buf != NULL && body_start < p->last_end && p->last_end <= p->lx.len)
+    {
+      fn->text = arena_strndup(p->lx.arena, p->lx.buf + body_start, p->last_end - body_start);
+    }
+
   return fn;
 }
 
@@ -836,6 +848,7 @@ static struct node_s *parse_function_kw(struct parser_s *p)
   struct node_s *fn = new_node(p, N_FUNCDEF);
   struct node_s *body;
   struct token_s *t;
+  size_t body_start;
 
   advance(p);                     /* function */
   t = peek(p);
@@ -860,6 +873,7 @@ static struct node_s *parse_function_kw(struct parser_s *p)
     }
 
   skip_newlines(p);
+  body_start = peek(p)->start;
   body = parse_command(p);
   if (body == NULL)
     {
@@ -875,6 +889,11 @@ static struct node_s *parse_function_kw(struct parser_s *p)
 
   fn->a = body;
   fn->arena = p->lx.arena;
+  if (p->lx.buf != NULL && body_start < p->last_end && p->last_end <= p->lx.len)
+    {
+      fn->text = arena_strndup(p->lx.arena, p->lx.buf + body_start, p->last_end - body_start);
+    }
+
   return fn;
 }
 

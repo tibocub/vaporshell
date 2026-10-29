@@ -264,6 +264,11 @@ int vash_plat_hostname(char *buf, size_t n)
   return -1;                      /* NuttX has no portable hostname */
 }
 
+const char *vash_plat_hosttype(void)
+{
+  return CONFIG_ARCH;
+}
+
 const char *vash_plat_ostype(void)
 {
   return "nuttx";

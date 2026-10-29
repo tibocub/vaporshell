@@ -228,6 +228,70 @@ static const char *bash_var(const char *name)
       return vash_plat_ostype();
     }
 
+  if (strcmp(name, "HOSTTYPE") == 0)
+    {
+      return vash_plat_hosttype();
+    }
+
+  if (strcmp(name, "MACHTYPE") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%s-pc-%s", vash_plat_hosttype(), vash_plat_ostype());
+      return buf;
+    }
+
+  if (strcmp(name, "BASHPID") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%ld", (long)getpid());      /* unlike $$, the subshell's own */
+      return buf;
+    }
+
+  if (strcmp(name, "EPOCHSECONDS") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%ld", (long)time(NULL));
+      return buf;
+    }
+
+  if (strcmp(name, "EPOCHREALTIME") == 0)
+    {
+      struct timespec ts;
+
+      clock_gettime(CLOCK_REALTIME, &ts);
+      snprintf(buf, sizeof(buf), "%ld.%06ld", (long)ts.tv_sec, ts.tv_nsec / 1000);
+      return buf;
+    }
+
+  if (strcmp(name, "SRANDOM") == 0)
+    {
+      static unsigned long long s;
+
+      if (s == 0)
+        {
+          s = ((unsigned long long)time(NULL) << 20) ^ (unsigned long long)getpid() ^ 0x9e3779b97f4a7c15ULL;
+        }
+
+      s ^= s << 13;                    /* xorshift64 */
+      s ^= s >> 7;
+      s ^= s << 17;
+      snprintf(buf, sizeof(buf), "%u", (unsigned)(s >> 16));
+      return buf;
+    }
+
+  if (strcmp(name, "SHELLOPTS") == 0 || strcmp(name, "BASHOPTS") == 0)
+    {
+      static char opts[1024];
+
+      if (name[0] == 'S')
+        {
+          vash_shellopts(opts, sizeof(opts));
+        }
+      else
+        {
+          vash_bashopts(opts, sizeof(opts));
+        }
+
+      return opts;
+    }
+
   return NULL;
 }
 
@@ -712,7 +776,7 @@ void func_unset(const char *name)
     }
 }
 
-void func_define(const char *name, struct node_s *body, struct arena_s *arena)
+void func_define(const char *name, struct node_s *body, struct arena_s *arena, const char *text)
 {
   struct func_s *f;
 
@@ -722,9 +786,25 @@ void func_define(const char *name, struct node_s *body, struct arena_s *arena)
   f->src = vash_xstrdup(g_sh.cur_src != NULL ? g_sh.cur_src : "");
   f->body = body;
   f->arena = arena;
+  f->text = text;
   arena_retain(arena);
   f->next = g_sh.funcs;
   g_sh.funcs = f;
+}
+
+void func_print(const struct func_s *f)
+{
+  const char *t = f->text != NULL ? f->text : "{ :; }";
+
+  printf("%s () \n", f->name);
+  if (t[0] != '{')
+    {
+      printf("{ \n    %s\n}\n", t);      /* ( ... ) or if/while ...: wrapped, as bash always shows braces */
+    }
+  else
+    {
+      printf("%s\n", t);
+    }
 }
 
 void shell_init(const char *arg0)

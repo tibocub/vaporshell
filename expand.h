@@ -44,6 +44,7 @@ struct pat_s
 /* expand.c */
 
 int expand_words(const struct word_s *w, struct fieldv_s *out);
+int expand_token_fields(const char *text, struct fieldv_s *out);   /* split, no glob (compgen -W) */
 
 /* An array subscript as an index: expanded, then arithmetic. A negative one
  * counts from one past the highest index of array 'name' (NULL: none allowed).

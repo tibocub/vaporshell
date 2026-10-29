@@ -56,6 +56,7 @@ struct cg_s
 
 /* compopt -o nospace, from the completion function that just ran (see vash_comp_nospace) */
 
+static void sink_to_assign(void *ctx, const char *word, const char *desc);
 static bool g_comp_running;
 static bool g_comp_nospace;
 static bool g_comp_filenames;
@@ -145,10 +146,9 @@ static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, con
   while (i < n)
     {
       size_t start;
-      bool quoted = false;
       char q = '\0';
       char *tok;
-      char *val;
+      struct fieldv_s fv;
 
       while (i < n && strchr(ifs, words[i]) != NULL && words[i] != '\0')
         {
@@ -172,12 +172,10 @@ static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, con
           else if (words[i] == '\'' || words[i] == '"')
             {
               q = words[i];
-              quoted = true;
             }
           else if (words[i] == '\\' && i + 1 < n)
             {
               i++;
-              quoted = true;
             }
           else if (words[i] == '$' && i + 1 < n && (words[i + 1] == '(' || words[i + 1] == '{'))
             {
@@ -206,49 +204,19 @@ static void gen_wordlist(struct cg_s *c, const char *words, const char *pre, con
         }
 
       tok = vash_xstrndup(words + start, i - start);
-      val = expand_word_str(tok);
-      free(tok);
-      if (val == NULL)
+      fv_init(&fv);
+      if (expand_token_fields(tok, &fv) == 0)
         {
-          continue;
-        }
+          int k;
 
-      if (quoted)
-        {
-          emit(c, val, pre, suf);
-        }
-      else
-        {
-          char *p = val;
-
-          while (*p != '\0')
+          for (k = 0; k < fv.n; k++)
             {
-              char *e;
-
-              while (*p != '\0' && strchr(ifs, *p) != NULL)
-                {
-                  p++;
-                }
-
-              e = p;
-              while (*e != '\0' && strchr(ifs, *e) == NULL)
-                {
-                  e++;
-                }
-
-              if (e > p)
-                {
-                  char *w = vash_xstrndup(p, (size_t)(e - p));
-
-                  emit(c, w, pre, suf);
-                  free(w);
-                }
-
-              p = e;
+              emit(c, fv.v[k], pre, suf);
             }
         }
 
-      free(val);
+      fv_free(&fv);
+      free(tok);
     }
 }
 
@@ -308,7 +276,7 @@ static void gen_dir_entries(struct cg_s *c, bool dirs_only, const char *pre, con
         sb_init(&name);
         sb_adds(&name, dirpart);
         sb_adds(&name, de->d_name);
-        if (isdir && g_sink != NULL)
+        if (isdir && g_sink != NULL && g_sink != sink_to_assign)
           {
             sb_addc(&name, '/');          /* only for completion: tells the editor it is a directory */
           }
@@ -424,11 +392,26 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
 {
   if (strcmp(action, "variable") == 0)
     {
+      static const char *const computed[] =
+      {
+        "BASHOPTS", "BASHPID", "BASH_VERSION", "EPOCHREALTIME", "EPOCHSECONDS", "EUID",
+        "HOSTNAME", "HOSTTYPE", "MACHTYPE", "OSTYPE", "RANDOM", "SECONDS", "SHELLOPTS",
+        "SRANDOM", "UID"
+      };
       struct var_s *v;
+      size_t k;
 
       for (v = g_sh.vars; v != NULL; v = v->next)
         {
           emit(c, v->name, pre, suf);
+        }
+
+      for (k = 0; vash_feat(VF_BASH_VARS) && k < sizeof(computed) / sizeof(computed[0]); k++)
+        {
+          if (var_lookup(computed[k]) == NULL)
+            {
+              emit(c, computed[k], pre, suf);     /* computed, not stored: bash lists them too */
+            }
         }
     }
   else if (strcmp(action, "function") == 0)
@@ -486,6 +469,68 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
     {
       vash_each_job(emit_job, &(struct emit_s){ c, pre, suf });
     }
+  else if (strcmp(action, "hostname") == 0)
+    {
+      const char *file = var_get("HOSTFILE") != NULL ? var_get("HOSTFILE") : "/etc/hosts";
+      FILE *fp = fopen(file, "r");
+      char line[1024];
+
+      /* every name after the address on a line, like bash reads $HOSTFILE */
+
+      while (fp != NULL && fgets(line, sizeof(line), fp) != NULL)
+        {
+          char *save;
+          char *tok = strtok_r(line, " \t\r\n", &save);
+
+          if (tok == NULL || tok[0] == '#')
+            {
+              continue;
+            }
+
+          for (tok = strtok_r(NULL, " \t\r\n", &save); tok != NULL && tok[0] != '#';
+               tok = strtok_r(NULL, " \t\r\n", &save))
+            {
+              emit(c, tok, pre, suf);
+            }
+        }
+
+      if (fp != NULL)
+        {
+          fclose(fp);
+        }
+    }
+  else if (strcmp(action, "shopt") == 0)
+    {
+      vash_shopt_each(emit_name, &(struct emit_s){ c, pre, suf });
+    }
+  else if (strcmp(action, "setopt") == 0)
+    {
+      vash_setopt_each(emit_name, &(struct emit_s){ c, pre, suf });
+    }
+  else if (strcmp(action, "helptopic") == 0 || strcmp(action, "enabled") == 0)
+    {
+      const struct builtin_s *b;
+
+      for (b = g_vash_builtins; b->name != NULL; b++)
+        {
+          if ((b->modes & vash_mode_bit()) != 0 && builtin_is_enabled(b->name))
+            {
+              emit(c, b->name, pre, suf);
+            }
+        }
+    }
+  else if (strcmp(action, "export") == 0)
+    {
+      struct var_s *v;
+
+      for (v = g_sh.vars; v != NULL; v = v->next)
+        {
+          if ((v->flags & VF_EXPORT) != 0)
+            {
+              emit(c, v->name, pre, suf);
+            }
+        }
+    }
   else if (strcmp(action, "user") == 0)
     {
       vash_each_user(emit_name, &(struct emit_s){ c, pre, suf });
@@ -495,6 +540,23 @@ static void gen_action(struct cg_s *c, const char *action, const char *pre, cons
       gen_cdpath(c, pre, suf);
     }
   else if (strcmp(action, "signal") == 0)
+    {
+      const char *n;
+      char name[24];
+      int i;
+
+      emit(c, "EXIT", pre, suf);
+      for (i = 0; (n = vash_signal_name(i)) != NULL; i++)
+        {
+          snprintf(name, sizeof(name), "SIG%s", n);
+          emit(c, name, pre, suf);
+        }
+
+      emit(c, "DEBUG", pre, suf);
+      emit(c, "ERR", pre, suf);
+      emit(c, "RETURN", pre, suf);
+    }
+  else if (strcmp(action, "killsig") == 0)      /* the built-in kill spec: kill -<Tab> */
     {
       const char *n;
       char dashed[16];
@@ -1115,7 +1177,7 @@ static const struct complete_spec_s g_default_specs[] =
   { NULL, "cd", "-d -A cdpath " }, { NULL, "pushd", "-d -A cdpath " },
   { NULL, "fg", "-A job " },   { NULL, "bg", "-A job " },
   { NULL, "disown", "-A job " }, { NULL, "wait", "-A job " },
-  { NULL, "kill", "-A signal -A job " },
+  { NULL, "kill", "-A killsig -A job " },
   { NULL, "unset", "-v " },    { NULL, "export", "-v " },
   { NULL, "readonly", "-v " }, { NULL, "declare", "-v " },
   { NULL, "typeset", "-v " },  { NULL, "local", "-v " },

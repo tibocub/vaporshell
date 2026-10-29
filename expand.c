@@ -3029,6 +3029,60 @@ static int expand_one_word(const char *text, struct fieldv_s *out)
   return 0;
 }
 
+/* One word expanded and split like a command-line word, but with no pathname
+ * expansion (compgen -W): "${a[@]}" gives its elements, $x splits at IFS.
+ */
+
+static int expand_token_one(const char *text, struct fieldv_s *out);
+
+int expand_token_fields(const char *text, struct fieldv_s *out)
+{
+  if (strchr(text, '{') != NULL)
+    {
+      struct fieldv_s bw;
+      int k;
+
+      fv_init(&bw);
+      vash_brace_expand(text, &bw);               /* -{2..9} */
+      for (k = 0; k < bw.n; k++)
+        {
+          if (expand_token_one(bw.v[k], out) != 0)
+            {
+              fv_free(&bw);
+              return -1;
+            }
+        }
+
+      fv_free(&bw);
+      return 0;
+    }
+
+  return expand_token_one(text, out);
+}
+
+static int expand_token_one(const char *text, struct fieldv_s *out)
+{
+  struct xctx_s x;
+
+  x_init(&x);
+  x.split = true;
+  x.glob = false;
+  x_scan(&x, text, strlen(text), false, true);
+  if (!x.error)
+    {
+      x_finish(&x, out);
+    }
+
+  if (x.error)
+    {
+      x_free(&x);
+      return -1;
+    }
+
+  x_free(&x);
+  return 0;
+}
+
 int expand_words(const struct word_s *w, struct fieldv_s *out)
 {
   for (; w != NULL; w = w->next)

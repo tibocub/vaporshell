@@ -104,6 +104,7 @@ static struct func_s *clone_funcs(const struct func_s *f)
       c->name = vash_xstrdup(f->name);
       c->src = vash_xstrdup(f->src);
       c->body = f->body;
+      c->text = f->text;
       c->arena = f->arena;
       arena_retain(c->arena);
       c->next = NULL;

@@ -107,6 +107,7 @@ struct node_s
   bool async;                 /* list item ended by '&' */
   int line;                   /* N_SIMPLE: source line, for $LINENO */
   struct arena_s *arena;      /* N_FUNCDEF: arena the body lives in */
+  char *text;                 /* N_FUNCDEF: the body as written, for declare -f (in the arena) */
 };
 
 #endif

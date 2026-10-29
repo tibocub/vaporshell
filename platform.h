@@ -73,6 +73,7 @@ long vash_plat_uid(void);
 long vash_plat_euid(void);
 int vash_plat_hostname(char *buf, size_t n);      /* 0 on success */
 const char *vash_plat_ostype(void);
+const char *vash_plat_hosttype(void);             /* $HOSTTYPE: the machine, e.g. x86_64 */
 
 /* fork() where the OS has it, else -1 with errno ENOSYS. */
 
