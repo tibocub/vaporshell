@@ -3,13 +3,10 @@
  * `disown`, `kill`'s job-spec support.
  *
  * A job here is one pid: a backgrounded pipeline is one forked child that
- * manages its own internal pipeline (exec.c), so there is never more than
-
- * (process groups, tcsetpgrp, SIGTSTP) -- `fg`/`bg` work with what a job
- * can actually be here: running in the background, or finished. A job this
- * shell did not itself stop can still be observed as JOB_STOPPED if it
- * receives SIGSTOP from elsewhere, but `bg` is the only way to resume it,
- * since nothing here suspends a job in the first place.
+ * manages its own internal pipeline (exec.c). On POSIX the interactive shell
+ * also has real terminal job control (see "Terminal job control" below); on
+ * NuttX there is none, and a job is either running in the background or
+ * finished.
  *
  * Job ids count up forever and are never reused, unlike bash, which reuses
  * a ended job's number once it is no longer displayed. This is simpler and
