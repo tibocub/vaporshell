@@ -636,6 +636,7 @@ int var_unset(const char *name)
 char **var_build_env(void)
 {
   struct var_s *v;
+  struct func_s *f;
   size_t n = 0;
   size_t i = 0;
   char **env;
@@ -646,6 +647,11 @@ char **var_build_env(void)
         {
           n++;
         }
+    }
+
+  for (f = g_sh.funcs; f != NULL; f = f->next)
+    {
+      n += f->exported;
     }
 
   env = vash_xmalloc((n + 1) * sizeof(char *));
@@ -661,6 +667,14 @@ char **var_build_env(void)
           e[nl] = '=';
           memcpy(e + nl + 1, v->value, vl + 1);
           env[i++] = e;
+        }
+    }
+
+  for (f = g_sh.funcs; f != NULL; f = f->next)
+    {
+      if (f->exported)
+        {
+          env[i++] = func_env_entry(f);
         }
     }
 
@@ -787,9 +801,20 @@ void func_define(const char *name, struct node_s *body, struct arena_s *arena, c
   f->body = body;
   f->arena = arena;
   f->text = text;
+  f->exported = false;
   arena_retain(arena);
   f->next = g_sh.funcs;
   g_sh.funcs = f;
+}
+
+char *func_env_entry(const struct func_s *f)
+{
+  const char *t = f->text != NULL ? f->text : "{ :; }";
+  size_t n = strlen(f->name) + strlen(t) + 32;
+  char *e = vash_xmalloc(n);
+
+  snprintf(e, n, t[0] == '{' ? "BASH_FUNC_%s%%%%=() %s" : "BASH_FUNC_%s%%%%=() { %s\n}", f->name, t);
+  return e;
 }
 
 void func_print(const struct func_s *f)
@@ -845,6 +870,24 @@ void shell_init(const char *arg0)
     var_set("PPID", ppid);
   }
 #endif
+
+  for (size_t k = 0; environ != NULL && environ[k] != NULL; k++)
+    {
+      const char *e = environ[k];
+      const char *eq = strstr(e, "%%=");
+
+      if (strncmp(e, "BASH_FUNC_", 10) == 0 && eq != NULL && strncmp(eq + 3, "() {", 4) == 0)
+        {
+          size_t nl = (size_t)(eq - e) - 10;
+          size_t vl = strlen(eq + 3);
+          char *def = vash_xmalloc(nl + vl + 1);
+
+          memcpy(def, e + 10, nl);
+          memcpy(def + nl, eq + 3, vl + 1);
+          func_import(def, nl + vl);
+          free(def);
+        }
+    }
 
   if (var_get("SHELL") == NULL)
     {

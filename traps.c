@@ -72,6 +72,18 @@ static const struct
 #ifdef SIGXFSZ
   { "XFSZ", SIGXFSZ },
 #endif
+#ifdef SIGWINCH
+  { "WINCH", SIGWINCH },
+#endif
+#ifdef SIGIO
+  { "IO", SIGIO },
+#endif
+#ifdef SIGPWR
+  { "PWR", SIGPWR },
+#endif
+#ifdef SIGSTKFLT
+  { "STKFLT", SIGSTKFLT },
+#endif
 };
 
 #else

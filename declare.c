@@ -41,6 +41,7 @@ struct dopts_s
   bool g;              /* -g */
   bool f;              /* -f */
   bool F;              /* -F */
+  bool t;              /* -t: with -f, set the trace attribute and print nothing */
   bool ni;             /* +i */
   bool nl;             /* +l */
   bool nu;             /* +u */
@@ -490,7 +491,7 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
               case 'g': o.g = true; break;
               case 'f': o.f = true; break;
               case 'F': o.F = true; break;
-              case 't': break;                     /* the trace attribute: functions only */
+              case 't': o.t = true; break;         /* the trace attribute: functions only */
               default:
                 vash_err("%s: -%c: invalid option", word, *c);
                 vash_err("%s: usage: %s [-aAfFgilnprtux] [-p] [name[=value] ...]", word, word);
@@ -504,6 +505,31 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
   if (o.F)
     {
       return list_functions(argv + i, argc - i);
+    }
+
+  if (o.f && (kind == DK_EXPORT || o.x))
+    {
+      for (; i < argc; i++)             /* export -f / declare -fx: pass functions to children */
+        {
+          struct func_s *f = func_find(argv[i]);
+
+          if (f == NULL)
+            {
+              vash_err("%s: %s: not a function", word, argv[i]);
+              status = 1;
+            }
+          else
+            {
+              f->exported = !o.nx;
+            }
+        }
+
+      return status;
+    }
+
+  if (o.f && o.t)
+    {
+      return 0;
     }
 
   if (o.f)

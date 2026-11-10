@@ -1977,6 +1977,10 @@ static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positi
         {
           x_emit_list(x, at, dq, m.v, m.n);
         }
+      else if (dq && at)
+        {
+          x->saw_at = true;             /* "${a[@]+w}" on an empty array: no word at all */
+        }
 
       mlist_free(&m);
       return;

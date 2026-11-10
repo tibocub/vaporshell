@@ -359,7 +359,11 @@ static int bi_shift(int argc, char **argv)
 
   if (n > g_sh.npos)
     {
-      vash_err("shift: shift count out of range");
+      if (!vash_feat(VF_SET_O_BASH))       /* bash is silent unless posix / shift_verbose */
+        {
+          vash_err("shift: shift count out of range");
+        }
+
       vash_special_error();
       return 1;
     }
@@ -599,8 +603,25 @@ static int bi_unset(int argc, char **argv)
   return status;
 }
 
+/* Options that are only recorded (errtrace, functrace, braceexpand, hashall,
+ * keyword, privileged, physical, onecmd, notify, monitor): scripts set them
+ * with `set -eET` and read them back from $- / set -o. braceexpand and
+ * hashall start on.
+ */
+
+static const char g_inert[] = "ETBhkpPtbm";
+static unsigned g_inert_bits = (1u << 2) | (1u << 3);
+
 static int set_option(char flag, bool on)
 {
+  const char *q = flag != '\0' ? strchr(g_inert, flag) : NULL;
+
+  if (q != NULL)
+    {
+      g_inert_bits = on ? g_inert_bits | (1u << (q - g_inert)) : g_inert_bits & ~(1u << (q - g_inert));
+      return 0;
+    }
+
   switch (flag)
     {
       case 'e': g_sh.opt_e = on; return 0;
@@ -617,8 +638,6 @@ static int set_option(char flag, bool on)
        * asynchronous notification, ignoreeof.
        */
 
-      case 'm':
-      case 'b':
       case 'I': return 0;
       default:  return -1;
     }
@@ -635,11 +654,16 @@ static const struct
   bool bash_only;
 } g_named_opts[] =
 {
-  { "allexport", 'a', false }, { "errexit", 'e', false },
+  { "allexport", 'a', false }, { "braceexpand", 'B', false },
+  { "errexit", 'e', false },   { "errtrace", 'E', false },
+  { "functrace", 'T', false }, { "hashall", 'h', false },
+  { "histexpand", 'H', true }, { "keyword", 'k', false },
+  { "monitor", 'm', false },   { "noclobber", 'C', false },
   { "noexec", 'n', false },    { "noglob", 'f', false },
-  { "nounset", 'u', false },   { "verbose", 'v', false },
-  { "xtrace", 'x', false },    { "noclobber", 'C', false },
-  { "pipefail", 0, false },    { "histexpand", 'H', true }
+  { "notify", 'b', false },    { "nounset", 'u', false },
+  { "onecmd", 't', false },    { "physical", 'P', false },
+  { "pipefail", 0, false },    { "privileged", 'p', false },
+  { "verbose", 'v', false },   { "xtrace", 'x', false }
 };
 
 #define NNAMED ((int)(sizeof(g_named_opts) / sizeof(g_named_opts[0])))
@@ -667,15 +691,13 @@ void vash_shellopts(char *buf, size_t n)
 {
   int i;
   size_t len = 0;
-  const char *names[16];
+  const char *names[24];
   int cnt = 0;
   int a;
   int b;
 
-  names[cnt++] = "braceexpand";
-  names[cnt++] = "hashall";
   names[cnt++] = "interactive-comments";
-  for (i = 0; i < NNAMED && cnt < 15; i++)
+  for (i = 0; i < NNAMED && cnt < 23; i++)
     {
       if ((!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH)) && named_opt_state(i))
         {
@@ -717,7 +739,8 @@ static bool named_opt_state(int i)
       case 'x': return g_sh.opt_x;
       case 'C': return g_sh.opt_C;
       case 'H': return !g_sh.opt_noH;
-      default:  return g_sh.opt_pipefail;
+      case 0:   return g_sh.opt_pipefail;
+      default:  return (g_inert_bits >> (strchr(g_inert, g_named_opts[i].flag) - g_inert)) & 1u;
     }
 }
 
@@ -1030,6 +1053,22 @@ static int bi_set(int argc, char **argv)
 
         for (f = a + 1; *f != '\0'; f++)
           {
+            if (*f == 'o')              /* set -euo pipefail */
+              {
+                if (i + 1 >= argc || argv[i + 1][0] == '-' || argv[i + 1][0] == '+')
+                  {
+                    list_options(!on);
+                  }
+                else if (vash_set_named_option(argv[++i], on) != 0)
+                  {
+                    vash_err("set: %s: invalid option name", argv[i]);
+                    vash_special_error();
+                    return 2;
+                  }
+
+                continue;
+              }
+
             if (set_option(*f, on) != 0)
               {
                 vash_err("set: %c%c: invalid option", a[0], *f);

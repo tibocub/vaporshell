@@ -3229,6 +3229,49 @@ int run_source(struct parser_s *p, bool recover)
   return run_loop(p, recover, 0);
 }
 
+/* Defines the function in "name() { ... }" text from the environment, and
+ * nothing else: the text must be exactly one function definition (anything
+ * more is the Shellshock hole, so it is dropped). True if it was imported.
+ */
+
+bool func_import(const char *text, size_t len)
+{
+  struct parser_s p;
+  struct arena_s *arena = NULL;
+  struct node_s *n = NULL;
+  struct arena_s *arena2 = NULL;
+  struct node_s *n2 = NULL;
+  bool ok;
+
+  parser_init_mem(&p, text, len);
+  ok = parse_command_line(&p, &arena, &n) == PARSE_OK && n != NULL && n->type == N_LIST;
+  if (ok)
+    {
+      n = n->a;                 /* the first (and only allowed) item */
+      ok = n != NULL && n->next == NULL && n->type == N_FUNCDEF;
+    }
+
+  ok = ok && (parse_command_line(&p, &arena2, &n2) == PARSE_EOF || n2 == NULL);
+  if (ok)
+    {
+      func_define(n->name, n->a, n->arena, n->text);
+      g_sh.funcs->exported = true;
+    }
+
+  if (arena2 != NULL)
+    {
+      arena_release(arena2);
+    }
+
+  if (arena != NULL)
+    {
+      arena_release(arena);
+    }
+
+  parser_free(&p);
+  return ok;
+}
+
 int run_string(const char *text, size_t len)
 {
   struct parser_s p;

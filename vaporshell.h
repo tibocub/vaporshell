@@ -202,6 +202,7 @@ struct func_s
   struct node_s *body;
   struct arena_s *arena;  /* keeps 'body' alive; see arena_retain() */
   const char *text;       /* the body as written (lives in 'arena'), or NULL */
+  bool exported;          /* export -f: reaches children as BASH_FUNC_name%% */
 };
 
 /* special.c: PIPESTATUS, FUNCNAME, BASH_SOURCE, BASH_LINENO, BASH_VERSINFO */
@@ -344,6 +345,8 @@ struct func_s *func_find(const char *name);
 void func_define(const char *name, struct node_s *body, struct arena_s *arena, const char *text);
 void vash_shellopts(char *buf, size_t n);       /* $SHELLOPTS: set -o options that are on (builtins.c) */
 void vash_bashopts(char *buf, size_t n);        /* $BASHOPTS: shopt options that are on (shopt.c) */
+char *func_env_entry(const struct func_s *f);   /* "BASH_FUNC_name%%=() {...}", malloc'd */
+bool func_import(const char *text, size_t len); /* exec.c: one function definition from the environment */
 void func_print(const struct func_s *f);       /* declare -f: name () and the body */
 void func_unset(const char *name);
 

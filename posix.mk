@@ -64,6 +64,9 @@ bench: $(BUILDDIR)/complete_bench
 check-pty: $(BIN)
 	python3 -I tests/pty/run.py $(BIN) $(ONLY)
 
+check-corpus: $(BIN)
+	tests/corpus/run.sh $(BIN) $(ONLY)
+
 check-smoosh: $(BIN)
 	sh tests/smoosh-check.sh $(BIN)
 

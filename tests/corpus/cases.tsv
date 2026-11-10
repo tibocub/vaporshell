@@ -1,0 +1,12 @@
+# name	command
+pfetch	cd $W/home && $SH $C/pfetch/pfetch | grep -v 'memory\|uptime'
+nvm-version	$SH -c '. $C/nvm/nvm.sh; nvm --version; nvm ls 2>&1 | head -5'
+nvm-help	$SH -c '. $C/nvm/nvm.sh; nvm help | head -20'
+bash-completion	$SH -c '. $C/bash-completion/bash_completion; complete -p | sort | wc -l; declare -F | grep -c _'
+bash-preexec	$SH -c '. $C/bash-preexec/bash-preexec.sh; echo loaded $?'
+acme-version	$SH $C/acme.sh/acme.sh --version
+acme-help	$SH $C/acme.sh/acme.sh --help | head -40
+oh-my-bash	OSH=$C/oh-my-bash $SH -ic '. $C/oh-my-bash/oh-my-bash.sh; echo "$PS1"; echo ${#PROMPT_COMMAND}'
+bash-it	BASH_IT=$C/bash-it $SH -ic '. $C/bash-it/bash_it.sh; echo "$PS1"; bash-it version'
+bats-tap	cd $C/bats-core && $SH bin/bats --tap test/bats.bats
+bats-common	cd $C/bats-core && $SH bin/bats --tap test/common.bats
