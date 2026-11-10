@@ -585,14 +585,14 @@ int expand_subscript(const char *sub, size_t n, const char *name, long *idx)
       return -1;
     }
 
-  if (text[0] == '\0')
+  if (text[0] == '\0' && n == 0)
     {
       vash_err("%s: bad array subscript", name != NULL ? name : "");
       free(text);
       return -1;
     }
 
-  if (arith_eval(text, &v) != 0)
+  if (text[0] != '\0' && arith_eval(text, &v) != 0)      /* a[$unset] is a[0], but a[] is an error */
     {
       free(text);
       return -1;
