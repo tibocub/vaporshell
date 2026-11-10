@@ -263,6 +263,12 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [ ] improve the build configuration (e.g: use menuconfig) so vaporshell can be stripped down to optimize binzary size or disable unwanted features
 - [ ] explore and implement a plugin system that allow to extend vaporshell with native code (should patch vaporshell pre-compilation so it produces only one binary with vaporOS. an optional support for external binaries could be nice for desktop)
 
+### REPL / Line-Editor
+- [x] tab auto-completions
+- [ ] multi-line editing (allign other lines with the prompt line, implement highlighting for multi-line, etc.)
+- [x] reverse research (ctrl-r)
+
+
 ### Basic shell features
 - [x] execute a script file
 - [x] source a script into the current session (`.` and `source`)
