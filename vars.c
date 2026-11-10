@@ -239,6 +239,15 @@ static const char *bash_var(const char *name)
       return buf;
     }
 
+  if (strcmp(name, "BASH_COMMAND") == 0)
+    {
+      static char *cmd;
+
+      free(cmd);
+      cmd = vash_node_text(g_sh.cur_node);
+      return cmd;
+    }
+
   if (strcmp(name, "BASHPID") == 0)
     {
       snprintf(buf, sizeof(buf), "%ld", (long)getpid());      /* unlike $$, the subshell's own */

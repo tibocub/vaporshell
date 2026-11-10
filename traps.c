@@ -503,6 +503,12 @@ void trap_reset_in_child(void)
 
   for (i = 0; i < NTRAPS; i++)
     {
+      if ((i == VASH_TRAP_ERR && g_sh.opt_E) ||
+          ((i == VASH_TRAP_DEBUG || i == VASH_TRAP_RETURN) && g_sh.opt_T))
+        {
+          continue;                        /* set -E / -T: subshells inherit these */
+        }
+
       if (g_sh.trap_action[i] != NULL && g_sh.trap_action[i][0] != '\0')
         {
           free(g_sh.trap_action[i]);

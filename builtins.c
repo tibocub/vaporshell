@@ -604,17 +604,23 @@ static int bi_unset(int argc, char **argv)
 }
 
 /* Options that are only recorded (errtrace, functrace, braceexpand, hashall,
- * keyword, privileged, physical, onecmd, notify, monitor): scripts set them
+ * keyword, privileged, physical, onecmd, notify, monitor; errtrace and functrace are real): scripts set them
  * with `set -eET` and read them back from $- / set -o. braceexpand and
  * hashall start on.
  */
 
-static const char g_inert[] = "ETBhkpPtbm";
-static unsigned g_inert_bits = (1u << 2) | (1u << 3);
+static const char g_inert[] = "BhkpPtbm";
+static unsigned g_inert_bits = 3u;
 
 static int set_option(char flag, bool on)
 {
   const char *q = flag != '\0' ? strchr(g_inert, flag) : NULL;
+
+  if (flag == 'E' || flag == 'T')
+    {
+      *(flag == 'E' ? &g_sh.opt_E : &g_sh.opt_T) = on;
+      return 0;
+    }
 
   if (q != NULL)
     {
@@ -739,6 +745,8 @@ static bool named_opt_state(int i)
       case 'x': return g_sh.opt_x;
       case 'C': return g_sh.opt_C;
       case 'H': return !g_sh.opt_noH;
+      case 'E': return g_sh.opt_E;
+      case 'T': return g_sh.opt_T;
       case 0:   return g_sh.opt_pipefail;
       default:  return (g_inert_bits >> (strchr(g_inert, g_named_opts[i].flag) - g_inert)) & 1u;
     }

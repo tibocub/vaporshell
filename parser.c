@@ -1568,7 +1568,22 @@ static struct node_s *parse_case(struct parser_s *p)
   return n;
 }
 
+static struct node_s *parse_command_inner(struct parser_s *p);
+
 static struct node_s *parse_command(struct parser_s *p)
+{
+  int line = peek(p)->line;
+  struct node_s *n = parse_command_inner(p);
+
+  if (n != NULL && n->line == 0)
+    {
+      n->line = line;            /* compound commands carry their line too ($LINENO in DEBUG/ERR traps) */
+    }
+
+  return n;
+}
+
+static struct node_s *parse_command_inner(struct parser_s *p)
 {
   struct node_s *n = NULL;
   struct token_s *t = peek(p);

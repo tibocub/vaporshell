@@ -44,12 +44,114 @@ static int run_loop(struct parser_s *p, bool recover, int status);
  * [[ and (( -- but not inside functions (that needs set -T).
  */
 
-static void debug_hook(void)
+static void debug_hook(const struct node_s *n)
 {
-  if (g_sh.trap_action[VASH_TRAP_DEBUG] != NULL && g_sh.func_depth == 0)
+  if (!g_sh.in_debug_trap && !g_sh.in_err_trap)
+    {
+      g_sh.cur_node = n;                /* $BASH_COMMAND; frozen while a trap runs */
+      if (n->line > 0)
+        {
+          g_sh.lineno = n->line;
+        }
+    }
+
+  if (g_sh.trap_action[VASH_TRAP_DEBUG] != NULL && (g_sh.func_depth == 0 || g_sh.opt_T))
     {
       trap_run_debug();
     }
+}
+
+/* A command the way $BASH_COMMAND shows it: the source text, unexpanded. */
+
+char *vash_node_text(const struct node_s *n)
+{
+  static const char *const rop[] = { "<", ">", ">|", ">>", "<&", ">&", "<>", "<<", "&>", "&>>", "<<<" };
+  struct sbuf_s b;
+  const struct word_s *w;
+  const struct redir_s *r;
+
+  sb_init(&b);
+  if (n == NULL)
+    {
+      return sb_take(&b);
+    }
+
+  switch (n->type)
+    {
+      case N_SIMPLE:
+        for (w = n->assigns; w != NULL; w = w->next)
+          {
+            sb_adds(&b, b.len > 0 ? " " : "");
+            sb_adds(&b, w->text);
+          }
+
+        for (w = n->words; w != NULL; w = w->next)
+          {
+            sb_adds(&b, b.len > 0 ? " " : "");
+            sb_adds(&b, w->text);
+          }
+
+        for (r = n->redirs; r != NULL; r = r->next)
+          {
+            sb_adds(&b, " ");
+            if (r->fd >= 0)
+              {
+                char d[16];
+
+                snprintf(d, sizeof(d), "%d", r->fd);
+                sb_adds(&b, d);
+              }
+
+            sb_adds(&b, rop[r->op]);
+            sb_adds(&b, " ");
+            sb_adds(&b, r->op == R_HEREDOC ? r->hd_delim : r->target);
+          }
+
+        break;
+
+      case N_FOR:
+      case N_SELECT:
+        sb_adds(&b, n->type == N_FOR ? "for " : "select ");
+        sb_adds(&b, n->name);
+        sb_adds(&b, n->flag ? " in" : "");
+        for (w = n->flag ? n->words : NULL; w != NULL; w = w->next)
+          {
+            sb_addc(&b, ' ');
+            sb_adds(&b, w->text);
+          }
+
+        break;
+
+      case N_CASE:
+        sb_adds(&b, "case ");
+        sb_adds(&b, n->words->text);
+        sb_adds(&b, " in");
+        break;
+
+      case N_SUBSHELL:
+        {
+          const struct node_s *in = n->a != NULL && n->a->type == N_LIST ? n->a->a : n->a;
+          char *t = in != NULL && in->next == NULL ? vash_node_text(in) : NULL;
+
+          sb_adds(&b, "( ");
+          sb_adds(&b, t != NULL ? t : "");
+          sb_adds(&b, " )");
+          free(t);
+        }
+
+        break;
+
+      case N_ARITH:
+        sb_adds(&b, "(( ");
+        sb_adds(&b, n->words->text);
+        sb_adds(&b, " ))");
+        break;
+
+      default:
+        break;
+    }
+
+  return sb_take(&b);
 }
 
 static void errexit_check(int status)
@@ -58,9 +160,9 @@ static void errexit_check(int status)
     {
       /* the ERR trap fires in exactly the situations -e would exit in */
 
-      if (g_sh.trap_action[VASH_TRAP_ERR] != NULL && g_sh.func_depth == 0)
+      if (g_sh.trap_action[VASH_TRAP_ERR] != NULL && (g_sh.func_depth == 0 || g_sh.opt_E))
         {
-          trap_run_err(status);            /* not inherited by functions (no set -E) */
+          trap_run_err(status);            /* functions inherit it only with set -E */
         }
 
       if (g_sh.opt_e && g_sh.unwind == UW_NONE)
@@ -949,7 +1051,7 @@ static int exec_simple(struct node_s *n)
       g_sh.lineno = n->line;
     }
 
-  debug_hook();
+  debug_hook(n);
 
   fv_init(&argv);
 
@@ -1173,7 +1275,7 @@ static int exec_for(struct node_s *n)
   g_sh.loop_depth++;
   for (i = 0; i < items.n; i++)
     {
-      debug_hook();                    /* bash: once per iteration */
+      debug_hook(n);                    /* bash: once per iteration */
       xtrace_for("for", n);
       if (var_for_bind(n->name, items.v[i]) != 0)
         {
@@ -1440,7 +1542,7 @@ static int exec_select(struct node_s *n)
 
 static int exec_case(struct node_s *n)
 {
-  debug_hook();
+  debug_hook(n);
   char *subject = expand_word_str(n->words->text);
   struct case_item_s *item;
   bool fall = false;
@@ -1498,6 +1600,12 @@ static int exec_subshell(struct node_s *n)
 {
   pid_t pid;
   struct node_s *only = n->a;
+
+  if (!g_sh.in_debug_trap && !g_sh.in_err_trap)
+    {
+      g_sh.cur_node = n;               /* the ERR trap after a failing ( ... ) names it */
+      g_sh.lineno = n->line > 0 ? n->line : g_sh.lineno;
+    }
 
   if (vash_inproc_enabled())
     {
@@ -2510,7 +2618,7 @@ static int db_eval(struct node_s *n)
 
 static int exec_dbracket(struct node_s *n)
 {
-  debug_hook();
+  debug_hook(n);
   return db_eval(n->a);
 }
 
@@ -2544,7 +2652,7 @@ static int exec_arith(struct node_s *n)
 {
   bool err;
 
-  debug_hook();
+  debug_hook(n);
   xtrace_text("(( ", n->words->text, " ))");
   return arith_status(n->words->text, &err);
 }

@@ -9,3 +9,13 @@ trap 'echo winch' WINCH; kill -WINCH $$
 shift 2>&1 || echo "shift rc=$? (silent)"
 e=(); t=("${e[@]+x}"); echo "${#t[@]}"  # "${a[@]+w}" on an empty array: no word
 t=("${nope[@]+${nope[@]}}"); echo "${#t[@]}"
+# DEBUG/ERR traps: $BASH_COMMAND, $LINENO of compound commands, set -E / -T
+trap 'echo "D: $BASH_COMMAND ($LINENO)"' DEBUG
+for i in 1 2; do :; done
+trap - DEBUG
+trap 'echo "E $?: $BASH_COMMAND"' ERR
+f2() { false; echo after; }
+f2
+set -E
+f2
+(false)

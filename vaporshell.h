@@ -345,6 +345,7 @@ struct func_s *func_find(const char *name);
 void func_define(const char *name, struct node_s *body, struct arena_s *arena, const char *text);
 void vash_shellopts(char *buf, size_t n);       /* $SHELLOPTS: set -o options that are on (builtins.c) */
 void vash_bashopts(char *buf, size_t n);        /* $BASHOPTS: shopt options that are on (shopt.c) */
+char *vash_node_text(const struct node_s *n);   /* exec.c: a command as BASH_COMMAND shows it, malloc'd */
 char *func_env_entry(const struct func_s *f);   /* "BASH_FUNC_name%%=() {...}", malloc'd */
 bool func_import(const char *text, size_t len); /* exec.c: one function definition from the environment */
 void func_print(const struct func_s *f);       /* declare -f: name () and the body */
@@ -457,6 +458,9 @@ struct shell_s
   int return_fdepth;              /* function depth a RETURN trap was set at (0: top level) */
   bool in_err_trap;           /* an ERR/DEBUG/RETURN action is running */
   bool in_debug_trap;
+  bool opt_E;             /* set -E: functions and subshells inherit the ERR trap */
+  bool opt_T;             /* set -T: ... and the DEBUG trap */
+  const struct node_s *cur_node;  /* the command DEBUG/ERR/$BASH_COMMAND refer to */
   bool in_return_trap;
 
   int ps[64];                 /* PIPESTATUS: the statuses of the last pipeline */
