@@ -74,16 +74,32 @@ static char *interactive_next_line(void *ctx, bool continuation)
   (void)ctx;
   if (!continuation)
     {
-      const char *pc = var_get("PROMPT_COMMAND");
+      const struct arr_s *pca = var_array("PROMPT_COMMAND", false);
+      size_t cnt = pca == NULL ? 1 : pca->n;
+      char **cmds = vash_xmalloc((cnt + 1) * sizeof(char *));
+      size_t k;
 
-      if (pc != NULL && *pc != '\0')
+      for (k = 0; k < cnt; k++)            /* bash 5.1: an array runs each element (a snapshot: they edit it) */
         {
-          int saved = g_sh.last_status;
+          const char *pc = pca == NULL ? var_get("PROMPT_COMMAND") : pca->e[k].val;
 
-          run_string(pc, strlen(pc));
-          g_sh.last_status = saved;
+          cmds[k] = pc != NULL ? vash_xstrdup(pc) : NULL;
         }
 
+      for (k = 0; k < cnt; k++)
+        {
+          if (cmds[k] != NULL && *cmds[k] != '\0')
+            {
+              int saved = g_sh.last_status;
+
+              run_string(cmds[k], strlen(cmds[k]));
+              g_sh.last_status = saved;
+            }
+
+          free(cmds[k]);
+        }
+
+      free(cmds);
       g_sh.cmd_num++;
     }
 

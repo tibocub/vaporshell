@@ -2376,8 +2376,70 @@ static void x_indices(struct xctx_s *x, const char *name, size_t nlen, bool star
  * everything else is the scalar code, unchanged.
  */
 
+/* bash 5.3 ${ list; } and ${| list; }: run in the current shell, substitute
+ * the output, or (with |) the value list left in REPLY.
+ */
+
+static void x_funsub(struct xctx_s *x, const char *in, size_t n, bool dq)
+{
+  bool val = in[0] == '|';
+  int status;
+  char *out;
+  char *saved = NULL;
+
+  if (val)
+    {
+      const char *r = var_get("REPLY");
+
+      saved = r != NULL ? vash_xstrdup(r) : NULL;
+      var_unset("REPLY");
+    }
+
+  out = vash_inproc_funsub(in + val, n - val, &status);
+  if (out == NULL)
+    {
+      out = vash_xstrdup("");
+    }
+
+  if (val)
+    {
+      const char *r = var_get("REPLY");
+
+      free(out);
+      out = vash_xstrdup(r != NULL ? r : "");
+      if (saved != NULL)
+        {
+          var_set("REPLY", saved);
+        }
+      else
+        {
+          var_unset("REPLY");
+        }
+
+      free(saved);
+    }
+  else
+    {
+      size_t l = strlen(out);
+
+      while (l > 0 && out[l - 1] == '\n')
+        {
+          out[--l] = '\0';
+        }
+    }
+
+  x_add_value(x, out, dq);
+  free(out);
+}
+
 static void x_braced(struct xctx_s *x, const char *in, size_t n, bool dq)
 {
+  if (n >= 1 && (in[0] == ' ' || in[0] == '\t' || in[0] == '\n' || in[0] == '|') && vash_feat(VF_BASH_SYNTAX))
+    {
+      x_funsub(x, in, n, dq);
+      return;
+    }
+
   size_t p = 0;
   size_t s;
   size_t close;

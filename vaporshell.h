@@ -440,6 +440,7 @@ struct shell_s
    */
 
   bool so_nullglob;
+  bool so_cdable_vars;
   bool so_dotglob;
   bool so_failglob;
   bool so_nocaseglob;

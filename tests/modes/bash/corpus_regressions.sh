@@ -19,3 +19,10 @@ f2
 set -E
 f2
 (false)
+# frameworks (oh-my-bash, bash-it, bash-preexec) found these
+alias -- ll='ls -l'; alias -- ll; unalias -- ll
+type -aP sh | head -1 | grep -c /
+shopt -s cdable_vars compat31 extdebug; d=/usr; (cd d; pwd)
+bind "set completion-ignore-case on"; bind Space:magic-space
+shopt -oq posix; echo "posix=$?"
+echo ${ echo funsub; } "${| REPLY=reply; }"

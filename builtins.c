@@ -792,6 +792,11 @@ int vash_option_state(const char *name)
 {
   int i;
 
+  if (strcmp(name, "posix") == 0 && vash_feat(VF_SET_O_BASH))
+    {
+      return 0;                        /* bash mode, so POSIX mode is off */
+    }
+
   for (i = 0; i < NNAMED; i++)
     {
       if (strcmp(name, g_named_opts[i].name) == 0 &&
@@ -1276,6 +1281,17 @@ static int bi_cd(int argc, char **argv)
         }
     }
 
+  if (target == dir && g_sh.so_cdable_vars && var_get(dir) != NULL && var_get(dir)[0] != '\0')
+    {
+      struct stat st;
+
+      if (stat(VASH_FS(dir), &st) != 0 || !S_ISDIR(st.st_mode))
+        {
+          target = var_get(dir);       /* shopt -s cdable_vars: a variable holding a directory */
+          print = true;
+        }
+    }
+
   if (!logical_cwd(oldpwd, sizeof(oldpwd)))
     {
       oldpwd[0] = '\0';
@@ -1737,24 +1753,26 @@ static int bi_type(int argc, char **argv)
   int i = 1;
 
   bool pathonly = false;           /* -P / -p: only a file found in $PATH counts */
+  bool all = false;                /* -a: every match, not just the first */
 
   while (i < argc && vash_feat(VF_BASH_INFO_FORMATS) && argv[i][0] == '-' && argv[i][1] != '\0')
     {
+      const char *c;
+
       if (strcmp(argv[i], "--") == 0)
         {
           i++;
           break;
         }
 
-      if (strcmp(argv[i], "-t") == 0)
+      for (c = argv[i] + 1; *c != '\0' && strchr("tPpaf", *c) != NULL; c++)
         {
-          terse = true;
+          terse = terse || *c == 't';
+          pathonly = pathonly || *c == 'P' || *c == 'p';
+          all = all || *c == 'a';
         }
-      else if (strcmp(argv[i], "-P") == 0 || strcmp(argv[i], "-p") == 0)
-        {
-          pathonly = true;
-        }
-      else if (strcmp(argv[i], "-a") != 0 && strcmp(argv[i], "-f") != 0)
+
+      if (*c != '\0')
         {
           break;                   /* not ours: the loop below says "not found" */
         }
@@ -1767,6 +1785,75 @@ static int bi_type(int argc, char **argv)
       char *path;
       const struct alias_s *al = (g_sh.interactive || vash_feat(VF_ALIAS_SCRIPTS) ||
                                   g_sh.so_expand_aliases) ? alias_find(argv[i]) : NULL;
+
+      if (all)
+        {
+          bool found = false;
+          const char *pv = var_get("PATH");
+
+          if (!pathonly)
+            {
+              if (al != NULL)
+                {
+                  printf(terse ? "alias\n" : "%s is aliased to `%s'\n", argv[i], al->value);
+                  found = true;
+                }
+
+              if (is_reserved_word(argv[i]))
+                {
+                  printf(terse ? "keyword\n" : "%s is a shell keyword\n", argv[i]);
+                  found = true;
+                }
+
+              if (func_find(argv[i]) != NULL)
+                {
+                  if (terse)
+                    {
+                      puts("function");
+                    }
+                  else
+                    {
+                      printf("%s is a function\n", argv[i]);
+                      func_print(func_find(argv[i]));
+                    }
+
+                  found = true;
+                }
+
+              if (builtin_find(argv[i]) != NULL)
+                {
+                  printf(terse ? "builtin\n" : "%s is a shell builtin\n", argv[i]);
+                  found = true;
+                }
+            }
+
+          while (pv != NULL && strchr(argv[i], '/') == NULL)       /* every executable in $PATH */
+            {
+              size_t dl = strcspn(pv, ":");
+              char *cand = vash_xmalloc(dl + strlen(argv[i]) + 3);
+
+              snprintf(cand, dl + strlen(argv[i]) + 3, "%.*s/%s", (int)(dl ? dl : 1), dl ? pv : ".", argv[i]);
+              if (access(cand, X_OK) == 0)
+                {
+                  printf(terse ? "file\n" : pathonly ? "%.0s%s\n" : "%s is %s\n", argv[i], cand);
+                  found = true;
+                }
+
+              free(cand);
+              pv = pv[dl] == ':' ? pv + dl + 1 : NULL;
+            }
+
+          if (!found)
+            {
+              status = 1;
+              if (!pathonly && !terse)
+                {
+                  vash_err("type: %s: not found", argv[i]);
+                }
+            }
+
+          continue;
+        }
 
       if (pathonly)
         {

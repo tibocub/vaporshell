@@ -592,6 +592,27 @@ char *vash_inproc_cmdsub(const char *text, size_t len, int *status)
   return out;
 }
 
+/* bash 5.3 ${ list; }: 'text' runs in the current shell (no snapshot, so
+ * variables it sets stay set) with stdout captured. malloc'd, newlines kept.
+ */
+
+char *vash_inproc_funsub(const char *text, size_t len, int *status)
+{
+  struct capture_s cap;
+  char *out;
+
+  if (capture_begin(&cap) != 0)
+    {
+      vash_err("command substitution: %s", strerror(errno));
+      *status = 1;
+      return vash_xstrdup("");
+    }
+
+  *status = run_string(text, len);
+  out = capture_end(&cap, NULL);
+  return out;
+}
+
 /* One stage of a pipeline, run as a subshell. in_fd (or -1) becomes its
  * stdin. If 'out' is not NULL its stdout is captured and returned there
  * (malloc'd, *outlen bytes, NULs included); otherwise it writes where the
@@ -744,6 +765,14 @@ int vash_inproc_subshell(struct node_s *body)
 {
   (void)body;
   return 1;
+}
+
+char *vash_inproc_funsub(const char *text, size_t len, int *status)
+{
+  (void)text;
+  (void)len;
+  *status = 1;
+  return NULL;
 }
 
 char *vash_inproc_cmdsub(const char *text, size_t len, int *status)

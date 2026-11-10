@@ -37,6 +37,7 @@ enum so_id_e
 {
   SO_NONE,
   SO_NULLGLOB,
+  SO_CDABLE_VARS,
   SO_DOTGLOB,
   SO_FAILGLOB,
   SO_NOCASEGLOB,
@@ -58,30 +59,30 @@ static const struct
   enum so_id_e id;
 } g_so[] =
 {
-  { "array_expand_once", false, SO_UNSUP, SO_NONE },
-  { "assoc_expand_once", false, SO_UNSUP, SO_NONE },
+  { "array_expand_once", false, SO_NOOP, SO_NONE },
+  { "assoc_expand_once", false, SO_NOOP, SO_NONE },
   { "autocd", false, SO_NOOP, SO_NONE },
   { "bash_source_fullpath", false, SO_NOOP, SO_NONE },
-  { "cdable_vars", false, SO_UNSUP, SO_NONE },
+  { "cdable_vars", false, SO_IMPL, SO_CDABLE_VARS },
   { "cdspell", false, SO_NOOP, SO_NONE },
   { "checkhash", false, SO_NOOP, SO_NONE },
   { "checkjobs", false, SO_NOOP, SO_NONE },
   { "checkwinsize", true, SO_NOOP, SO_NONE },
   { "cmdhist", true, SO_NOOP, SO_NONE },
-  { "compat31", false, SO_UNSUP, SO_NONE },
-  { "compat32", false, SO_UNSUP, SO_NONE },
-  { "compat40", false, SO_UNSUP, SO_NONE },
-  { "compat41", false, SO_UNSUP, SO_NONE },
-  { "compat42", false, SO_UNSUP, SO_NONE },
-  { "compat43", false, SO_UNSUP, SO_NONE },
-  { "compat44", false, SO_UNSUP, SO_NONE },
+  { "compat31", false, SO_NOOP, SO_NONE },
+  { "compat32", false, SO_NOOP, SO_NONE },
+  { "compat40", false, SO_NOOP, SO_NONE },
+  { "compat41", false, SO_NOOP, SO_NONE },
+  { "compat42", false, SO_NOOP, SO_NONE },
+  { "compat43", false, SO_NOOP, SO_NONE },
+  { "compat44", false, SO_NOOP, SO_NONE },
   { "complete_fullquote", true, SO_NOOP, SO_NONE },
   { "direxpand", false, SO_NOOP, SO_NONE },
   { "dirspell", false, SO_NOOP, SO_NONE },
   { "dotglob", false, SO_IMPL, SO_DOTGLOB },
   { "execfail", false, SO_NOOP, SO_NONE },
   { "expand_aliases", false, SO_IMPL, SO_EXPAND_ALIASES },
-  { "extdebug", false, SO_UNSUP, SO_NONE },
+  { "extdebug", false, SO_NOOP, SO_NONE },
   { "extglob", false, SO_IMPL, SO_EXTGLOB },
   { "extquote", true, SO_NOOP, SO_NONE },
   { "failglob", false, SO_IMPL, SO_FAILGLOB },
@@ -99,8 +100,8 @@ static const struct
   { "interactive_comments", true, SO_NOOP, SO_NONE },
   { "lastpipe", false, SO_UNSUP, SO_NONE },
   { "lithist", false, SO_NOOP, SO_NONE },
-  { "localvar_inherit", false, SO_UNSUP, SO_NONE },
-  { "localvar_unset", false, SO_UNSUP, SO_NONE },
+  { "localvar_inherit", false, SO_NOOP, SO_NONE },
+  { "localvar_unset", false, SO_NOOP, SO_NONE },
   { "login_shell", false, SO_IMPL, SO_LOGIN_SHELL },
   { "mailwarn", false, SO_NOOP, SO_NONE },
   { "no_empty_cmd_completion", false, SO_NOOP, SO_NONE },
@@ -126,6 +127,7 @@ static bool *impl_slot(enum so_id_e id)
   switch (id)
     {
       case SO_NULLGLOB:       return &g_sh.so_nullglob;
+      case SO_CDABLE_VARS:    return &g_sh.so_cdable_vars;
       case SO_DOTGLOB:        return &g_sh.so_dotglob;
       case SO_FAILGLOB:       return &g_sh.so_failglob;
       case SO_NOCASEGLOB:     return &g_sh.so_nocaseglob;

@@ -190,6 +190,11 @@ int bi_alias(int argc, char **argv)
       i++;
     }
 
+  if (i < argc && strcmp(argv[i], "--") == 0)
+    {
+      i++;
+    }
+
   if (i >= argc)
     {
       print_all();
@@ -237,7 +242,12 @@ int bi_unalias(int argc, char **argv)
       return 0;
     }
 
-  if (argc < 2)
+  if (i < argc && strcmp(argv[i], "--") == 0)
+    {
+      i++;
+    }
+
+  if (i >= argc)
     {
       vash_err("unalias: usage: unalias [-a] name [name ...]");
       return 2;

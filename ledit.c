@@ -1497,6 +1497,11 @@ int vash_ledit_cmd_lookup(const char *name)
 {
   int i;
 
+  if (strcmp(name, "magic-space") == 0)
+    {
+      name = "self-insert";             /* history expansion happens when the line is accepted */
+    }
+
   for (i = 1; i < C_NCMD; i++)
     {
       if (g_cmd_names[i] != NULL && strcmp(g_cmd_names[i], name) == 0)

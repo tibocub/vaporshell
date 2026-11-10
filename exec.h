@@ -84,6 +84,7 @@ int bi_test(int argc, char **argv);
 
 bool vash_inproc_enabled(void);
 int vash_inproc_subshell(struct node_s *body);
+char *vash_inproc_funsub(const char *text, size_t len, int *status);   /* ${ list; } */
 char *vash_inproc_cmdsub(const char *text, size_t len, int *status);
 int vash_inproc_stage(struct node_s *stage, int in_fd, char **out, size_t *outlen);
 void *vash_inproc_feed(int fd, char *buf, size_t len);   /* a handle for _wait, or NULL */

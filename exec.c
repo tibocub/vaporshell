@@ -3316,6 +3316,15 @@ static int run_loop(struct parser_s *p, bool recover, int status)
           continue;
         }
 
+      if (node != NULL && recover && g_sh.interactive && var_get("PS0") != NULL)
+        {
+          char *ps0 = vash_prompt_expand(var_get("PS0"));    /* bash: shown after the line is read */
+
+          fputs(ps0, stderr);
+          fflush(stderr);
+          free(ps0);
+        }
+
       if (node != NULL && !(g_sh.opt_n && !g_sh.interactive))
         {
           status = exec_node(node);

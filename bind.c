@@ -166,6 +166,11 @@ int bi_bind(int argc, char **argv)
       const char *rest;
       const char *close;
 
+      if (strncmp(a, "set ", 4) == 0 || strncmp(a, "set\t", 4) == 0)
+        {
+          continue;                    /* readline variable (bind 'set show-all-if-ambiguous on'): accepted, not used */
+        }
+
       if (strcmp(a, "-l") == 0)
         {
           int k;
