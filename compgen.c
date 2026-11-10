@@ -846,7 +846,14 @@ static void print_spec(const struct complete_spec_s *s)
         }
     }
 
-  printf(" %s\n", s->name);
+  {
+    bool plain = s->name[0] != '\0' && strspn(s->name, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:+@%,=-") == strlen(s->name);
+    char *qn = plain ? NULL : vash_quote_word(s->name);      /* 'a b', '' */
+
+    printf(" %s\n", plain ? s->name : qn);
+    free(qn);
+  }
+
   for (i = 0; i < n; i++)
     {
       free(v[i]);

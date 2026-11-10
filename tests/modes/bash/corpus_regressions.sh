@@ -27,3 +27,6 @@ bind "set completion-ignore-case on"; bind Space:magic-space
 shopt -oq posix; echo "posix=$?"
 echo ${ echo funsub; } "${| REPLY=reply; }"
 printf ' a b\nc d  ' | { read -N 7 x y; echo "[$x][$y]"; }     # -N: delimiter not special, no splitting
+echo $-; set -eEu; echo $-; set +eEu
+shopt -po emacs history; echo ${BASH_SUBSHELL}${BASH_SUBSHELL@Q} $( (echo $BASH_SUBSHELL) )
+complete -F _f ''; complete -F _g 'a b'; complete -p

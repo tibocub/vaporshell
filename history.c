@@ -19,6 +19,8 @@
 #include "vaporshell.h"
 #include "exec.h"
 #include "history.h"
+#include "expand.h"
+#include "mode.h"
 
 #ifdef VAPORSHELL_POSIX
 #  define HIST_DEFAULT_SIZE 500
@@ -378,21 +380,23 @@ int bi_history(int argc, char **argv)
   return 0;
 }
 
-/* The word `spec` of an entry: $ last, ^ first argument, * all arguments, 0-9 the n-th.
- * shortcut: words split on blanks, quotes are not understood.
+/* ---- Word designators and modifiers: !!:2-3 !$ !-2:^ !str:s/a/b/ :gs/a/b/ :h :t :r :e :q ----
+ * shortcut: words split on blanks and quotes ('..' ".." and backslash keep a word together);
+ * :p and :x are not done, and a missing event or word is an error, as in bash.
  */
 
-static bool pick_word(struct sbuf_s *o, const char *ev, char spec)
+static const char *find_event(const char *p, size_t *len);
+
+struct hw_s { const char *s; size_t n; };
+
+static int hist_words(const char *ev, struct hw_s *w, int max)
 {
-  int want = spec == '$' ? -1 : spec == '^' || spec == '*' ? 1 : spec - '0';
-  const char *ws = NULL;
-  const char *we = NULL;
   const char *p = ev;
   int k = 0;
 
-  for (; *p != '\0'; k++)
+  for (; k < max; )
     {
-      const char *b;
+      char q = 0;
 
       p += strspn(p, " \t");
       if (*p == '\0')
@@ -400,28 +404,334 @@ static bool pick_word(struct sbuf_s *o, const char *ev, char spec)
           break;
         }
 
-      b = p;
-      p += strcspn(p, " \t");
-      if (want < 0 || k == want)
+      w[k].s = p;
+      for (; *p != '\0' && (q != 0 || (*p != ' ' && *p != '\t')); p++)
         {
-          ws = b;
-          we = p;
+          if (*p == '\\' && p[1] != '\0')
+            {
+              p++;
+            }
+          else if (q == 0 && (*p == '\'' || *p == '"'))
+            {
+              q = *p;
+            }
+          else if (*p == q)
+            {
+              q = 0;
+            }
+        }
+
+      w[k].n = (size_t)(p - w[k].s);
+      k++;
+    }
+
+  return k;
+}
+
+static char *g_sub_old;
+static char *g_sub_new;
+
+/* Applies one :modifier (p points after the colon) to the text in 'o' from 'from'. Returns the
+ * length consumed, or 0 if it is not a modifier (or failed: *bad is set).
+ */
+
+static size_t hist_modify(struct sbuf_s *o, size_t from, const char *p, bool *bad)
+{
+  size_t used = 0;
+  bool global = false;
+  char *text = vash_xstrndup(o->s + from, o->len - from);
+  struct sbuf_s r;
+  char m;
+
+  if (*p == 'g')
+    {
+      global = true;
+      used++;
+    }
+
+  m = p[used++];
+  sb_init(&r);
+  if (m == 'h' || m == 't' || m == 'r' || m == 'e')
+    {
+      const char *slash = strrchr(text, '/');
+      const char *dot = strrchr(slash != NULL ? slash : text, '.');
+
+      if (m == 'h')
+        {
+          sb_addn(&r, text, slash != NULL ? (size_t)(slash - text) : strlen(text));
+        }
+      else if (m == 't')
+        {
+          sb_adds(&r, slash != NULL ? slash + 1 : text);
+        }
+      else if (m == 'r')
+        {
+          sb_addn(&r, text, dot != NULL && dot != (slash != NULL ? slash + 1 : text) ? (size_t)(dot - text) : strlen(text));
+        }
+      else
+        {
+          sb_adds(&r, dot != NULL ? dot : "");
         }
     }
-
-  if (spec == '*')
+  else if (m == 'q')
     {
-      sb_adds(o, ws != NULL ? ws : "");
-      return true;
+      char *qd = vash_quote_word(text);
+
+      sb_adds(&r, qd);
+      free(qd);
+    }
+  else if (m == 's' || m == '&')
+    {
+      if (m == 's')
+        {
+          char d = p[used];
+          const char *a = p + used + 1;
+          const char *e1 = d != '\0' ? strchr(a, d) : NULL;
+          const char *e2;
+          struct sbuf_s so;
+          struct sbuf_s sn;
+
+          if (e1 == NULL)
+            {
+              *bad = true;
+              goto out;
+            }
+
+          e2 = strchr(e1 + 1, d);
+          sb_init(&so);
+          sb_init(&sn);
+          sb_addn(&so, a, (size_t)(e1 - a));
+          sb_addn(&sn, e1 + 1, e2 != NULL ? (size_t)(e2 - e1 - 1) : strlen(e1 + 1));
+          free(g_sub_old);
+          free(g_sub_new);
+          g_sub_old = sb_take(&so);
+          g_sub_new = sb_take(&sn);
+          used = (size_t)((e2 != NULL ? e2 + 1 : e1 + 1 + strlen(e1 + 1)) - p);
+        }
+
+      if (g_sub_old == NULL || g_sub_old[0] == '\0')
+        {
+          *bad = true;
+          goto out;
+        }
+
+      {
+        const char *t = text;
+        bool done = false;
+        const char *hit;
+
+        while ((hit = strstr(t, g_sub_old)) != NULL && (global || !done))
+          {
+            const char *nw;
+
+            sb_addn(&r, t, (size_t)(hit - t));
+            for (nw = g_sub_new; *nw != '\0'; nw++)
+              {
+                if (*nw == '&')
+                  {
+                    sb_adds(&r, g_sub_old);
+                  }
+                else
+                  {
+                    if (*nw == '\\' && nw[1] != '\0')
+                      {
+                        nw++;
+                      }
+
+                    sb_addc(&r, *nw);
+                  }
+              }
+
+            t = hit + strlen(g_sub_old);
+            done = true;
+          }
+
+        if (!done)
+          {
+            *bad = true;
+            goto out;
+          }
+
+        sb_adds(&r, t);
+      }
+    }
+  else
+    {
+      used = 0;
+      goto out;
     }
 
-  if (ws == NULL)
+  o->len = from;
+  sb_adds(o, r.s != NULL ? r.s : "");
+  if (o->s != NULL)
     {
-      return false;
+      o->s[o->len] = '\0';
     }
 
-  sb_addn(o, ws, (size_t)(we - ws));
-  return true;
+out:
+  sb_free(&r);
+  free(text);
+  return *bad ? 0 : used;
+}
+
+/* Expands the event at p (a '!'): appends to o, sets *len to what it covered. false: error. */
+
+static const char *hist_event(struct sbuf_s *o, const char *p, size_t *len)
+{
+  const char *ev;
+  const char *q;
+  struct hw_s w[128];
+  int nw;
+  int first = 0;
+  int last = -1;
+  bool have_spec = false;
+  bool empty_ok = false;
+  size_t from = o->len;
+  const char *msg = "event not found";
+
+  static char *sofar;                   /* !#'s text, kept until the next event */
+
+  free(sofar);
+  sofar = NULL;
+  if (p[1] == '#')
+    {
+      sofar = vash_xstrndup(o->s != NULL ? o->s : "", o->len);      /* !#: the line typed so far */
+      ev = sofar;
+      *len = 2;
+    }
+  else if (strchr(":$^*%", p[1]) != NULL)
+    {
+      ev = g_n > 0 ? g_hist[g_n - 1] : NULL;
+      *len = 1;
+    }
+  else
+    {
+      ev = find_event(p, len);
+    }
+
+  if (ev == NULL)
+    {
+      return msg;
+    }
+
+  q = p + *len;
+  nw = hist_words(ev, w, 128);
+  if (*q == ':' && (isdigit((unsigned char)q[1]) || (q[1] != '\0' && strchr("^$*-%", q[1]) != NULL)))
+    {
+      q++;
+      have_spec = true;
+    }
+  else if (*q != '\0' && strchr("^$*%", *q) != NULL)
+    {
+      have_spec = true;
+    }
+
+  if (have_spec)
+    {
+      msg = "bad word specifier";
+      if (isdigit((unsigned char)*q))
+        {
+          char *e;
+
+          first = (int)strtol(q, &e, 10);
+          last = first;
+          q = e;
+          if (*q == '-')
+            {
+              q++;
+              if (isdigit((unsigned char)*q))
+                {
+                  last = (int)strtol(q, &e, 10);
+                  q = e;
+                }
+              else
+                {
+                  last = nw - 2;
+                }
+            }
+          else if (*q == '*')
+            {
+              last = nw - 1;
+              q++;
+            }
+        }
+      else if (*q == '-')
+        {
+          char *e;
+
+          q++;
+          first = 0;
+          last = (int)strtol(q, &e, 10);
+          q = e;
+        }
+      else if (*q == '^')
+        {
+          first = last = 1;
+          q++;
+        }
+      else if (*q == '$')
+        {
+          first = last = nw - 1;
+          q++;
+        }
+      else if (*q == '*')
+        {
+          first = 1;
+          last = nw - 1;
+          q++;
+          if (nw < 2)
+            {
+              empty_ok = true;         /* "!*" with no arguments is empty, not an error */
+              last = 0;
+            }
+        }
+      else
+        {
+          return msg;                  /* %: needs the last !?str? word, not done */
+        }
+
+      if (first < 0 || last >= nw || last < first - 1 || (last == first - 1 && !empty_ok))
+        {
+          *len = (size_t)(q - p);
+          return msg;
+        }
+
+      {
+        int k;
+
+        for (k = first; k <= last; k++)
+          {
+            sb_adds(o, k > first ? " " : "");
+            sb_addn(o, w[k].s, w[k].n);
+          }
+      }
+    }
+  else
+    {
+      sb_adds(o, ev);
+    }
+
+  for (; *q == ':'; )
+    {
+      bool bad = false;
+      size_t u = hist_modify(o, from, q + 1, &bad);
+
+      if (u == 0)
+        {
+          if (bad)
+            {
+              *len = (size_t)(q - p);
+              return "modifier failed";
+            }
+
+          break;
+        }
+
+      q += 1 + u;
+    }
+
+  *len = (size_t)(q - p);
+  return NULL;
 }
 
 /* The entry an event names: !! !n !-n !prefix !?text?; NULL if none. *len gets the event's length. */
@@ -515,8 +825,6 @@ char *vash_hist_expand(const char *line)
     {
       char c = *p;
       size_t len;
-      const char *ev;
-      char spec = 0;
 
       if (c == '\\' && p[1] != '\0')
         {
@@ -534,35 +842,23 @@ char *vash_hist_expand(const char *line)
           dq = !dq;
         }
 
-      if (c != '!' || sq || p[1] == '\0' || strchr(" \t=(", p[1]) != NULL)
+      if (c != '!' || sq || p[1] == '\0' || strchr(" \t\n=(", p[1]) != NULL)
         {
           sb_addc(&o, c);
           p++;
           continue;
         }
 
-      if (strchr("$^*", p[1]) != NULL)
-        {
-          ev = g_n > 0 ? g_hist[g_n - 1] : NULL;
-          spec = p[1];
-          len = 2;
-        }
-      else
-        {
-          ev = find_event(p, &len);
-          if (ev != NULL && p[len] == ':' && strchr("$^*0123456789", p[len + 1]) != NULL && p[len + 1] != '\0')
-            {
-              spec = p[len + 1];
-              len += 2;
-            }
-        }
+      {
+        const char *err = hist_event(&o, p, &len);
 
-      if (ev == NULL || (spec != 0 ? !pick_word(&o, ev, spec) : (sb_adds(&o, ev), false)))
-        {
-          vash_err("%.*s: %s", (int)len, p, ev == NULL ? "event not found" : "bad word specifier");
-          sb_free(&o);
-          return vash_xstrdup("");
-        }
+        if (err != NULL)
+          {
+            vash_err("%.*s: %s", (int)len, p, err);
+            sb_free(&o);
+            return vash_xstrdup("");
+          }
+      }
 
       changed = true;
       p += len;
@@ -719,11 +1015,11 @@ int bi_fc(int argc, char **argv)
     {
       if (nonum)
         {
-          printf("\t%s\n", g_hist[i]);
+          printf(vash_feat(VF_BASH_INFO_FORMATS) ? "\t %s\n" : "\t%s\n", g_hist[i]);   /* bash: a blank (or *) marks edited entries */
         }
       else
         {
-          printf("%ld\t%s\n", g_base + i + 1, g_hist[i]);
+          printf(vash_feat(VF_BASH_INFO_FORMATS) ? "%ld\t %s\n" : "%ld\t%s\n", g_base + i + 1, g_hist[i]);
         }
     }
 

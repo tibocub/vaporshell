@@ -400,12 +400,14 @@ struct shell_s
   bool opt_noH;           /* set +H: no `!` history expansion in the line editor */
   int trap_depth;         /* inside a trap action */
   int in_subshell;        /* running in-process as a subshell (inproc.c) */
+  int forked_level;       /* forked subshells deep: $BASH_SUBSHELL is this plus in_subshell */
   bool force_inproc;      /* VASH_INPROC: use in-process subshells even with fork() */
   int dot_depth;          /* nesting of `.`/source: `return` is valid inside */
   time_t seconds_base;    /* $SECONDS counts from here */
   unsigned rand_state;    /* $RANDOM */
   bool interactive;
   bool opt_i;                 /* -i given: shows in $- even for -c */
+  bool opt_c;                 /* -c given: shows in $- */
   long long comp_deadline;   /* completion running shell code: stop it after this many ms on the monotonic clock (0: no limit) */
   bool comp_expired;         /* ...and it was stopped */
   bool input_aborted;     /* Ctrl-C at a continuation prompt: drop the half-typed command quietly */

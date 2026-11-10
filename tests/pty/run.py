@@ -28,7 +28,7 @@ results = []
 
 def shell(env=None, cols=80, rows=24, cwd=None, args=()):
     e = {"PS1": "$ ", "HISTFILE": os.path.join(TMP, "hist-%d" % time.time_ns()),
-         "HOME": TMP, "PATH": os.environ["PATH"], "VASH_BRACKETED_PASTE": "1"}
+         "HOME": TMP, "PATH": os.environ["PATH"], "HISTCONTROL": "", "VASH_BRACKETED_PASTE": "1"}
     e.update(env or {})
     return Session([VS, *args], env=e, cols=cols, rows=rows, cwd=cwd or TMP)
 
@@ -370,7 +370,8 @@ def _():
     time.sleep(0.5)                                  # the machine's own /etc/profile runs first
     assert s.screen()[-1] == "profile>", s.screen()
     s.type("shopt -q login_shell && echo LOGIN; shopt -q expand_aliases && echo ALIASES"); s.send(ENTER)
-    assert "LOGIN" in s.screen() and "ALIASES" in s.screen(), s.screen()
+    scr = "".join(s.screen())               # the distro's /etc/profile.d may splice escape-sequence debris in
+    assert scr.count("LOGIN") >= 2 and scr.count("ALIASES") >= 2, s.screen()
     s.close()
 
 
@@ -863,6 +864,22 @@ def _():
     s.send(CTRL("C"))                      # reaches the job, not the shell
     s.type("echo back"); s.send(ENTER)
     assert s.screen()[-2:] == ["back", "$"], s.screen()
+    s.close()
+
+
+@test("history expansion: word designators and modifiers")
+def _():
+    s = shell()
+    s.type("echo one two three"); s.send(ENTER)
+    s.type("echo !:1 !:2-3 !$ !^ !*"); s.send(ENTER)
+    s.type("echo /a/b/c.txt"); s.send(ENTER)
+    s.type("echo !$:h !$:t !$:r !$:e"); s.send(ENTER)
+    s.type("echo hello world"); s.send(ENTER)
+    s.type("echo !!:s/o/0/ !!:gs/o/0/"); s.send(ENTER)
+    got = s.screen()
+    for want in ("one two three three one one two three", "/a/b c.txt /a/b/c .txt",
+                 "echo ech0 hello world ech0 hell0 w0rld"):
+        assert want in got, (want, got)
     s.close()
 
 

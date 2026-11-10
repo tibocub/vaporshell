@@ -75,6 +75,7 @@ void vash_special_error(void);
 /* builtins.c: `set -o NAME` / `+o NAME`; returns -1 for an unknown name. */
 
 int vash_set_named_option(const char *name, bool on);
+void vash_dollar_dash(char *buf, size_t n);       /* $- */
 
 /* help.c, test.c, traps.c */
 

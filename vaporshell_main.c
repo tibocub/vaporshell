@@ -101,6 +101,19 @@ static char *interactive_next_line(void *ctx, bool continuation)
 
       free(cmds);
       g_sh.cmd_num++;
+      {
+        int cols = vash_plat_columns();
+        int rows = vash_plat_rows();
+        char num[16];
+
+        if (cols > 0 && rows > 0)         /* bash's checkwinsize: refreshed before each prompt */
+          {
+            snprintf(num, sizeof(num), "%d", cols);
+            var_set("COLUMNS", num);
+            snprintf(num, sizeof(num), "%d", rows);
+            var_set("LINES", num);
+          }
+      }
     }
 
   ps = var_get(continuation ? "PS2" : "PS1");
@@ -281,7 +294,7 @@ static int shell_main(int argc, char *argv[])
         {
           switch (*f)
             {
-              case 'c': have_command = true; break;
+              case 'c': have_command = true; g_sh.opt_c = true; break;
               case 'i': force_interactive = true; g_sh.opt_i = true; break;
               case 'l': login = true; break;
               case 'e': g_sh.opt_e = true; break;
@@ -339,6 +352,10 @@ static int shell_main(int argc, char *argv[])
       {
         jc_init();
         vash_hist_init();
+        if (var_get("HISTFILESIZE") == NULL && var_get("HISTSIZE") != NULL)
+          {
+            var_set("HISTFILESIZE", var_get("HISTSIZE"));
+          }
         if (g_sh.profile != VASH_PROFILE_POSIX)
           {
             const char *ps1;

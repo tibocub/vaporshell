@@ -222,7 +222,31 @@ char *vash_prompt_decode(const char *ps)
             add_literal(&out, host);
             break;
 
-          case 'j':  add_number(&out, (long)g_sh.njobs); break;
+          case 'j':
+            {
+              long live = 0;
+              size_t k;
+
+              for (k = 0; k < g_sh.njobs; k++)
+                {
+                  live += g_sh.jobs[k].state != JOB_DONE;      /* running or stopped, as bash counts */
+                }
+
+              add_number(&out, live);
+            }
+
+            break;
+
+          case 'l':
+            {
+              const char *t = ttyname(STDIN_FILENO);
+              const char *b = t != NULL ? strrchr(t, '/') : NULL;
+
+              add_literal(&out, b != NULL ? b + 1 : t != NULL ? t : "tty");     /* the terminal's basename */
+            }
+
+            break;
+
           case 's':  add_literal(&out, g_sh.profile == VASH_PROFILE_POSIX ? "sh" : "vaporshell"); break;
           case 'u':
             {
@@ -263,7 +287,7 @@ char *vash_prompt_decode(const char *ps)
           case 'w':  add_cwd(&out, false); break;
           case 'W':  add_cwd(&out, true); break;
           case '!':  add_number(&out, g_sh.hist_num + 1); break;
-          case '#':  add_number(&out, g_sh.cmd_num + 1); break;
+          case '#':  add_number(&out, g_sh.cmd_num); break;
           case '$':  add_literal(&out, vash_plat_euid() == 0 ? "#" : "$"); break;   /* not a $ for the next step */
 
           case '0': case '1': case '2': case '3':

@@ -609,8 +609,8 @@ static int bi_unset(int argc, char **argv)
  * hashall start on.
  */
 
-static const char g_inert[] = "BhkpPtbm";
-static unsigned g_inert_bits = 3u;
+static const char g_inert[] = "BhkpPtbm\1\2\3\4\5";   /* \1 emacs, \2 history, \3 ignoreeof, \4 interactive-comments, \5 nolog: named only */
+static unsigned g_inert_bits = 3u | (1u << 8) | (1u << 9) | (1u << 11);
 
 static int set_option(char flag, bool on)
 {
@@ -661,12 +661,14 @@ static const struct
 } g_named_opts[] =
 {
   { "allexport", 'a', false }, { "braceexpand", 'B', false },
-  { "errexit", 'e', false },   { "errtrace", 'E', false },
-  { "functrace", 'T', false }, { "hashall", 'h', false },
-  { "histexpand", 'H', true }, { "keyword", 'k', false },
+  { "emacs", '\1', false },    { "errexit", 'e', false },
+  { "errtrace", 'E', false },  { "functrace", 'T', false },
+  { "hashall", 'h', false },   { "histexpand", 'H', true },
+  { "history", '\2', false },  { "ignoreeof", '\3', false },
+  { "interactive-comments", '\4', false }, { "keyword", 'k', false },
   { "monitor", 'm', false },   { "noclobber", 'C', false },
   { "noexec", 'n', false },    { "noglob", 'f', false },
-  { "notify", 'b', false },    { "nounset", 'u', false },
+  { "nolog", '\5', false },    { "notify", 'b', false },    { "nounset", 'u', false },
   { "onecmd", 't', false },    { "physical", 'P', false },
   { "pipefail", 0, false },    { "privileged", 'p', false },
   { "verbose", 'v', false },   { "xtrace", 'x', false }
@@ -702,7 +704,6 @@ void vash_shellopts(char *buf, size_t n)
   int a;
   int b;
 
-  names[cnt++] = "interactive-comments";
   for (i = 0; i < NNAMED && cnt < 23; i++)
     {
       if ((!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH)) && named_opt_state(i))
@@ -748,7 +749,9 @@ static bool named_opt_state(int i)
       case 'E': return g_sh.opt_E;
       case 'T': return g_sh.opt_T;
       case 0:   return g_sh.opt_pipefail;
-      default:  return (g_inert_bits >> (strchr(g_inert, g_named_opts[i].flag) - g_inert)) & 1u;
+      default:
+        return ((g_inert_bits >> (strchr(g_inert, g_named_opts[i].flag) - g_inert)) & 1u) &&
+               (g_named_opts[i].flag > 2 || g_sh.interactive);       /* emacs, history: only in an interactive shell */
     }
 }
 
@@ -807,6 +810,48 @@ int vash_option_state(const char *name)
     }
 
   return -1;
+}
+
+/* $-: the single-letter options that are on, in bash's order. dash has no h, B or H. */
+
+void vash_dollar_dash(char *buf, size_t n)
+{
+  const char *order = "abefhikmnptuvxBCEHPT";
+  size_t len = 0;
+  const char *c;
+
+  for (c = order; *c != '\0' && len + 1 < n; c++)
+    {
+      bool on = false;
+      int i;
+
+      if (*c == 'i')
+        {
+          on = g_sh.interactive || g_sh.opt_i;
+        }
+      else
+        {
+          for (i = 0; i < NNAMED; i++)
+            {
+              if (g_named_opts[i].flag == *c && (!g_named_opts[i].bash_only || vash_feat(VF_SET_O_BASH)))
+                {
+                  on = named_opt_state(i);
+                }
+            }
+        }
+
+      if (on && (vash_feat(VF_SET_O_BASH) || strchr("hBH", *c) == NULL))
+        {
+          buf[len++] = *c;
+        }
+    }
+
+  if (g_sh.opt_c && len + 1 < n)
+    {
+      buf[len++] = 'c';
+    }
+
+  buf[len] = '\0';
 }
 
 /* `set -o` (human readable) and `set +o` (re-readable). */

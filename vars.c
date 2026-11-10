@@ -22,6 +22,7 @@
 #include "mode.h"
 #include "exec.h"
 #include "version.h"
+#include "history.h"
 
 #ifdef VAPORSHELL_POSIX
 struct shell_s g_vash_state;
@@ -236,6 +237,18 @@ static const char *bash_var(const char *name)
   if (strcmp(name, "MACHTYPE") == 0)
     {
       snprintf(buf, sizeof(buf), "%s-pc-%s", vash_plat_hosttype(), vash_plat_ostype());
+      return buf;
+    }
+
+  if (strcmp(name, "BASH_SUBSHELL") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%d", g_sh.in_subshell + g_sh.forked_level);
+      return buf;
+    }
+
+  if (strcmp(name, "HISTCMD") == 0)
+    {
+      snprintf(buf, sizeof(buf), "%ld", (long)g_sh.hist_num + 1);
       return buf;
     }
 

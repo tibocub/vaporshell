@@ -452,6 +452,7 @@ void jc_init(void)
   g_sh.jc_shell_pgrp = getpgrp();
   tcsetpgrp(g_sh.jc_tty, g_sh.jc_shell_pgrp);
   g_sh.jc = true;
+  vash_set_named_option("monitor", true);        /* set -m: what bash shows once it has job control */
 }
 
 void jc_begin(const struct node_s *n)

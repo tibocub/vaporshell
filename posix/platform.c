@@ -271,6 +271,11 @@ pid_t vash_plat_fork(void)
 
   fflush(NULL);                 /* or buffered output would appear twice */
   pid = fork();
+  if (pid == 0)
+    {
+      g_sh.forked_level++;
+    }
+
   if (pid == 0 && jc)
     {
       if (g_sh.jc_want)
