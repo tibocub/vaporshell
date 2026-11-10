@@ -1418,6 +1418,7 @@ int bi_read(int argc, char **argv)
   struct fieldv_s fields;
   int badname = vash_feat(VF_EXIT2_ON_ERROR) ? 2 : 1;
   bool whole = false;
+  bool exact = false;                   /* -N: the delimiter is not special, nothing is split */
   size_t cstart = 0;                    /* where the character being read began */
   long nchars = 0;
   int k;
@@ -1448,7 +1449,7 @@ int bi_read(int argc, char **argv)
               continue;                /* no terminal echo control yet */
             }
 
-          if (opt != 'p' && !(vash_feat(VF_READ_EXT) && strchr("andtu", opt) != NULL))
+          if (opt != 'p' && !(vash_feat(VF_READ_EXT) && strchr("andtuN", opt) != NULL))
             {
               vash_err("read: -%c: invalid option", opt);
               return 2;
@@ -1474,6 +1475,7 @@ int bi_read(int argc, char **argv)
               case 'p': prompt = val; break;
               case 'a': array = val; break;
               case 'n': maxn = atol(val); break;
+              case 'N': maxn = atol(val); exact = true; break;
               case 'd': delim = val[0] != '\0' ? (unsigned char)val[0] : 0; break;
               case 't': timeout_ms = (long)(atof(val) * 1000.0); break;
               default:  rfd = atoi(val); break;
@@ -1554,7 +1556,7 @@ int bi_read(int argc, char **argv)
           break;
         }
 
-      if (c == delim)
+      if (c == delim && !exact)
         {
           break;
         }
@@ -1603,7 +1605,7 @@ int bi_read(int argc, char **argv)
     }
 
   fv_init(&fields);
-  read_split(line.s != NULL ? line.s : "", ifs, raw, whole ? -1 : nvars, &fields);
+  read_split(line.s != NULL ? line.s : "", ifs, raw, whole || exact ? -1 : nvars, &fields);
   if (array != NULL)
     {
       /* a fresh array, then one element per field (so -i/-l/-u apply) */
@@ -1624,7 +1626,7 @@ int bi_read(int argc, char **argv)
     {
       for (k = 0; k < nvars; k++)
         {
-          var_set(names[k], fields.v[k]);
+          var_set(names[k], k < fields.n ? fields.v[k] : "");
         }
     }
 

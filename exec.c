@@ -234,6 +234,15 @@ static int wait_for(pid_t pid)
   return decode_status(wstatus);
 }
 
+/* Foreground wait: with job control, one that notices ^Z (jobs.c). */
+
+static int wait_job(pid_t pid, bool last)
+{
+  int s = jc_wait(pid, last);
+
+  return s >= 0 ? s : wait_for(pid);
+}
+
 /* In a forked child: run 'n', then leave without returning. */
 
 static void child_run(struct node_s *n)
@@ -629,7 +638,9 @@ static int run_as_script(const char *path, char **argv)
       argc++;
     }
 
+  jc_begin(NULL);
   pid = vash_plat_fork();
+  jc_launched(true);
   if (pid < 0)
     {
       return 126;
@@ -656,7 +667,7 @@ static int run_as_script(const char *path, char **argv)
       _exit(g_sh.last_status & 0xff);
     }
 
-  return wait_for(pid);
+  return wait_job(pid, true);
 }
 
 static int run_external(char **argv, bool can_exec)
@@ -704,7 +715,9 @@ static int run_external(char **argv, bool can_exec)
       _exit(errno == ENOENT ? 127 : 126);
     }
 
+  jc_begin(NULL);
   ret = vash_plat_spawn(path, argv, envp, -1, -1, NULL, 0, &pid);
+  jc_launched(true);
   if (ret == ENOEXEC && vash_plat_have_fork())
     {
       status = run_as_script(path, argv);
@@ -717,7 +730,7 @@ static int run_external(char **argv, bool can_exec)
     }
   else
     {
-      status = wait_for(pid);
+      status = wait_job(pid, true);
     }
 
   env_free(envp);
@@ -1612,7 +1625,9 @@ static int exec_subshell(struct node_s *n)
       return vash_inproc_subshell(only);
     }
 
+  jc_begin(n);
   pid = vash_plat_fork();
+  jc_launched(true);
   if (pid < 0)
     {
       vash_err("( ): not supported on this platform yet");
@@ -1629,7 +1644,7 @@ static int exec_subshell(struct node_s *n)
       child_run(only);
     }
 
-  return wait_for(pid);
+  return wait_job(pid, true);
 }
 
 /* Runs 'fn' with the node's own redirections in effect. */
@@ -1702,6 +1717,7 @@ static int run_stages(struct node_s *first, int nst)
         }
     }
 
+  jc_begin(g_sh.jc_node);
   for (i = 0; i < nst; i++, stage = stage->next)
     {
       pids[i] = vash_plat_fork();
@@ -1727,6 +1743,7 @@ static int run_stages(struct node_s *first, int nst)
         }
     }
 
+  jc_launched(true);
   for (k = 0; k < nst - 1; k++)
     {
       close(pipes[k][0]);
@@ -1735,7 +1752,7 @@ static int run_stages(struct node_s *first, int nst)
 
   for (i = 0; i < nst; i++)
     {
-      int s = pids[i] > 0 ? wait_for(pids[i]) : 1;
+      int s = pids[i] > 0 ? wait_job(pids[i], i == nst - 1) : 1;
 
       ps_record(i, s);
 
@@ -2093,6 +2110,7 @@ static int exec_pipeline(struct node_s *n)
     }
   else
     {
+      g_sh.jc_node = n;                 /* for `jobs`, should it stop */
       status = run_stages(n->a, nst);
     }
 
@@ -2147,7 +2165,9 @@ static int exec_async_spawn(struct node_s *st)
 
   envp = var_build_env();
   fflush(NULL);
+  jc_begin(st);
   ret = vash_plat_spawn(path, argv.v, envp, in_fd, -1, NULL, 0, &pid);
+  jc_launched(false);
   if (in_fd >= 0)
     {
       close(in_fd);
@@ -2188,7 +2208,11 @@ static int exec_async_spawn(struct node_s *st)
 
 static int exec_async(struct node_s *n)
 {
-  pid_t pid = vash_plat_fork();
+  pid_t pid;
+
+  jc_begin(n);
+  pid = vash_plat_fork();
+  jc_launched(false);
 
   if (pid < 0)
     {

@@ -849,6 +849,23 @@ def _():
     s.close()
 
 
+@test("job control: ^Z stops a foreground job, bg resumes it, fg takes it back")
+def _():
+    s = shell()
+    s.type("sleep 30 | cat"); s.send(ENTER)
+    s.send(CTRL("Z"))
+    s.type("jobs"); s.send(ENTER)
+    assert any("Stopped" in l and "sleep 30 | cat" in l for l in s.screen()), s.screen()
+    s.type("bg"); s.send(ENTER)
+    s.type("jobs"); s.send(ENTER)
+    assert any("Running" in l and "sleep 30 | cat &" in l for l in s.screen()), s.screen()
+    s.type("fg"); s.send(ENTER)
+    s.send(CTRL("C"))                      # reaches the job, not the shell
+    s.type("echo back"); s.send(ENTER)
+    assert s.screen()[-2:] == ["back", "$"], s.screen()
+    s.close()
+
+
 def main():
     global VS
     VS = os.path.abspath(sys.argv[1])

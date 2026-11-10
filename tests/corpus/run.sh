@@ -18,20 +18,21 @@ OUT=${OUT:-/tmp/vaporshell-corpus}; rm -rf "$OUT"; mkdir -p "$OUT"
 REF=$(command -v bash)
 pass=0 fail=0 known=0 sdiff=0
 run() { # shell-path outdir cmd
-    local sh=$1 d=$2 cmd=$3 w
+    local sh=$1 d=$2 cmd=$3 w net=${4-}
     w=$(mktemp -d "$OUT/w.XXXXXX"); mkdir -p "$w/bin" "$w/home"
     ln -s "$sh" "$w/bin/bash"
     timeout 60 bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --bind "$w" "$w" \
-         --unshare-pid --unshare-net --die-with-parent \
+         --unshare-pid ${net:---unshare-net} --die-with-parent \
         env -i PATH="$w/bin:/usr/bin:/bin" HOME="$w/home" TERM=dumb LANG=C.UTF-8 \
-        C="$C" SH="$sh" W="$w" "$REF" -c "$cmd" >"$d.out" 2>"$d.err" </dev/null
+        C="$C" T="$HERE" SH="$sh" W="$w" "$REF" -c "$cmd" >"$d.out" 2>"$d.err" </dev/null
     echo $? >"$d.rc"
     sed -i "s#$w#WORK#g; s#$sh#SH#g" "$d.out" "$d.err"
 }
 while IFS=$'\t' read -r name cmd; do
     case $name in ''|'#'*) continue;; esac
     [[ -z $ONLY || $name == *$ONLY* ]] || continue
-    run "$REF" "$OUT/$name.ref" "$cmd"; run "$VS" "$OUT/$name.vs" "$cmd"
+    net=; [[ $name == *+net ]] && net=--share-net
+    run "$REF" "$OUT/$name.ref" "$cmd" $net; run "$VS" "$OUT/$name.vs" "$cmd" $net
     if cmp -s "$OUT/$name.ref.out" "$OUT/$name.vs.out" && cmp -s "$OUT/$name.ref.rc" "$OUT/$name.vs.rc"; then
         pass=$((pass+1)); st=ok
         cmp -s "$OUT/$name.ref.err" "$OUT/$name.vs.err" || { sdiff=$((sdiff+1)); st="ok (stderr-diff)"; }

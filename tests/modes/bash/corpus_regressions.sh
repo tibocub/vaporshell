@@ -26,3 +26,4 @@ shopt -s cdable_vars compat31 extdebug; d=/usr; (cd d; pwd)
 bind "set completion-ignore-case on"; bind Space:magic-space
 shopt -oq posix; echo "posix=$?"
 echo ${ echo funsub; } "${| REPLY=reply; }"
+printf ' a b\nc d  ' | { read -N 7 x y; echo "[$x][$y]"; }     # -N: delimiter not special, no splitting

@@ -337,6 +337,7 @@ static int shell_main(int argc, char *argv[])
     g_sh.interactive = force_interactive || vash_plat_interactive();
     if (g_sh.interactive)
       {
+        jc_init();
         vash_hist_init();
         if (g_sh.profile != VASH_PROFILE_POSIX)
           {

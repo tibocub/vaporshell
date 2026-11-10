@@ -10,3 +10,10 @@ oh-my-bash	OSH=$C/oh-my-bash $SH -ic '. $C/oh-my-bash/oh-my-bash.sh; echo "$PS1"
 bash-it	BASH_IT=$C/bash-it $SH -ic '. $C/bash-it/bash_it.sh; echo "$PS1"; bash-it version'
 bats-tap	cd $C/bats-core && $SH bin/bats --tap test/bats.bats
 bats-common	cd $C/bats-core && $SH bin/bats --tap test/common.bats
+httpd-index	printf 'GET / HTTP/1.1\r\nHost: x.test\r\n\r\n' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-echo	printf 'POST /echo?name=a%%20b&x=1&y=%%41 HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-headers	printf 'GET /headers HTTP/1.0\r\nA: 1\r\nB-C: two words\r\n\r\n' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-404	printf 'GET /nope HTTP/1.0\r\n\r\n' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-bad	printf 'garbage\r\n\r\n' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-traversal	printf 'GET /file/../etc/passwd HTTP/1.0\r\n\r\n' | DOCROOT=$T $SH $T/handlers/httpd.sh
+httpd-socat+net	PORT=18911; socat TCP-LISTEN:$PORT,fork,reuseaddr,bind=127.0.0.1 EXEC:"$SH $T/handlers/httpd.sh" & sleep 0.5; exec 3<>/dev/tcp/127.0.0.1/$PORT; printf 'GET /echo?name=z HTTP/1.0\r\n\r\n' >&3; cat <&3; kill $!

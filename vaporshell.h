@@ -192,6 +192,7 @@ struct job_s
   enum job_state_e state;
   int status;             /* exit status, once JOB_DONE */
   bool notified;          /* `jobs` has shown this one since it last changed */
+  pid_t pgid;             /* its process group (job control), else the pid */
 };
 
 struct func_s
@@ -247,6 +248,11 @@ void procsub_drain(size_t from);
 int job_add(pid_t pid, const char *cmd);              /* returns its job id */
 int job_add_node(pid_t pid, const struct node_s *n);   /* describes the node itself */
 void job_reap(void);                                   /* WNOHANG poll of every running job */
+void jc_wait_done(void);                              /* the shell takes the terminal back */
+void jc_init(void);                                   /* jobs.c: take the terminal, ignore ^Z in the shell */
+void jc_begin(const struct node_s *n);                /* a foreground job is about to be forked */
+void jc_launched(bool fg);                            /* all its processes exist: terminal to it if fg */
+int jc_wait(pid_t pid, bool last);                    /* wait for one of its processes (-1: not job control) */
 struct job_s *job_find_id(int id);
 struct job_s *job_find_spec(const char *spec, bool *bad_spec);  /* %1, %+, %-, %%, a bare pid, or NULL: %+/current */
 void job_remove(struct job_s *j);
@@ -414,6 +420,13 @@ struct shell_s
   size_t jobs_cap;
   int next_job_id;
   int job_current;        /* job id marked '+' in `jobs` (0: none) */
+  bool jc;                /* real job control: process groups, ^Z, fg/bg (interactive, POSIX) */
+  int jc_tty;             /* the controlling terminal */
+  pid_t jc_shell_pgrp;    /* the shell's own group: gets the terminal back */
+  pid_t jc_pgid;          /* group for the job being forked now (0: the next child leads it) */
+  bool jc_want;           /* the next fork/spawn belongs to a job */
+  bool jc_stopped;        /* the foreground job stopped: skip the rest of its waits */
+  const struct node_s *jc_node;   /* its description, for `jobs` */
   int job_previous;       /* job id marked '-' (0: none) */
   const char *arg0;       /* $0 */
   const char *self;       /* how to re-run this shell (platform_nuttx.c) */

@@ -252,10 +252,46 @@ bool vash_plat_have_fork(void)
   return true;
 }
 
+/* Job control (jobs.c): a child of a job joins (or leads) the job's group,
+ * and gets back the signals the interactive shell ignores. The parent does
+ * the same setpgid, so the group exists whichever side runs first.
+ */
+
+static void jc_child_signals(void)
+{
+  signal(SIGTSTP, SIG_DFL);
+  signal(SIGTTIN, SIG_DFL);
+  signal(SIGTTOU, SIG_DFL);
+}
+
 pid_t vash_plat_fork(void)
 {
+  pid_t pid;
+  bool jc = g_sh.jc;
+
   fflush(NULL);                 /* or buffered output would appear twice */
-  return fork();
+  pid = fork();
+  if (pid == 0 && jc)
+    {
+      if (g_sh.jc_want)
+        {
+          setpgid(0, g_sh.jc_pgid);
+        }
+
+      jc_child_signals();
+      g_sh.jc = false;          /* a subshell does no job control of its own */
+    }
+  else if (pid > 0 && jc && g_sh.jc_want)
+    {
+      if (g_sh.jc_pgid == 0)
+        {
+          g_sh.jc_pgid = pid;
+        }
+
+      setpgid(pid, g_sh.jc_pgid);
+    }
+
+  return pid;
 }
 
 int vash_plat_collate(const char *a, const char *b)
@@ -449,7 +485,31 @@ int vash_plat_spawn(const char *path, char *const argv[], char *const envp[],
       posix_spawn_file_actions_addclose(&actions, close_fds[i]);
     }
 
-  ret = posix_spawn(pid, path, &actions, NULL, argv, envp);
+  if (g_sh.jc)
+    {
+      posix_spawnattr_t at;
+      sigset_t def;
+
+      sigemptyset(&def);
+      sigaddset(&def, SIGTSTP);
+      sigaddset(&def, SIGTTIN);
+      sigaddset(&def, SIGTTOU);
+      posix_spawnattr_init(&at);
+      posix_spawnattr_setsigdefault(&at, &def);
+      posix_spawnattr_setflags(&at, POSIX_SPAWN_SETSIGDEF | (g_sh.jc_want ? POSIX_SPAWN_SETPGROUP : 0));
+      posix_spawnattr_setpgroup(&at, g_sh.jc_pgid);
+      ret = posix_spawn(pid, path, &actions, &at, argv, envp);
+      posix_spawnattr_destroy(&at);
+      if (ret == 0 && g_sh.jc_want && g_sh.jc_pgid == 0)
+        {
+          g_sh.jc_pgid = *pid;
+        }
+    }
+  else
+    {
+      ret = posix_spawn(pid, path, &actions, NULL, argv, envp);
+    }
+
   posix_spawn_file_actions_destroy(&actions);
   return ret;
 }

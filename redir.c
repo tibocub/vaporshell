@@ -12,6 +12,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef VAPORSHELL_POSIX
+#  include <netdb.h>
+#  include <sys/socket.h>
+#endif
 
 #include "vaporshell.h"
 #include "expand.h"
@@ -144,6 +148,67 @@ static int install_fd(struct redir_saved_s *sv, bool persist, int fd, int src)
 
 /* Performs one redirection. Returns 0, or -1 after printing why. */
 
+#ifdef VAPORSHELL_POSIX
+/* bash's /dev/tcp/HOST/PORT and /dev/udp/HOST/PORT: a connected socket, or -1
+ * with errno set; -2 if 'path' is not one of those. (Not in the NuttX build:
+ * it keeps the binary small there.)
+ */
+
+static int net_open(const char *path)
+{
+  char host[256];
+  const char *port;
+  struct addrinfo hints;
+  struct addrinfo *res;
+  struct addrinfo *ai;
+  int fd = -1;
+  bool tcp = strncmp(path, "/dev/tcp/", 9) == 0;
+
+  if (!vash_feat(VF_BASH_SYNTAX) || (!tcp && strncmp(path, "/dev/udp/", 9) != 0))
+    {
+      return -2;
+    }
+
+  port = strchr(path + 9, '/');
+  if (port == NULL || (size_t)(port - path - 9) >= sizeof(host))
+    {
+      return -2;
+    }
+
+  memcpy(host, path + 9, (size_t)(port - path - 9));
+  host[port - path - 9] = '\0';
+  port++;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_socktype = tcp ? SOCK_STREAM : SOCK_DGRAM;
+  if (getaddrinfo(host, port, &hints, &res) != 0)
+    {
+      errno = EHOSTUNREACH;
+      return -1;
+    }
+
+  for (ai = res; ai != NULL; ai = ai->ai_next)
+    {
+      fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+      if (fd >= 0 && connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+        {
+          break;
+        }
+
+      if (fd >= 0)
+        {
+          int e = errno;
+
+          close(fd);
+          errno = e;
+          fd = -1;
+        }
+    }
+
+  freeaddrinfo(res);
+  return fd;
+}
+#endif
+
 static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
                      bool persist)
 {
@@ -273,7 +338,15 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
               default:        break;
             }
 
+#ifdef VAPORSHELL_POSIX
+          src = net_open(word);
+          if (src == -2)
+            {
+              src = open(VASH_FS(word), flags, 0666);
+            }
+#else
           src = open(VASH_FS(word), flags, 0666);
+#endif
           if (src < 0)
             {
               vash_err("%s: %s", word, strerror(errno));
