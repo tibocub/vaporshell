@@ -37,6 +37,7 @@ enum so_id_e
 {
   SO_NONE,
   SO_NULLGLOB,
+  SO_LASTPIPE,
   SO_CDABLE_VARS,
   SO_DOTGLOB,
   SO_FAILGLOB,
@@ -98,7 +99,7 @@ static const struct
   { "huponexit", false, SO_NOOP, SO_NONE },
   { "inherit_errexit", false, SO_MAP, SO_INHERIT_ERREXIT },
   { "interactive_comments", true, SO_NOOP, SO_NONE },
-  { "lastpipe", false, SO_UNSUP, SO_NONE },
+  { "lastpipe", false, SO_IMPL, SO_LASTPIPE },
   { "lithist", false, SO_NOOP, SO_NONE },
   { "localvar_inherit", false, SO_NOOP, SO_NONE },
   { "localvar_unset", false, SO_NOOP, SO_NONE },
@@ -127,6 +128,7 @@ static bool *impl_slot(enum so_id_e id)
   switch (id)
     {
       case SO_NULLGLOB:       return &g_sh.so_nullglob;
+      case SO_LASTPIPE:       return &g_sh.so_lastpipe;
       case SO_CDABLE_VARS:    return &g_sh.so_cdable_vars;
       case SO_DOTGLOB:        return &g_sh.so_dotglob;
       case SO_FAILGLOB:       return &g_sh.so_failglob;

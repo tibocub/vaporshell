@@ -748,6 +748,8 @@ static int call_function(struct func_s *f, int argc, char **argv)
   int nargs = argc - 1;
   int saved_loops;
   struct frame_s frame;
+  struct optsnap_s outer_snap = g_sh.optsnap;       /* `local -` of the caller, kept while this one runs */
+  bool outer_active = g_sh.optsnap_active;
   struct arena_s *arena = f->arena;          /* the function may unset itself while it runs: */
   char *fname;                               /* keep what it needs of f, not f */
   char *fsrc;
@@ -776,9 +778,17 @@ static int call_function(struct func_s *f, int argc, char **argv)
 
   saved_loops = g_sh.loop_depth;
   g_sh.loop_depth = 0;
+  g_sh.optsnap_active = false;
   frame_push(&frame, fname, fsrc, g_sh.lineno, true);
   status = exec_node(f->body);
   frame_pop(&frame);
+  if (g_sh.optsnap_active)
+    {
+      vash_opts_restore(&g_sh.optsnap);           /* the function said `local -` */
+    }
+
+  g_sh.optsnap = outer_snap;
+  g_sh.optsnap_active = outer_active;
   free(fname);
   free(fsrc);
   g_sh.loop_depth = saved_loops;
@@ -1699,6 +1709,8 @@ static int run_stages(struct node_s *first, int nst)
   int failed = 0;
   int i;
   int k;
+  int inline_last = g_sh.so_lastpipe && !g_sh.jc ? 1 : 0;      /* shopt -s lastpipe: the last stage runs here */
+  int last_status = 0;
 
   for (i = 0; i < nst - 1; i++)
     {
@@ -1718,7 +1730,7 @@ static int run_stages(struct node_s *first, int nst)
     }
 
   jc_begin(g_sh.jc_node);
-  for (i = 0; i < nst; i++, stage = stage->next)
+  for (i = 0; i < nst - inline_last; i++, stage = stage->next)
     {
       pids[i] = vash_plat_fork();
       if (pids[i] == 0)
@@ -1744,15 +1756,38 @@ static int run_stages(struct node_s *first, int nst)
     }
 
   jc_launched(true);
-  for (k = 0; k < nst - 1; k++)
+  if (inline_last)
     {
-      close(pipes[k][0]);
-      close(pipes[k][1]);
+      int saved_in = vash_plat_dup_high(STDIN_FILENO);
+
+      for (k = 0; k < nst - 1; k++)
+        {
+          if (k == nst - 2)
+            {
+              dup2(pipes[k][0], STDIN_FILENO);
+            }
+
+          close(pipes[k][0]);
+          close(pipes[k][1]);
+        }
+
+      last_status = exec_node(stage);
+      dup2(saved_in, STDIN_FILENO);
+      close(saved_in);
+      pids[nst - 1] = -1;
+    }
+  else
+    {
+      for (k = 0; k < nst - 1; k++)
+        {
+          close(pipes[k][0]);
+          close(pipes[k][1]);
+        }
     }
 
   for (i = 0; i < nst; i++)
     {
-      int s = pids[i] > 0 ? wait_job(pids[i], i == nst - 1) : 1;
+      int s = inline_last && i == nst - 1 ? last_status : pids[i] > 0 ? wait_job(pids[i], i == nst - 1) : 1;
 
       ps_record(i, s);
 

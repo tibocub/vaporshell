@@ -76,6 +76,8 @@ void vash_special_error(void);
 
 int vash_set_named_option(const char *name, bool on);
 void vash_dollar_dash(char *buf, size_t n);       /* $- */
+void vash_opts_save(struct optsnap_s *s);          /* local - */
+void vash_opts_restore(const struct optsnap_s *s);
 
 /* help.c, test.c, traps.c */
 

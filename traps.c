@@ -226,13 +226,23 @@ static void set_trap(int sig, const char *action)
   install(sig, g_sh.trap_action[sig]);
 }
 
-static void print_traps(void)
+static void print_traps(char **only, int nonly)       /* nonly > 0: just those (trap -p DEBUG) */
 {
   int i;
+  int k;
   bool parent = vash_feat(VF_TRAP_BASH) && !g_sh.trap_dirty;
 
   for (i = 0; i < NTRAPS; i++)
     {
+      for (k = 0; k < nonly && sig_number(only[k]) != i; k++)
+        {
+        }
+
+      if (nonly > 0 && k == nonly)
+        {
+          continue;
+        }
+
       const char *act = parent ? g_sh.trap_parent[i] : g_sh.trap_action[i];
 
       if (act != NULL)
@@ -259,6 +269,8 @@ static void print_traps(void)
     }
 }
 
+static int kill_list(int argc, char **argv);
+
 int bi_trap(int argc, char **argv)
 {
   int i = 1;
@@ -272,13 +284,18 @@ int bi_trap(int argc, char **argv)
 
   if (i < argc && strcmp(argv[i], "-p") == 0)
     {
-      print_traps();
+      print_traps(argv + i + 1, argc - i - 1);
       return 0;
+    }
+
+  if (i < argc && strcmp(argv[i], "-l") == 0 && vash_feat(VF_BASH_INFO_FORMATS))
+    {
+      return kill_list(1, argv);
     }
 
   if (i >= argc)
     {
-      print_traps();
+      print_traps(NULL, 0);
       return 0;
     }
 

@@ -49,6 +49,7 @@ struct redir_s
 {
   struct redir_s *next;
   int fd;                     /* -1: the operator's default */
+  char *varname;              /* {name}>file: the variable that gets the new descriptor (bash) */
   enum redir_op_e op;
   char *target;               /* raw word (not used by R_HEREDOC) */
   char *hd_delim;             /* R_HEREDOC: delimiter, quotes removed */

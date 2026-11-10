@@ -448,6 +448,17 @@ static int decl_main(enum decl_kind_e kind, int argc, char **argv)
           break;
         }
 
+      if (kind == DK_LOCAL && strcmp(a, "-") == 0 && g_sh.func_depth > 0)
+        {
+          if (!g_sh.optsnap_active)
+            {
+              vash_opts_save(&g_sh.optsnap);
+              g_sh.optsnap_active = true;
+            }
+
+          continue;                    /* local -: options revert when the function returns */
+        }
+
       if ((a[0] != '-' && a[0] != '+') || a[1] == '\0' || (g_sh.decl_raw >> i & 1ULL))
         {
           break;

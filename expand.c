@@ -1220,6 +1220,28 @@ char *vash_quote_word(const char *v)
   return quote_for_reuse(v);
 }
 
+/* The attribute letters `declare -p` would show, and `${v@a}` gives: a A i l n r u x. */
+
+static const char *var_attr_letters(const struct var_s *v)
+{
+  static char fl[12];
+  int f = 0;
+
+  if (v != NULL)
+    {
+      if (v->arr != NULL) fl[f++] = v->arr->assoc ? 'A' : 'a';
+      if ((v->flags & VF_INTEGER) != 0) fl[f++] = 'i';
+      if ((v->flags & VF_LOWER) != 0) fl[f++] = 'l';
+      if ((v->flags & VF_NAMEREF) != 0) fl[f++] = 'n';
+      if ((v->flags & VF_READONLY) != 0) fl[f++] = 'r';
+      if ((v->flags & VF_UPPER) != 0) fl[f++] = 'u';
+      if ((v->flags & VF_EXPORT) != 0) fl[f++] = 'x';
+    }
+
+  fl[f] = '\0';
+  return fl;
+}
+
 static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
                           char op, bool dq)
 {
@@ -1322,13 +1344,20 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
 
         break;
 
+      case 'K':
+      case 'k':
+        if (!isset)
+          {
+            return;
+          }
+
+        r = op == 'K' ? quote_for_reuse(str) : vash_xstrdup(str);
+        break;
+
       case 'a':
         {
           char nm[128];
           struct var_s *v;
-          char fl[4];
-          int f = 0;
-
           if (nlen >= sizeof(nm))
             {
               return;
@@ -1337,10 +1366,7 @@ static void ext_transform(struct xctx_s *x, const char *name, size_t nlen,
           memcpy(nm, name, nlen);
           nm[nlen] = '\0';
           v = var_lookup(nm);
-          if (v != NULL && (v->flags & VF_READONLY) != 0) fl[f++] = 'r';
-          if (v != NULL && (v->flags & VF_EXPORT) != 0) fl[f++] = 'x';
-          fl[f] = '\0';
-          r = vash_xstrdup(fl);
+          r = vash_xstrdup(var_attr_letters(v));
         }
 
         break;
@@ -1641,6 +1667,28 @@ static void x_multi_between(struct xctx_s *x, bool at, bool dq)
           x_addc(x, sep, dq);
         }
     }
+}
+
+/* "v" the way `declare -p` and ${a@K} show a value. */
+
+static char *quote_dq_reuse(const char *v)
+{
+  struct sbuf_s o;
+
+  sb_init(&o);
+  sb_addc(&o, '"');
+  for (; *v != '\0'; v++)
+    {
+      if (*v == '"' || *v == '\\' || *v == '$' || *v == '`')
+        {
+          sb_addc(&o, '\\');
+        }
+
+      sb_addc(&o, *v);
+    }
+
+  sb_addc(&o, '"');
+  return sb_take(&o);
 }
 
 struct mlist_s
@@ -1979,6 +2027,107 @@ static void x_multi(struct xctx_s *x, const char *name, size_t nlen, bool positi
           x->saw_at = true;             /* "${a[@]+w}" on an empty array: no word at all */
         }
 
+      mlist_free(&m);
+      return;
+    }
+
+  /* ${a[@]@K} ${a[@]@k} ${a[@]@A} ${a[@]@a}: they look at the whole array, keys and attributes included */
+
+  if (rest[0] == '@' && rn == 2 && strchr("AKka", rest[1]) != NULL && !positional)
+    {
+      char nm[128];
+      char **out = vash_xmalloc((size_t)(2 * m.n + 2) * sizeof(char *));
+      int cnt = 0;
+      const struct var_s *vv;
+
+      memcpy(nm, name, nlen < sizeof(nm) ? nlen : sizeof(nm) - 1);
+      nm[nlen < sizeof(nm) ? nlen : sizeof(nm) - 1] = '\0';
+      vv = var_lookup(nm);
+      if (rest[1] == 'a')
+        {
+          for (k = 0; k < m.n; k++)
+            {
+              out[cnt++] = vash_xstrdup(var_attr_letters(vv));
+            }
+        }
+      else if (rest[1] == 'A')
+        {
+          struct sbuf_s a;
+          const char *fl = var_attr_letters(vv);
+
+          sb_init(&a);
+          sb_adds(&a, "declare -");
+          sb_adds(&a, fl[0] != '\0' ? fl : "-");
+          sb_addc(&a, ' ');
+          sb_adds(&a, nm);
+          sb_adds(&a, "=(");
+          for (k = 0; k < m.n; k++)
+            {
+              char ib[24];
+              char *q = quote_dq_reuse(m.v[k]);
+
+              if (m.keys == NULL)
+                {
+                  snprintf(ib, sizeof(ib), "%ld", m.idx[k]);
+                }
+
+              sb_addc(&a, '[');
+              sb_adds(&a, m.keys != NULL ? m.keys[k] : ib);
+              sb_adds(&a, "]=");
+              sb_adds(&a, q);
+              sb_adds(&a, k + 1 < m.n || m.keys != NULL ? " " : "");
+              free(q);
+            }
+
+          sb_addc(&a, ')');
+          out[cnt++] = sb_take(&a);
+        }
+      else
+        {
+          for (k = 0; k < m.n; k++)
+            {
+              char ib[24];
+
+              if (m.keys == NULL)
+                {
+                  snprintf(ib, sizeof(ib), "%ld", m.idx[k]);
+                }
+
+              out[cnt++] = vash_xstrdup(m.keys != NULL ? m.keys[k] : ib);
+              out[cnt++] = rest[1] == 'K' ? quote_dq_reuse(m.v[k]) : vash_xstrdup(m.v[k]);
+            }
+
+          if (rest[1] == 'K')                 /* @K is one word: key "value" key "value" (bash) */
+            {
+              struct sbuf_s j;
+
+              sb_init(&j);
+              for (k = 0; k < cnt; k += 2)
+                {
+                  sb_adds(&j, out[k]);
+                  sb_addc(&j, ' ');
+                  sb_adds(&j, out[k + 1]);
+                  sb_adds(&j, k + 2 < cnt || m.keys != NULL ? " " : "");
+                  free(out[k]);
+                  free(out[k + 1]);
+                }
+
+              out[0] = sb_take(&j);
+              cnt = 1;
+              if (out[0] == NULL)
+                {
+                  out[0] = vash_xstrdup("");
+                }
+            }
+        }
+
+      x_emit_list(x, at, dq, out, cnt);
+      for (k = 0; k < cnt; k++)
+        {
+          free(out[k]);
+        }
+
+      free(out);
       mlist_free(&m);
       return;
     }

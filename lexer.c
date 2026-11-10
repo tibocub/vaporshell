@@ -546,6 +546,11 @@ static int lex_word(struct lexer_s *lx, struct token_s *tok)
         {
           tok->type = T_IO_NUMBER;
         }
+      else if (w.len > 2 && w.s[0] == '{' && w.s[w.len - 1] == '}' && vash_feat(VF_BASH_SYNTAX) &&
+               is_valid_name(w.s + 1, w.len - 2))
+        {
+          tok->type = T_IO_NUMBER;                   /* {fd}>file: kept as "{fd}" for the parser */
+        }
     }
 
   sb_free(&w);

@@ -30,3 +30,10 @@ printf ' a b\nc d  ' | { read -N 7 x y; echo "[$x][$y]"; }     # -N: delimiter n
 echo $-; set -eEu; echo $-; set +eEu
 shopt -po emacs history; echo ${BASH_SUBSHELL}${BASH_SUBSHELL@Q} $( (echo $BASH_SUBSHELL) )
 complete -F _f ''; complete -F _g 'a b'; complete -p
+# {fd} redirections, lastpipe, local -, trap -p/-l, ${a@K}
+exec {vfd}>/dev/null; echo "fd=$((vfd>=10))"; exec {vfd}>&-
+shopt -s lastpipe; echo piped | read -r lp; echo "lp=$lp"; shopt -u lastpipe
+lf() { local -; set -f; echo "in $-"; }; lf; echo "out $-"
+trap 'echo d' DEBUG; trap -p DEBUG | head -1; trap - DEBUG; trap -l | head -1
+ka=(x "y z"); declare -A kA=([k]=v); echo "${ka[@]@K}" "${kA[@]@K}" ${ka[@]@a} ${kA[@]@A}
+unset i; ua[$i]=z; echo "${ua[0]}"

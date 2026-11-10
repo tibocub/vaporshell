@@ -220,6 +220,43 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
   int flags;
 
   bool both = (r->op == R_OUT_ERR || r->op == R_APPEND_ERR);
+  bool newvar = false;
+
+  if (r->varname != NULL)
+    {
+      /* {v}>f takes the first free descriptor >= 10 and stores it in v; {v}>&- closes the one v holds */
+
+      if ((r->op == R_DUPIN || r->op == R_DUPOUT) && strcmp(r->target, "-") == 0)
+        {
+          const char *cur = var_get(r->varname);
+
+          if (cur == NULL || cur[0] < '0' || cur[0] > '9')
+            {
+              vash_err("%s: ambiguous redirect", r->varname);
+              return -1;
+            }
+
+          fd = atoi(cur);
+        }
+      else
+        {
+          int tmp = open("/dev/null", O_RDONLY);
+
+          fd = tmp >= 0 ? fcntl(tmp, F_DUPFD, 10) : -1;
+          if (tmp >= 0)
+            {
+              close(tmp);
+            }
+
+          if (fd < 0)
+            {
+              vash_err("%s: %s", r->varname, strerror(errno));
+              return -1;
+            }
+
+          newvar = true;
+        }
+    }
 
   if (fd < 0)
     {
@@ -367,6 +404,14 @@ static int redir_one(struct redir_s *r, struct redir_saved_s *sv,
 
       close(fd);
       return 0;
+    }
+
+  if (newvar)
+    {
+      char num[16];
+
+      snprintf(num, sizeof(num), "%d", fd);
+      var_set(r->varname, num);
     }
 
   if (install_fd(sv, persist, fd, src) != 0 ||

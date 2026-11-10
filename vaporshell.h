@@ -115,6 +115,13 @@ struct local_s
   int depth;                  /* function nesting level that declared it */
 };
 
+/* `local -`: the set -o/-e/-u/... options, put back when the function returns. */
+
+struct optsnap_s
+{
+  bool e, u, x, f, C, a, n, v, pipefail, noH, E, T;
+};
+
 struct alias_s
 {
   struct alias_s *next;
@@ -422,6 +429,8 @@ struct shell_s
   size_t jobs_cap;
   int next_job_id;
   int job_current;        /* job id marked '+' in `jobs` (0: none) */
+  struct optsnap_s optsnap;       /* `local -` in the running function */
+  bool optsnap_active;
   bool jc;                /* real job control: process groups, ^Z, fg/bg (interactive, POSIX) */
   int jc_tty;             /* the controlling terminal */
   pid_t jc_shell_pgrp;    /* the shell's own group: gets the terminal back */
@@ -455,6 +464,7 @@ struct shell_s
    */
 
   bool so_nullglob;
+  bool so_lastpipe;
   bool so_cdable_vars;
   bool so_dotglob;
   bool so_failglob;

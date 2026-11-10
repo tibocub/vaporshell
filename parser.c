@@ -283,7 +283,15 @@ static bool parse_redir(struct parser_s *p, struct redir_s ***tail)
   r->fd = -1;
   if (t->type == T_IO_NUMBER)
     {
-      r->fd = atoi(t->text);
+      if (t->text[0] == '{')
+        {
+          r->varname = arena_strndup(p->lx.arena, t->text + 1, strlen(t->text) - 2);
+        }
+      else
+        {
+          r->fd = atoi(t->text);
+        }
+
       advance(p);
       t = peek(p);
     }

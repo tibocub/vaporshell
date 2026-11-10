@@ -812,6 +812,20 @@ int vash_option_state(const char *name)
   return -1;
 }
 
+void vash_opts_save(struct optsnap_s *s)
+{
+  s->e = g_sh.opt_e; s->u = g_sh.opt_u; s->x = g_sh.opt_x; s->f = g_sh.opt_f;
+  s->C = g_sh.opt_C; s->a = g_sh.opt_a; s->n = g_sh.opt_n; s->v = g_sh.opt_v;
+  s->pipefail = g_sh.opt_pipefail; s->noH = g_sh.opt_noH; s->E = g_sh.opt_E; s->T = g_sh.opt_T;
+}
+
+void vash_opts_restore(const struct optsnap_s *s)
+{
+  g_sh.opt_e = s->e; g_sh.opt_u = s->u; g_sh.opt_x = s->x; g_sh.opt_f = s->f;
+  g_sh.opt_C = s->C; g_sh.opt_a = s->a; g_sh.opt_n = s->n; g_sh.opt_v = s->v;
+  g_sh.opt_pipefail = s->pipefail; g_sh.opt_noH = s->noH; g_sh.opt_E = s->E; g_sh.opt_T = s->T;
+}
+
 /* $-: the single-letter options that are on, in bash's order. dash has no h, B or H. */
 
 void vash_dollar_dash(char *buf, size_t n)
