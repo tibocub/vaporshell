@@ -172,9 +172,17 @@ void vash_bashopts(char *buf, size_t n)
   buf[0] = '\0';
   for (i = 0; i < sizeof(g_so) / sizeof(g_so[0]); i++)
     {
-      if (so_get((int)i) && len + strlen(g_so[i].name) + 2 < n)
+      size_t nl = strlen(g_so[i].name);
+
+      if (so_get((int)i) && len + nl + 2 <= n)       /* never past the buffer */
         {
-          len += (size_t)snprintf(buf + len, n - len, "%s%s", len > 0 ? ":" : "", g_so[i].name);
+          if (len > 0)
+            {
+              buf[len++] = ':';
+            }
+
+          memcpy(buf + len, g_so[i].name, nl + 1);
+          len += nl;
         }
     }
 }

@@ -729,7 +729,20 @@ void vash_shellopts(char *buf, size_t n)
   buf[0] = '\0';
   for (a = 0; a < cnt; a++)
     {
-      len += (size_t)snprintf(buf + len, n - len, "%s%s", a > 0 ? ":" : "", names[a]);
+      size_t nl = strlen(names[a]);
+
+      if (len + nl + 2 > n)             /* never past the buffer: what does not fit is left out */
+        {
+          break;
+        }
+
+      if (a > 0)
+        {
+          buf[len++] = ':';
+        }
+
+      memcpy(buf + len, names[a], nl + 1);
+      len += nl;
     }
 }
 
