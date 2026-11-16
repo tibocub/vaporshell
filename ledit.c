@@ -54,7 +54,7 @@ enum cmd_e
   C_CLEAR, C_PREV, C_NEXT, C_PSEARCH_BACK, C_PSEARCH_FWD, C_RSEARCH,
   C_INTERRUPT, C_COMPLETE, C_UPCASE, C_DOWNCASE, C_CAPITALIZE, C_UNDO,
   C_PASTE, C_NEWLINE, C_HIST_FIRST, C_HIST_LAST, C_COMPLETE_BACK, C_CANCEL,
-  C_SHELL, C_NCMD
+  C_SHELL, C_UP, C_DOWN, C_NCMD
 };
 
 /* readline's names for the commands, by number (NULL: not bindable). */
@@ -75,7 +75,8 @@ static const char *const g_cmd_names[C_NCMD] =
   [C_UPCASE] = "upcase-word", [C_DOWNCASE] = "downcase-word", [C_CAPITALIZE] = "capitalize-word",
   [C_UNDO] = "undo", [C_PASTE] = "bracketed-paste-begin", [C_NEWLINE] = "insert-newline",
   [C_HIST_FIRST] = "beginning-of-history", [C_HIST_LAST] = "end-of-history",
-  [C_COMPLETE_BACK] = "menu-complete-backward", [C_SHELL] = "shell-command"
+  [C_COMPLETE_BACK] = "menu-complete-backward", [C_SHELL] = "shell-command",
+  [C_UP] = "up-line-or-history", [C_DOWN] = "down-line-or-history"
 };
 
 static const struct
@@ -97,8 +98,8 @@ static const struct
   { "\033p", C_PSEARCH_BACK }, { "\033n", C_PSEARCH_FWD },
   { "\033<", C_HIST_FIRST }, { "\033>", C_HIST_LAST },
   { "\033\r", C_NEWLINE }, { "\033/", C_UNDO },
-  { "\033[A", C_PREV }, { "\033OA", C_PREV },
-  { "\033[B", C_NEXT }, { "\033OB", C_NEXT },
+  { "\033[A", C_UP }, { "\033OA", C_UP },
+  { "\033[B", C_DOWN }, { "\033OB", C_DOWN },
   { "\033[C", C_FWD }, { "\033OC", C_FWD },
   { "\033[D", C_BACK }, { "\033OD", C_BACK },
   { "\033[H", C_BOL }, { "\033OH", C_BOL }, { "\033[1~", C_BOL }, { "\033[7~", C_BOL },
@@ -158,6 +159,7 @@ struct ed_s
   size_t pos;                   /* cursor, a byte offset */
   const char *prompt;
   int cols;
+  int goal;                     /* Up/Down: the column to come back to across short lines */
   int cur_row;                  /* rows the cursor is below the prompt's first row */
   struct sbuf_s kill;
   bool last_kill;               /* the previous command was a kill: append to it */
@@ -373,7 +375,7 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
  * Words with an expansion or an assignment in them are left alone.
  */
 
-enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH, HL_COMMENT };
+enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH, HL_COMMENT, HL_KW, HL_FUNC };
 
 static bool path_exists(const char *word)
 {
@@ -443,6 +445,12 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
   char quote = 0;
   size_t i = 0;
   int budget = 16;                /* stat() calls per redraw: a long line must not make typing slow */
+  int if_d = 0;                   /* open if / loops / case: a closer with none open is flagged */
+  int loop_d = 0;
+  int case_d = 0;
+  bool pat = false;               /* in case patterns, up to the ")" */
+  bool case_wait = false;         /* after "case": the next "in" starts them */
+  bool func_next = false;         /* after "function": the next word is the name */
 
   memset(st, HL_NONE, len + 1);
   vash_commands_refresh();
@@ -490,6 +498,32 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
           continue;
         }
 
+      if (pat && (ch == '|' || ch == '(' || ch == '\n'))
+        {
+          i++;
+          continue;
+        }
+
+      if (pat && ch == ')')
+        {
+          pat = false;
+          at_cmd = true;
+          i++;
+          continue;
+        }
+
+      if (ch == ';' && case_d > 0 && !pat && i + 1 < len && (s[i + 1] == ';' || s[i + 1] == '&'))
+        {
+          i += 2;                       /* ;; ;& ;;& : the next clause's patterns */
+          if (s[i - 1] == ';' && i < len && s[i] == '&')
+            {
+              i++;
+            }
+
+          pat = true;
+          continue;
+        }
+
       if (strchr("|;&(\n", ch) != NULL)
         {
           at_cmd = true;
@@ -509,6 +543,19 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
         }
 
       plain = plain && !(j < len && (s[j] == '\'' || s[j] == '"'));      /* ec"ho": still being written */
+      if (pat)
+        {
+          if (j - i == 4 && memcmp(s + i, "esac", 4) == 0)
+            {
+              memset(st + i, HL_KW, 4);
+              case_d -= case_d > 0;
+              pat = false;
+            }
+
+          i = j;
+          continue;
+        }
+
       if (at_cmd)
         {
           size_t k = i;
@@ -527,14 +574,77 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 
                   memcpy(word, s + i, j - i);
                   word[j - i] = '\0';
+                  unsigned char sty = vash_is_command(word) ? HL_OK : HL_BAD;
+                  size_t k2 = j;
+
                   for (q = 0; g_cmd_kw[q] != NULL; q++)
                     {
                       at_cmd = at_cmd || strcmp(word, g_cmd_kw[q]) == 0;   /* a command follows */
                     }
 
-                  memset(st + i, vash_is_command(word) ? HL_OK : HL_BAD, j - i);
+                  if (vash_parser_reserved_word(word))
+                    {
+                      sty = HL_KW;
+                      if (strcmp(word, "if") == 0)
+                        {
+                          if_d++;
+                        }
+                      else if (strcmp(word, "while") == 0 || strcmp(word, "until") == 0 ||
+                               strcmp(word, "for") == 0 || strcmp(word, "select") == 0)
+                        {
+                          loop_d++;
+                        }
+                      else if (strcmp(word, "case") == 0)
+                        {
+                          case_d++;
+                          case_wait = true;
+                        }
+                      else if (strcmp(word, "function") == 0)
+                        {
+                          func_next = true;
+                        }
+                      else if (strcmp(word, "fi") == 0)
+                        {
+                          sty = if_d > 0 ? HL_KW : HL_BAD;
+                          if_d -= if_d > 0;
+                        }
+                      else if (strcmp(word, "done") == 0)
+                        {
+                          sty = loop_d > 0 ? HL_KW : HL_BAD;
+                          loop_d -= loop_d > 0;
+                        }
+                      else if (strcmp(word, "esac") == 0)
+                        {
+                          sty = HL_BAD;      /* a real one is eaten with the patterns */
+                        }
+                    }
+                  else
+                    {
+                      while (k2 < len && (s[k2] == ' ' || s[k2] == '\t'))
+                        {
+                          k2++;
+                        }
+
+                      if (k2 + 1 < len && s[k2] == '(' && s[k2 + 1] == ')')
+                        {
+                          sty = HL_FUNC;     /* name() { ... } */
+                        }
+                    }
+
+                  memset(st + i, sty, j - i);
                 }
             }
+        }
+      else if (case_wait && j - i == 2 && s[i] == 'i' && s[i + 1] == 'n')
+        {
+          memset(st + i, HL_KW, 2);
+          case_wait = false;
+          pat = true;
+        }
+      else if (func_next && plain)
+        {
+          memset(st + i, HL_FUNC, j - i);
+          func_next = false;
         }
       else if (plain && s[i] != '-' && j - i < sizeof(word) && budget-- > 0)
         {
@@ -554,7 +664,7 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 
 static void set_style(struct sbuf_s *o, unsigned char from, unsigned char to)
 {
-  static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m", "\033[90m" };
+  static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m", "\033[90m", "\033[36m", "\033[1;36m" };
 
   if (from != HL_NONE)
     {
@@ -935,6 +1045,114 @@ static void case_word(struct ed_s *e, char mode)
     }
 
   e->pos = end;
+}
+
+/* Up/Down inside the line: one screen row, as draw() lays them out (wrapped or after a
+ * newline), keeping the column. False on the first/last row: history takes over then.
+ */
+
+/* One character of the layout draw() produces: the cursor after byte i; returns the next i. */
+
+static size_t lay_step(const char *s, size_t len, size_t i, struct cursor_s *c, int cols)
+{
+  unsigned char ch = (unsigned char)s[i];
+  size_t n;
+
+  if (ch == '\n')
+    {
+      c->row++;
+      c->col = 0;
+      while (c->col < g_indent && c->col < cols - 1)
+        {
+          c->col++;
+        }
+
+      return i + 1;
+    }
+
+  if (ch < 0x20 || ch == 0x7f)
+    {
+      adv(c, 2, cols);
+      return i + 1;
+    }
+
+  n = next_char(s, len, i) - i;
+  adv(c, char_cols(s + i, n), cols);
+  return i + n;
+}
+
+static bool move_vert(struct ed_s *e, int dir)
+{
+  const char *s = text(e);
+  size_t len = e->b.len;
+  size_t i;
+  struct sbuf_s o;
+  struct cursor_s c = { 0, 0 };
+  struct cursor_s start;
+  struct cursor_s at = { 0, 0 };
+  int target;
+  int best = -1;
+  size_t bestpos = 0;
+
+  sb_init(&o);
+  draw_prompt(&o, e->prompt, &c, e->cols);
+  sb_free(&o);
+  start = c;
+  for (i = 0; i < e->pos; )
+    {
+      i = lay_step(s, len, i, &c, e->cols);
+    }
+
+  at = c;
+  if (e->last != C_UP && e->last != C_DOWN)
+    {
+      e->goal = at.col;
+    }
+
+  target = at.row + dir;
+  if (target < 0)
+    {
+      return false;
+    }
+
+  c = start;
+  for (i = 0; ; )
+    {
+      struct cursor_s before = c;
+
+      if (i < len)                              /* the position a wrapping character lands on */
+        {
+          struct cursor_s t = c;
+
+          lay_step(s, len, i, &t, e->cols);
+          if (t.row > c.row && s[i] != '\n' && t.col <= 2)
+            {
+              before.row = t.row;
+              before.col = 0;
+            }
+        }
+
+      if (i != e->pos && before.row == target && before.col <= e->goal && before.col >= best)
+        {
+          best = before.col;
+          bestpos = i;
+        }
+
+      if (i >= len)
+        {
+          break;
+        }
+
+      i = lay_step(s, len, i, &c, e->cols);
+    }
+
+  if (best < 0)
+    {
+      return false;
+    }
+
+  e->pos = bestpos;
+  return true;
 }
 
 /* ---- History --------------------------------------------------------------- */
@@ -1708,8 +1926,8 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         {
           case C_COMPLETE: menu_move(e, 1); return false;
           case C_COMPLETE_BACK: menu_move(e, -1); return false;
-          case C_NEXT: menu_move(e, 1); return false;
-          case C_PREV: menu_move(e, -1); return false;
+          case C_NEXT: case C_DOWN: menu_move(e, 1); return false;
+          case C_PREV: case C_UP: menu_move(e, -1); return false;
           case C_FWD: menu_move(e, rows); return false;
           case C_BACK: menu_move(e, -rows); return false;
           case C_CANCEL:
@@ -1942,6 +2160,15 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
         hist_move(e, cmd == C_PREV ? -1 : 1, false);
         break;
 
+      case C_UP:
+      case C_DOWN:
+        if (!move_vert(e, cmd == C_UP ? -1 : 1))
+          {
+            hist_move(e, cmd == C_UP ? -1 : 1, false);
+          }
+
+        break;
+
       case C_PSEARCH_BACK:
       case C_PSEARCH_FWD:
         hist_move(e, cmd == C_PSEARCH_BACK ? -1 : 1, true);
@@ -2089,6 +2316,10 @@ char *vash_ledit_read(const char *prompt, bool continuation)
       draw_prompt(&o, prompt, &c, 1 << 20);
       sb_free(&o);
       g_indent = iv != NULL && strcmp(iv, "0") == 0 ? 0 : c.col;
+      if (g_indent > vash_plat_columns() / 2)       /* a prompt that wide leaves no room: no indent */
+        {
+          g_indent = 0;
+        }
     }
   else if (g_indent > 0)
     {

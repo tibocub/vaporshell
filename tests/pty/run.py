@@ -349,6 +349,25 @@ def _():
     s.close()
 
 
+@test("Up/Down move across lines of the buffer; history only from the top/bottom row")
+def _():
+    s = shell(env={"VASH_INDENT": "0"})
+    s.type("echo old"); s.send(ENTER)
+    s.type("echo a"); s.send("\x1b\r"); s.type("echo bcd")
+    s.send("\x1b[A"); s.type("X")                       # up to line 1, same column
+    expect(s, ["$ echo old", "old", "$ echo aX", "echo bcd"])
+    s.send("\x1b[A")                                     # top row: history
+    expect(s, ["$ echo old", "old", "$ echo old"])
+    s.send("\x1b[B")
+    expect(s, ["$ echo old", "old", "$ echo aX", "echo bcd"])
+    s.close()
+    s = shell(cols=20, env={"VASH_AUTOSUGGEST": "0"})     # one long line wrapped over rows
+    s.type("echo " + "x" * 30)
+    s.send("\x1b[A"); s.type("Y")
+    assert any("Y" in l and l.startswith("$") for l in s.screen()), s.screen()
+    s.close()
+
+
 @test("Ctrl-L clears the screen and redraws the line")
 def _():
     s = shell()
@@ -588,6 +607,24 @@ def _():
     s.raw = b""
     s.type("echo hi")
     assert "\x1b[32m" not in s.raw.decode()
+    s.close()
+
+
+@test("highlighting: keywords, case patterns, stray closers, function names")
+def _():
+    s = shell(env={"VASH_AUTOSUGGEST": "0"})
+    s.raw = b""
+    s.type("if true; then echo a; fi; fi; foo() { :; }")
+    raw = s.raw.decode().split("\x1b[J")[-1]            # the last redraw
+    assert "\x1b[36mif\x1b[0m" in raw and "\x1b[36mthen\x1b[0m" in raw, raw[-300:]
+    assert "\x1b[32mtrue" in raw and "\x1b[32mecho" in raw, raw[-300:]      # a command after then
+    assert raw.count("\x1b[31mfi") == 1, raw[-300:]                         # only the stray one
+    assert "\x1b[1;36mfoo" in raw, raw[-300:]
+    s.send(CTRL("U")); s.raw = b""
+    s.type("case $x in a|b) echo 1;; *) zzznotacmd;; esac")
+    raw = s.raw.decode().split("\x1b[J")[-1]
+    assert "\x1b[31ma" not in raw and "\x1b[31m*" not in raw, raw[-300:]  # patterns are not commands
+    assert "\x1b[31mzzznotacmd" in raw and "\x1b[36mesac" in raw, raw[-300:]
     s.close()
 
 
