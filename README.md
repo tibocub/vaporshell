@@ -23,8 +23,9 @@ All this while being small enought to run on an RP2040 or an ESP32 (using NuttX/
 
 ## Support and compatibility
 
-bash mode tested agains **bash 5.3.9** (see [bash-coverage.md](docs/bash-coverage.md))
-POSIX mode tested agains **dash 0.5.12** (see [posix-coverage.md](docs/posix-coverage.md))
+bash mode tested against **bash 5.3.9** (see [bash-coverage.md](docs/bash-coverage.md)).
+
+POSIX mode tested against **dash 0.5.12** (see [posix-coverage.md](docs/posix-coverage.md)).
 
 Tested on linux (fedora 44 and debian 13) and
 vaporOS (RP2040 and native sim).
@@ -163,20 +164,6 @@ make bench                  # Tab-completion timings (tests/bench)
 make strict                 # fortify off, -Werror (what Fedora sees)
 ```
 
-
-## VERSIONING
-
-The version lives in `version.h` (`vaporshell --version`, `$VAPORSHELL_VERSION`);
-release tags are `vMAJOR.MINOR.PATCH`.
-
-- `0.X.Y` -> `0.X.Y+1`: fixes and small additions, a drop-in upgrade; any
-  `0.X.*` is compatible with any other `0.X.*`.
-- `0.X.0` -> `0.X+1.0`: new features; things may still break while major is 0.
-- `X.0.0`: a big turn, deep incompatibility with the previous major is allowed.
-- `1.0.0`: declared once the author has daily-driven vaporshell for a few
-  weeks without problems.
-
-Bump `version.h`, commit, then `git tag -a vX.Y.Z`.
 
 ## STATUS
 
