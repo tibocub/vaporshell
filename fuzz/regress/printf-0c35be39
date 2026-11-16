@@ -1,0 +1,13 @@
+%5.2f|Ý%EXI2f|%4444444444444444444444444s:%b|%q|%00000000000000000(z000000000000000000000000000000t 2>&1 || echo "shift rc=$? (silent)"
+e=(); t=("${e[@]+x}"); echo "${#t[@]}"  # "${a[@]+w}" on an empty array: no word
+t=("${nope[@]+${nope[@]}}"); emagic-space
+shopt -oq posix; echo "posix=$?"
+echo ${ echo funsub; } "${| REPLY=reply; }"
+printf ' a b\nc d  ' | { read -N 7 x y; echo "[$x][$y]"; }     # -N: delimiter not special, no splitting
+echo $-; set -eEu; echo $-; set +eEu
+shopt -po emacs history; echo ${BASH_SUBSHELL}${BASH_SUBSHELL@Q} $( (echo $BASH_SUBSHELL) )
+complete -F _f ''; complete -F _g 'a b'; complete -p
+# {fd} redirections, lastpipe, local -, trap -p/-l, ${a@K}
+exec {vfd}>/dev/null; echo "fd=$((vfd>=10))"; exec {vfd}>&-
+shopt -s lastpipe; echo piped | read -r lp; echo "lp=$lp"; shopt -u lastpipe
+lf() { loc0667424d42

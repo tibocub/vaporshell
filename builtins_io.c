@@ -457,7 +457,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
             if (depth != 0 || p[1] != 'T')
               {
                 vash_err("printf: `%c': invalid time format specification",
-                       p[1] != '\0' ? p[1] : '\0');
+                       depth == 0 && p[1] != '\0' ? p[1] : '\0');   /* unclosed: p is at the NUL */
                 pf->status = 1;
                 pf->stop = true;
                 return;
@@ -536,6 +536,14 @@ static void pf_run(struct pf_s *pf, const char *fmt)
               char *out;
               int wneed = snprintf(NULL, 0, spec, need > 0 ? buf : "");
 
+              if (wneed < 0)                 /* a width past INT_MAX: snprintf fails, say so */
+                {
+                  vash_err("printf: field width or precision too large");
+                  pf->status = 1;
+                  pf->stop = true;
+                  return;
+                }
+
               out = vash_xmalloc((size_t)wneed + 1);
               snprintf(out, (size_t)wneed + 1, spec, need > 0 ? buf : "");
               sb_adds(&pf->out, out);
@@ -567,6 +575,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 spec[sl++] = 'l';
                 spec[sl++] = 'd';
                 spec[sl] = '\0';
+                buf[0] = '\0';                  /* stays empty if snprintf fails (width past INT_MAX) */
                 snprintf(buf, sizeof(buf), spec, v);
                 sb_adds(&pf->out, buf);
               }
@@ -601,6 +610,7 @@ static void pf_run(struct pf_s *pf, const char *fmt)
 
                 spec[sl++] = conv;
                 spec[sl] = '\0';
+                buf[0] = '\0';
                 snprintf(buf, sizeof(buf), spec, v);
                 sb_adds(&pf->out, buf);
               }
@@ -619,6 +629,14 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 one[0] = (a != NULL) ? a[0] : '\0';
                 one[1] = '\0';
                 need = snprintf(NULL, 0, spec, one);
+                if (need < 0)
+                  {
+                    vash_err("printf: field width or precision too large");
+                    pf->status = 1;
+                    pf->stop = true;
+                    return;
+                  }
+
                 buf = vash_xmalloc((size_t)need + 1);
                 snprintf(buf, (size_t)need + 1, spec, one);
                 sb_adds(&pf->out, buf);
@@ -725,6 +743,15 @@ static void pf_run(struct pf_s *pf, const char *fmt)
                 spec[sl++] = 's';
                 spec[sl] = '\0';
                 need = snprintf(NULL, 0, spec, tmp.s != NULL ? tmp.s : "");
+                if (need < 0)
+                  {
+                    vash_err("printf: field width or precision too large");
+                    pf->status = 1;
+                    pf->stop = true;
+                    sb_free(&tmp);
+                    return;
+                  }
+
                 buf = vash_xmalloc((size_t)need + 1);
                 snprintf(buf, (size_t)need + 1, spec, tmp.s != NULL ? tmp.s : "");
                 sb_adds(&pf->out, buf);

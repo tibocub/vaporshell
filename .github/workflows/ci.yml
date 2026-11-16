@@ -40,6 +40,8 @@ jobs:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y clang
       - run: make -f posix.mk fuzz
+      - name: Replay the inputs that once crashed
+        run: build-fuzz/fuzz fuzz/regress/*
       - name: Fuzz for 90 seconds, starting from the seed corpus
         run: |
           mkdir -p work && cp -r fuzz/corpus work/corpus

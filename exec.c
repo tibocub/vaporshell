@@ -750,6 +750,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
   struct frame_s frame;
   struct optsnap_s outer_snap = g_sh.optsnap;       /* `local -` of the caller, kept while this one runs */
   bool outer_active = g_sh.optsnap_active;
+  const struct node_s *saved_node = g_sh.cur_node;   /* $BASH_COMMAND must not point into a freed body */
   struct arena_s *arena = f->arena;          /* the function may unset itself while it runs: */
   char *fname;                               /* keep what it needs of f, not f */
   char *fsrc;
@@ -798,6 +799,7 @@ static int call_function(struct func_s *f, int argc, char **argv)
       status = g_sh.last_status;
     }
 
+  g_sh.cur_node = saved_node;
   arena_release(arena);
   var_locals_pop(g_sh.func_depth);
   g_sh.func_depth--;
@@ -3342,6 +3344,8 @@ char *run_capture_raw(const char *text, size_t len)
 
 static int run_loop(struct parser_s *p, bool recover, int status)
 {
+  const struct node_s *outer_node = g_sh.cur_node;   /* alive; the lines parsed here are freed one by one */
+
   for (; ; )
     {
       struct arena_s *arena;
@@ -3351,6 +3355,7 @@ static int run_loop(struct parser_s *p, bool recover, int status)
       if (r == PARSE_EOF)
         {
           arena_release(arena);
+          g_sh.cur_node = outer_node;
           break;
         }
 
@@ -3366,6 +3371,7 @@ static int run_loop(struct parser_s *p, bool recover, int status)
           g_sh.last_status = status;
           g_sh.input_aborted = false;
           arena_release(arena);
+          g_sh.cur_node = outer_node;
           if (!recover)
             {
               break;
@@ -3389,6 +3395,7 @@ static int run_loop(struct parser_s *p, bool recover, int status)
           status = exec_node(node);
         }
 
+      g_sh.cur_node = outer_node;
       arena_release(arena);
       if (g_sh.unwind != UW_NONE)
         {

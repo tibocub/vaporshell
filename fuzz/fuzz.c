@@ -9,6 +9,10 @@
  *   2  pattern    glob matching, input split at the first '\n' into pattern/string
  *   3  brace      brace expansion
  *   4  history    !-expansion of a line against an empty history
+ *   5  expand     word expansion ("$x" ${x//a/b} ~ globs...), skipped when the text could
+ *                 run a command: "$(", "`", "<(", ">("
+ *   6  printf     the printf builtin, always `-v var` (formats into a variable)
+ *   7  test       the test/[ builtin on the input's lines as arguments
  */
 
 #include <nuttx/config.h>
@@ -57,7 +61,7 @@ static void fuzz_parser(const char *s, size_t n)
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
   (void)argc;
-  shell_init((*argv)[0]);
+  shell_init((*argv)[0]);          /* globs and tests look at the current directory: run it in a scratch one */
   return 0;
 }
 
@@ -75,7 +79,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   memcpy(s, data + 1, size - 1);
   s[size - 1] = '\0';
 
-  switch (data[0] % 5)
+  switch (data[0] % 8)
     {
       case 0:
         fuzz_parser(s, size - 1);
@@ -113,8 +117,61 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         break;
 
-      default:
+      case 4:
         free(vash_hist_expand(s));
+        break;
+
+      case 5:
+        if (strstr(s, "$(") == NULL && strchr(s, '`') == NULL && strstr(s, "<(") == NULL &&
+            strstr(s, ">(") == NULL)
+          {
+            struct fieldv_s f;
+
+            free(expand_word_str(s));
+            memset(&f, 0, sizeof(f));
+            expand_token_fields(s, &f);
+            fv_free(&f);
+          }
+
+        break;
+
+      case 6:
+      case 7:
+        {
+          char *av[10] = { data[0] % 8 == 6 ? "printf" : "test", NULL };
+          int ac = 1;
+          char *t = s;
+
+          if (data[0] % 8 == 6)
+            {
+              av[ac++] = "-v";
+              av[ac++] = "fuzzvar";
+            }
+
+          while (t != NULL && ac < 9)
+            {
+              av[ac++] = t;
+              t = strchr(t, '\n');
+              if (t != NULL)
+                {
+                  *t++ = '\0';
+                }
+            }
+
+          av[ac] = NULL;
+          if (data[0] % 8 == 6)
+            {
+              bi_printf(ac, av);
+            }
+          else
+            {
+              bi_test(ac, av);
+            }
+        }
+
+        break;
+
+      default:
         break;
     }
 

@@ -1,0 +1,6 @@
+-f
+/etc/passwd
+-a
+1
+-lt
+2

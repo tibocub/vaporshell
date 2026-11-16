@@ -33,13 +33,16 @@ Check a binary: `readelf -lW build/vaporshell | grep -E 'RELRO|STACK'`.
 `fuzz/fuzz.c` is a libFuzzer harness (clang, ASan + UBSan). One binary; the
 first input byte picks the target. Nothing it exercises runs commands.
 
-| Byte % 5 | Target |
+| Byte % 8 | Target |
 |---|---|
 | 0 | lexer + parser over a script |
 | 1 | arithmetic evaluator (inputs with `$` or backtick skipped) |
 | 2 | glob matching (pattern and subject split at the first newline) |
 | 3 | brace expansion |
 | 4 | history `!` expansion |
+| 5 | word expansion (skipped if the text could run a command) |
+| 6 | the `printf` builtin (`-v` only) |
+| 7 | the `test` / `[` builtin |
 
 ```sh
 make -f posix.mk fuzz
@@ -51,10 +54,22 @@ build-fuzz/fuzz /tmp/work/corpus -max_total_time=300 -timeout=10 -jobs=4 -worker
 A crashing input is a bug: attach it to a private report if it looks
 exploitable, otherwise fix it and add the input to `tests/` as a regression.
 
-Bugs found so far:
+`fuzz/regress/` holds the inputs that crashed an earlier version; CI replays them
+(`build-fuzz/fuzz fuzz/regress/*`).
+
+Bugs found so far (all fixed):
 
 - `{1..666666666666666666666}`: signed overflow while reading the number
   (brace.c). Sequence bounds are now limited to 17 digits.
+- `printf '%((%Y'`: one byte read past the end of the format when a `%(...)T` was
+  not closed (builtins_io.c).
+- `printf '%99999999999s'`: a width past INT_MAX made `snprintf` fail and the result
+  was used as a length: heap over-read (builtins_io.c). It now reports an error.
+- `PS1='${BASH_COMMAND} $ '`: `$BASH_COMMAND` read the command of the previous line
+  after its memory was freed: use-after-free (exec.c). The pointer is restored to the
+  enclosing command when a line or a function body ends.
+- `<(cmd)` temp files were reopened by name after `mkstemp`; they are now written
+  through the descriptor `mkstemp` returned and read back with `O_NOFOLLOW`.
 
 Not fuzzed yet (they execute or touch the system, so they need a sandboxed
 harness): word expansion with `$( )`, redirections, the line editor,

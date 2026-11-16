@@ -41,7 +41,11 @@ struct procsub_s
   char *cmd;                 /* NULL for <(...): nothing left to run */
 };
 
-static char *make_temp(void)
+/* *fdp: the file stays open, so what is written goes to the file mkstemp made, never to
+ * whatever a symlink planted in a shared TMPDIR points at by the time a reopen by name runs.
+ */
+
+static char *make_temp(int *fdp)
 {
   const char *tmp = var_get("TMPDIR");
   char *path;
@@ -62,7 +66,7 @@ static char *make_temp(void)
       return NULL;
     }
 
-  close(fd);
+  *fdp = fd;
   return path;
 }
 
@@ -73,7 +77,8 @@ static char *make_temp(void)
 
 char *procsub_new(const char *cmd, size_t cmdlen, bool is_output)
 {
-  char *path = make_temp();
+  int fd = -1;
+  char *path = make_temp(&fd);
   struct procsub_s *e;
 
   if (path == NULL)
@@ -84,15 +89,23 @@ char *procsub_new(const char *cmd, size_t cmdlen, bool is_output)
   if (!is_output)
     {
       char *captured = run_capture_raw(cmd, cmdlen);
-      FILE *f = fopen(path, "w");
+      FILE *f = fdopen(fd, "w");
 
       if (f != NULL)
         {
           fwrite(captured, 1, strlen(captured), f);
           fclose(f);
         }
+      else
+        {
+          close(fd);
+        }
 
       free(captured);
+    }
+  else
+    {
+      close(fd);
     }
 
   if (g_sh.procsub_n == g_sh.procsub_cap)
@@ -131,7 +144,7 @@ void procsub_drain(size_t from)
 
       if (e->cmd != NULL)
         {
-          int fd = open(e->path, O_RDONLY);
+          int fd = open(e->path, O_RDONLY | O_NOFOLLOW);
 
           if (fd >= 0)
             {
