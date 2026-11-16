@@ -830,6 +830,92 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
  * VASH_AUTOSUGGEST=0 turns it off. NULL if there is none.
  */
 
+/* Would this history entry still make sense here? Its commands must exist (not a
+ * program since uninstalled, nor a typo that was fixed afterwards) and the path
+ * arguments with a "/" must exist from this directory: a suggestion that cannot work
+ * is skipped for the next older match, as fish does. At most 6 stat() calls.
+ */
+
+static bool sugg_ok(const char *h)
+{
+  bool at_cmd = true;
+  int budget = 6;
+  const char *p = h;
+
+  vash_commands_refresh();
+  while (*p != '\0')
+    {
+      const char *q;
+      char word[96];
+      bool plain = true;
+
+      if (strchr("|;&(", *p) != NULL)
+        {
+          at_cmd = true;
+          p++;
+          continue;
+        }
+
+      if (strchr(" \t)<>", *p) != NULL)
+        {
+          p++;
+          continue;
+        }
+
+      if (*p == '\'' || *p == '"')
+        {
+          char qc = *p++;
+
+          while (*p != '\0' && *p != qc)
+            {
+              p++;
+            }
+
+          p += *p != '\0';
+          at_cmd = false;
+          continue;
+        }
+
+      for (q = p; *q != '\0' && strchr(" \t|;&()<>", *q) == NULL; q++)
+        {
+          plain = plain && strchr("$`\\=*?[{'\"~", *q) == NULL;
+        }
+
+      if (plain && (size_t)(q - p) < sizeof(word))
+        {
+          size_t k;
+
+          memcpy(word, p, (size_t)(q - p));
+          word[q - p] = '\0';
+          if (at_cmd)
+            {
+              if (!vash_is_command(word))
+                {
+                  return false;
+                }
+
+              at_cmd = false;
+              for (k = 0; g_cmd_kw[k] != NULL; k++)
+                {
+                  at_cmd = at_cmd || strcmp(word, g_cmd_kw[k]) == 0;
+                }
+            }
+          else if (word[0] != '-' && strchr(word, '/') != NULL && budget-- > 0 && !path_exists(word))
+            {
+              return false;
+            }
+        }
+      else
+        {
+          at_cmd = false;
+        }
+
+      p = q;
+    }
+
+  return true;
+}
+
 static const char *suggestion(const struct ed_s *e)
 {
   const char *off = var_get("VASH_AUTOSUGGEST");
@@ -841,12 +927,12 @@ static const char *suggestion(const struct ed_s *e)
       return NULL;
     }
 
-  for (i = vash_hist_count() - 1; i >= 0; i--)
+  for (i = vash_hist_count() - 1; i >= 0 && i >= vash_hist_count() - 2000; i--)   /* shortcut: newest 2000 only */
     {
       const char *h = vash_hist_get(i);
 
       if (strlen(h) > e->b.len && strncmp(h, text(e), e->b.len) == 0 &&
-          strpbrk(h + e->b.len, "\n\033") == NULL)
+          strpbrk(h + e->b.len, "\n\033") == NULL && sugg_ok(h))
         {
           return h + e->b.len;
         }
@@ -2253,6 +2339,43 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
 
 /* ---- Entry points ------------------------------------------------------------- */
 
+void vash_ledit_title(const char *t)
+{
+  const char *term = var_get("TERM");
+  const char *off = var_get("VASH_TITLE");
+  char buf[112];
+  size_t n = 0;
+
+  if (term == NULL || strcmp(term, "linux") == 0 || strncmp(term, "vt", 2) == 0 ||
+      strcmp(term, "dumb") == 0 || (off != NULL && strcmp(off, "0") == 0))
+    {
+      return;
+    }
+
+  for (; *t != '\0' && *t != '\n' && n < 100; t++)
+    {
+      if ((unsigned char)*t >= 0x20 && *t != 0x7f)
+        {
+          buf[n++] = *t;
+        }
+    }
+
+  if (((unsigned char)*t & 0xc0) == 0x80)          /* cut inside a UTF-8 character: drop it whole */
+    {
+      while (n > 0 && ((unsigned char)buf[n - 1] & 0xc0) == 0x80)
+        {
+          n--;
+        }
+
+      n -= n > 0;
+    }
+
+  buf[n] = '\0';
+  put("\033]2;");
+  put(buf);
+  put("\a");
+}
+
 bool vash_ledit_usable(void)
 {
   const char *term = var_get("TERM");
@@ -2414,6 +2537,7 @@ char *vash_ledit_read(const char *prompt, bool continuation)
       g_ctxlen += n + 1;
       if (!continuation)
         {
+          vash_ledit_title(t);
           vash_hist_add(t);
           vash_hist_save();                 /* now, not at exit: a kill or a reset keeps the session */
         }

@@ -3,9 +3,9 @@
 ## At home (root): `chsh`
 
 ```sh
-make && sudo make install                 # -> /usr/local/bin/vaporshell
+make && sudo make install
 echo /usr/local/bin/vaporshell | sudo tee -a /etc/shells
-chsh -s /usr/local/bin/vaporshell         # Fedora: `lchsh`, from util-linux-user
+chsh -s /usr/local/bin/vaporshell
 ```
 
 `chsh` refuses shells not listed in `/etc/shells`, hence the second line.

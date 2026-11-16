@@ -628,6 +628,40 @@ def _():
     s.close()
 
 
+@test("terminal title: command line while it runs, user@host:dir at the prompt; slow commands report their time")
+def _():
+    s = shell(env={"TERM": "xterm-256color", "VASH_SLOW_CMD": "1"})
+    s.raw = b""
+    s.type("echo hi"); s.send(ENTER)
+    raw = s.raw.decode()
+    assert "\x1b]2;echo hi\a" in raw, repr(raw)
+    s.send(CTRL("U")); s.raw = b""
+    s.type("sleep 1.2"); s.send(ENTER)
+    time.sleep(1.6); s.type("")
+    raw = s.raw.decode()
+    assert "\x1b]2;" in raw and "took 1s" in raw, repr(raw)    # the prompt title, then the duration
+    s.close()
+    s = shell(env={"TERM": "xterm", "VASH_TITLE": "0"})
+    s.raw = b""
+    s.type("echo hi"); s.send(ENTER)
+    assert "\x1b]2;" not in s.raw.decode()
+    s.close()
+
+
+@test("autosuggestion skips history entries that cannot work (missing command or path)")
+def _():
+    hf = os.path.join(TMP, "sugg-hist")
+    open(hf, "w").write("echo good\necho /nonexistent/dir\nzzznotacmd arg\n")
+    s = shell(env={"HISTFILE": hf})
+    s.type("echo")
+    assert "echo good" in "".join(s.screen()) and "nonexistent" not in "".join(s.screen()), s.screen()
+    s.close()
+    s = shell(env={"HISTFILE": hf})
+    s.type("zzz")
+    assert "arg" not in "".join(s.screen()), s.screen()
+    s.close()
+
+
 @test("fish-style complete: options with descriptions, conditions, exclusive")
 def _():
     d = os.path.join(TMP, "fishspecs"); os.makedirs(d, exist_ok=True)

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "vaporshell.h"
@@ -65,6 +66,61 @@ static char *read_prompted(const char *prompt, bool continuation)
 #  define DEFAULT_PS1 "vaporshell$ "      /* NuttX has no users: uid is always 0, so \$ would say # */
 #endif
 
+/* Time since the last line was handed to the parser, i.e. since the command started
+ * (continuation lines reset it: the last one is what runs). */
+
+static struct timespec g_cmd_t0;
+
+static void prompt_hooks(void)
+{
+  struct timespec now;
+  const char *sv = var_get("VASH_SLOW_CMD");
+  long limit = sv != NULL ? atol(sv) : 5;
+  char *t;
+  char num[24];
+
+  if (!vash_ledit_usable())
+    {
+      return;
+    }
+
+  if (g_cmd_t0.tv_sec != 0 && clock_gettime(CLOCK_MONOTONIC, &now) == 0)
+    {
+      long secs = (long)(((long long)(now.tv_sec - g_cmd_t0.tv_sec) * 1000000000LL +
+                          (now.tv_nsec - g_cmd_t0.tv_nsec)) / 1000000000LL);
+
+      snprintf(num, sizeof(num), "%ld", secs);
+      var_set("VASH_LAST_DURATION", num);
+      if (limit > 0 && secs >= limit)
+        {
+          char d[48];
+
+          if (secs >= 3600)
+            {
+              snprintf(d, sizeof(d), "%ldh %ldm %lds", secs / 3600, secs / 60 % 60, secs % 60);
+            }
+          else if (secs >= 60)
+            {
+              snprintf(d, sizeof(d), "%ldm %lds", secs / 60, secs % 60);
+            }
+          else
+            {
+              snprintf(d, sizeof(d), "%lds", secs);
+            }
+
+          printf("\033[90mtook %s\033[0m\n", d);
+          fflush(stdout);
+        }
+
+      g_cmd_t0.tv_sec = 0;
+    }
+
+  t = vash_prompt_expand("\\u@\\h:\\w");
+  vash_prompt_strip(t);
+  vash_ledit_title(t);                    /* a PROMPT_COMMAND that sets a title runs after this */
+  free(t);
+}
+
 static char *interactive_next_line(void *ctx, bool continuation)
 {
   const char *ps;
@@ -79,6 +135,7 @@ static char *interactive_next_line(void *ctx, bool continuation)
       char **cmds = vash_xmalloc((cnt + 1) * sizeof(char *));
       size_t k;
 
+      prompt_hooks();
       for (k = 0; k < cnt; k++)            /* bash 5.1: an array runs each element (a snapshot: they edit it) */
         {
           const char *pc = pca == NULL ? var_get("PROMPT_COMMAND") : pca->e[k].val;
@@ -125,6 +182,11 @@ static char *interactive_next_line(void *ctx, bool continuation)
   expanded = vash_prompt_expand(ps);
   line = read_prompted(expanded, continuation);
   free(expanded);
+  if (line != NULL)
+    {
+      clock_gettime(CLOCK_MONOTONIC, &g_cmd_t0);
+    }
+
   return line;
 }
 

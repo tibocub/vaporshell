@@ -67,6 +67,14 @@ class Term:
                     self._csi(text[i + 2:j], text[j])
                     i = j + 1
                     continue
+                if text[i + 1] == "]":            # OSC (window title): swallowed up to BEL or ST
+                    j = i + 2
+                    while j < len(text) and text[j] != "\a" and text[j:j + 2] != "\x1b\\":
+                        j += 1
+                    if j >= len(text):
+                        break
+                    i = j + (1 if text[j] == "\a" else 2)
+                    continue
                 i += 2
                 continue
             i += 1
