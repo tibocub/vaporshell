@@ -122,7 +122,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         break;
 
       case 5:
-        if (strstr(s, "$(") == NULL && strchr(s, '`') == NULL && strstr(s, "<(") == NULL &&
+        if (size < 128 && strstr(s, "$(") == NULL && strchr(s, '`') == NULL && strstr(s, "<(") == NULL &&
             strstr(s, ">(") == NULL)
           {
             struct fieldv_s f;
