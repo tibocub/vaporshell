@@ -7,6 +7,7 @@ screen (what a terminal would display) or the output of what was run.
 
 import atexit
 import os
+import pwd
 import shutil
 import sys
 import tempfile
@@ -277,7 +278,7 @@ def _():
     s = shell(env={"PS1": r"\[\e[1;32m\]\u\[\e[0m\]> "}, cols=20)
     s.type("echo " + "x" * 20)
     s.send("\x7f" * 22)
-    user = os.environ.get("USER", "user")
+    user = pwd.getpwuid(os.getuid()).pw_name          # \u is the account, as in bash, not $USER
     expect(s, ["%s> ech" % user])
     s.close()
 

@@ -9,27 +9,31 @@ permissions:
   contents: read
 
 jobs:
+  # The differential suites compare against the system bash and dash, so they run on the
+  # Fedora the project is developed on (a pinned image; Ubuntu's references differ).
   test:
     runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora@sha256:3fcae46546ac42b44e7af262329b033ce1dc800a5d2583e5025cb43531dba55d  # fedora:44
     strategy:
       matrix:
         cc: [gcc, clang]
     steps:
+      - run: dnf -y install gcc clang make git dash python3 diffutils findutils procps-ng hostname which libasan libubsan
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y dash python3
       - run: make CC=${{ matrix.cc }}
       - run: make CC=${{ matrix.cc }} check
       - run: make CC=${{ matrix.cc }} check-pty
 
   sanitizers:
     runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora@sha256:3fcae46546ac42b44e7af262329b033ce1dc800a5d2583e5025cb43531dba55d  # fedora:44
     steps:
+      - run: dnf -y install gcc clang make git dash python3 diffutils findutils procps-ng hostname which libasan libubsan
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y dash python3
       - run: make check-asan
 
   fuzz:

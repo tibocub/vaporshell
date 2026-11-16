@@ -18,6 +18,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef VAPORSHELL_POSIX
+#  include <pwd.h>
+#endif
 
 #include "vaporshell.h"
 #include "expand.h"
@@ -250,7 +253,20 @@ char *vash_prompt_decode(const char *ps)
           case 's':  add_literal(&out, g_sh.profile == VASH_PROFILE_POSIX ? "sh" : "vaporshell"); break;
           case 'u':
             {
-              const char *u = var_get("USER");
+              const char *u = NULL;
+
+#ifdef VAPORSHELL_POSIX
+              struct passwd *pw = getpwuid(getuid());      /* as bash: the account, not $USER */
+
+              if (pw != NULL)
+                {
+                  u = pw->pw_name;
+                }
+#endif
+              if (u == NULL)
+                {
+                  u = var_get("USER");
+                }
 
               if (u == NULL)
                 {
