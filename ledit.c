@@ -916,6 +916,19 @@ static bool sugg_ok(const char *h)
   return true;
 }
 
+static bool sugg_plain(const char *t)       /* no control byte: the grey text is written as it is */
+{
+  for (; *t != '\0'; t++)
+    {
+      if ((unsigned char)*t < 0x20 || *t == 0x7f)
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
 static const char *suggestion(const struct ed_s *e)
 {
   const char *off = var_get("VASH_AUTOSUGGEST");
@@ -932,7 +945,7 @@ static const char *suggestion(const struct ed_s *e)
       const char *h = vash_hist_get(i);
 
       if (strlen(h) > e->b.len && strncmp(h, text(e), e->b.len) == 0 &&
-          strpbrk(h + e->b.len, "\n\033") == NULL && sugg_ok(h))
+          sugg_plain(h + e->b.len) && sugg_ok(h))
         {
           return h + e->b.len;
         }
@@ -1543,6 +1556,36 @@ static int menu_visible(const struct ed_s *e)
  * reverse video, and a note when rows are scrolled out of view.
  */
 
+/* Text from outside (file names, completion descriptions) goes to the terminal with its
+ * control bytes made harmless: a file called "x\033]0;..." must not drive the terminal.
+ * One '?' per byte (also for the C1 controls U+0080..U+009F that some terminals take
+ * as escapes), so the width the menu was laid out with still holds.
+ */
+
+static void sb_add_safe(struct sbuf_s *o, const char *s, size_t n)
+{
+  size_t i;
+
+  for (i = 0; i < n; i++)
+    {
+      unsigned char c = (unsigned char)s[i];
+
+      if (c < 0x20 || c == 0x7f)
+        {
+          sb_addc(o, '?');
+        }
+      else if (c == 0xc2 && i + 1 < n && (unsigned char)s[i + 1] >= 0x80 && (unsigned char)s[i + 1] < 0xa0)
+        {
+          sb_addc(o, '?');
+          i++;
+        }
+      else
+        {
+          sb_addc(o, (char)c);
+        }
+    }
+}
+
 static char *menu_text(const struct ed_s *e)
 {
   const struct menu_s *m = &e->menu;
@@ -1565,7 +1608,7 @@ static char *menu_text(const struct ed_s *e)
               sb_adds(&o, "\033[7m");
             }
 
-          sb_adds(&o, m->name[k]);
+          sb_add_safe(&o, m->name[k], strlen(m->name[k]));
           if (k == m->sel)
             {
               sb_adds(&o, "\033[0m");
@@ -1593,7 +1636,7 @@ static char *menu_text(const struct ed_s *e)
                       break;
                     }
 
-                  sb_addn(&o, m->desc[k] + j, n);
+                  sb_add_safe(&o, m->desc[k] + j, n);
                   room -= w;
                   j += n;
                 }

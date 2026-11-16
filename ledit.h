@@ -21,6 +21,14 @@ bool vash_ledit_usable(void);
 
 char *vash_ledit_read(const char *prompt, bool continuation);
 
+/* Set the terminal window title (xterm OSC 2; control bytes dropped, cut at 100
+ * bytes). Nothing is written on terminals that have no title (linux, vt*) or with
+ * VASH_TITLE=0. The shell shows the running command's line, and user@host:dir at
+ * each prompt (before PROMPT_COMMAND, so one that sets its own title wins).
+ */
+
+void vash_ledit_title(const char *t);
+
 /* `bind` (bind.c): add or remove a key binding, find a command by its readline
  * name, and walk the bindings (user ones first, then the built-in table).
  * 'seq' is the exact bytes the key sends. cmd 0 is no command; the shell

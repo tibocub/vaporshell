@@ -662,6 +662,21 @@ def _():
     s.close()
 
 
+@test("completion menu: control bytes in file names never reach the terminal")
+def _():
+    d = os.path.join(TMP, "escnames"); os.makedirs(d, exist_ok=True)
+    for n in ("evil\x1b[2Jone", "evil\x1b]0;PWNED\x07two", "evil\u009b31mthree"):
+        open(os.path.join(d, n), "w").close()
+    s = shell(cwd=d, env={"VASH_AUTOSUGGEST": "0"})
+    s.raw = b""
+    s.type("ls evil"); s.send("\t"); s.send("\t")
+    raw = s.raw.decode()
+    assert "evil" in "".join(s.screen()), s.screen()
+    for bad in ("\x1b[2Jone", "\x1b]0;PWNED", "\x9b31m", "\u009b"):
+        assert bad not in raw, repr(raw)
+    s.close()
+
+
 @test("fish-style complete: options with descriptions, conditions, exclusive")
 def _():
     d = os.path.join(TMP, "fishspecs"); os.makedirs(d, exist_ok=True)

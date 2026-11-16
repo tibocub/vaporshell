@@ -68,6 +68,10 @@ Bugs found so far (all fixed):
 - `PS1='${BASH_COMMAND} $ '`: `$BASH_COMMAND` read the command of the previous line
   after its memory was freed: use-after-free (exec.c). The pointer is restored to the
   enclosing command when a line or a function body ends.
+- Completion menu: file names (and descriptions) were written to the terminal as they
+  are, so a file called `x<ESC>]0;...` could drive the terminal when you pressed Tab.
+  Control bytes (and the C1 range) are now shown as `?`; the grey autosuggestion
+  is skipped if the history entry has any.
 - `<(cmd)` temp files were reopened by name after `mkstemp`; they are now written
   through the descriptor `mkstemp` returned and read back with `O_NOFOLLOW`.
 
