@@ -309,10 +309,43 @@ def _():
 
 @test("continuation prompt (PS2)")
 def _():
-    s = shell(env={"PS2": "> "})
+    s = shell(env={"PS2": "> ", "VASH_INDENT": "0"})
     s.type("echo 'a"); s.send(ENTER)
     s.type("b'"); s.send(ENTER)
     expect(s, ["$ echo 'a", "> b'", "a", "b", "$"])
+    s.close()
+
+
+@test("continuation lines: drawn under the first line's start (fish-like indent)")
+def _():
+    s = shell(env={"PS1": "abc> "})
+    s.type("echo 'a"); s.send(ENTER)
+    s.type("b'"); s.send(ENTER)
+    expect(s, ["abc> echo 'a", "     b'", "a", "b", "abc>"])
+    s.close()
+
+
+@test("continuation lines: command position, highlighting and completion carry over")
+def _():
+    s = shell()
+    s.type("if true; then"); s.send(ENTER)
+    s.raw = b""
+    s.type("echo hi")
+    raw = s.raw.decode()
+    assert "\x1b[32mecho" in raw, raw[-200:]            # green: a command on the new line
+    s.send(ENTER)
+    s.raw = b""
+    s.type("zzznotacmd")
+    assert "\x1b[31mzzznotacmd" in s.raw.decode()
+    s.send(CTRL("U"))
+    s.type("ech"); s.send("\t")                          # completes a command name on line 3
+    assert "echo" in "".join(s.screen()), s.screen()
+    s.close()
+    s = shell()
+    s.type("echo 'a"); s.send(ENTER)
+    s.raw = b""
+    s.type("echo b")
+    assert "\x1b[32mecho" not in s.raw.decode()          # still inside the quote
     s.close()
 
 
@@ -818,7 +851,7 @@ def _():
 
 @test("Ctrl-C at a continuation prompt drops the command; Ctrl-D reports it")
 def _():
-    s = shell()
+    s = shell(env={"VASH_INDENT": "0"})
     s.type("echo 'a"); s.send(ENTER); s.send(CTRL("C"))
     s.type("echo ok"); s.send(ENTER)
     expect(s, ["$ echo 'a", "> ^C", "$ echo ok", "ok", "$"])

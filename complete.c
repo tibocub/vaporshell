@@ -817,7 +817,7 @@ int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
   /* The word under the cursor: back to the last unescaped space. */
 
   while (w > line && !(w[-1] == ' ' && (w - 1 == line || w[-2] != '\\')) &&
-         w[-1] != '\t')
+         w[-1] != '\t' && w[-1] != '\n')
     {
       w--;
     }
@@ -864,7 +864,28 @@ int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
   g.line = line;
   g.len = len;
   g.word = word;
-  g.is_cmd = g.prev == line || strchr("|;&(", g.prev[-1]) != NULL;
+  g.is_cmd = g.prev == line || strchr("|;&(\n", g.prev[-1]) != NULL;
+  if (!g.is_cmd)                           /* after "then", "do", "if"...: a command again */
+    {
+      static const char *const kw[] = { "if", "then", "else", "elif", "do", "while", "until",
+                                         "!", "{", "time", "coproc", NULL };
+      const char *b = g.prev;
+      size_t q;
+
+      while (b > line && !strchr(" \t\n|;&(", b[-1]))
+        {
+          b--;
+        }
+
+      if (b == line || strchr("|;&(\n", b[-1]) != NULL || b[-1] == ' ' || b[-1] == '\t')
+        {
+          for (q = 0; kw[q] != NULL; q++)
+            {
+              g.is_cmd = g.is_cmd || (strlen(kw[q]) == (size_t)(g.prev - b) &&
+                                      strncmp(b, kw[q], g.prev - b) == 0);
+            }
+        }
+    }
 
   if (!g.is_cmd)
     {

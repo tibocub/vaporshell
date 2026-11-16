@@ -423,6 +423,19 @@ static bool path_known(struct pmemo_s *m, const char *word)
   return m->exists[m->n++ % 8];
 }
 
+/* The earlier lines of the command being typed (each continuation line is a separate
+ * read): highlighting and completion run over them + the current line, so a quote or a
+ * command position carries over. g_indent: width of the first line's prompt, which the
+ * continuation lines are drawn under, like fish (VASH_INDENT=0: PS2 as usual).
+ */
+
+static char *g_ctx;
+static size_t g_ctxlen;
+static int g_indent;
+
+static const char *const g_cmd_kw[] = { "if", "then", "else", "elif", "do", "while", "until",
+                                         "!", "{", "time", "coproc", NULL };
+
 static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 {
   unsigned char *st = vash_xmalloc(len + 1);
@@ -465,18 +478,26 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 
       if (ch == '#')                  /* a word starting with # (others are eaten whole below) */
         {
-          memset(st + i, HL_COMMENT, len - i);
-          break;
+          size_t e = i;
+
+          while (e < len && s[e] != '\n')
+            {
+              e++;
+            }
+
+          memset(st + i, HL_COMMENT, e - i);
+          i = e;
+          continue;
         }
 
-      if (strchr("|;&(", ch) != NULL)
+      if (strchr("|;&(\n", ch) != NULL)
         {
           at_cmd = true;
           i++;
           continue;
         }
 
-      if (strchr(" \t\n)<>", ch) != NULL)
+      if (strchr(" \t)<>", ch) != NULL)
         {
           i++;
           continue;
@@ -502,8 +523,15 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
               at_cmd = false;
               if (plain && s[i] != '~' && j - i < sizeof(word))
                 {
+                  size_t q;
+
                   memcpy(word, s + i, j - i);
                   word[j - i] = '\0';
+                  for (q = 0; g_cmd_kw[q] != NULL; q++)
+                    {
+                      at_cmd = at_cmd || strcmp(word, g_cmd_kw[q]) == 0;   /* a command follows */
+                    }
+
                   memset(st + i, vash_is_command(word) ? HL_OK : HL_BAD, j - i);
                 }
             }
@@ -545,8 +573,20 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   size_t i;
   char t[24];
   const char *hlv = var_get("VASH_HIGHLIGHT");
-  unsigned char *styles = hilite && (hlv == NULL || strcmp(hlv, "0") != 0) ? highlight(s, len, &e->pm) : NULL;
+  unsigned char *hl = NULL;
+  unsigned char *styles = NULL;
   unsigned char cur = HL_NONE;
+
+  if (hilite && (hlv == NULL || strcmp(hlv, "0") != 0))
+    {
+      char *all = vash_xmalloc(g_ctxlen + len + 1);
+
+      memcpy(all, g_ctx != NULL ? g_ctx : "", g_ctxlen);
+      memcpy(all + g_ctxlen, s, len);
+      hl = highlight(all, g_ctxlen + len, &e->pm);
+      styles = hl + g_ctxlen;
+      free(all);
+    }
 
   o = e->out;                       /* the buffer from the last redraw, emptied */
   o.len = 0;
@@ -584,6 +624,11 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
           c.row++;
           c.col = 0;
           i++;
+          while (c.col < g_indent && c.col < e->cols - 1)      /* under the first line's start */
+            {
+              sb_addc(&o, ' ');
+              c.col++;
+            }
         }
       else if (ch < 0x20 || ch == 0x7f)
         {
@@ -607,7 +652,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
       sb_adds(&o, "\033[0m");
     }
 
-  free(styles);
+  free(hl);
 
   if (cursor >= len)
     {
@@ -1341,7 +1386,16 @@ static void complete(struct ed_s *e, int dir)
       return;
     }
 
-  n = vash_complete(text(e), (int)e->pos, ins, sizeof(ins), &del, &skip, cand_cb, &e->menu);
+  {
+    size_t tl = strlen(text(e));
+    char *all = vash_xmalloc(g_ctxlen + tl + 1);
+
+    memcpy(all, g_ctx != NULL ? g_ctx : "", g_ctxlen);
+    memcpy(all + g_ctxlen, text(e), tl + 1);
+    n = vash_complete(all, (int)(g_ctxlen + e->pos), ins, sizeof(ins), &del, &skip, cand_cb, &e->menu);
+    free(all);
+  }
+
   if (e->menu.failed)
     {
       menu_free(e);                    /* too many candidates for the memory there is */
@@ -2000,6 +2054,16 @@ static void ed_free(struct ed_s *e)
     }
 }
 
+static const char *indent_prompt(int w)
+{
+  static char sp[256];
+
+  w = w < (int)sizeof(sp) ? w : (int)sizeof(sp) - 1;
+  memset(sp, ' ', (size_t)w);
+  sp[w] = '\0';
+  return sp;
+}
+
 char *vash_ledit_read(const char *prompt, bool continuation)
 {
   struct ed_s e;
@@ -2012,6 +2076,25 @@ char *vash_ledit_read(const char *prompt, bool continuation)
   sb_init(&e.b);
   sb_init(&e.kill);
   e.prompt = prompt;
+  if (!continuation)
+    {
+      struct sbuf_s o;
+      struct cursor_s c = { 0, 0 };
+      const char *iv = var_get("VASH_INDENT");
+
+      free(g_ctx);
+      g_ctx = NULL;
+      g_ctxlen = 0;
+      sb_init(&o);
+      draw_prompt(&o, prompt, &c, 1 << 20);
+      sb_free(&o);
+      g_indent = iv != NULL && strcmp(iv, "0") == 0 ? 0 : c.col;
+    }
+  else if (g_indent > 0)
+    {
+      e.prompt = indent_prompt(g_indent);
+    }
+
   e.hi = vash_hist_count();
   e.last = C_NONE;
 
@@ -2095,6 +2178,9 @@ char *vash_ledit_read(const char *prompt, bool continuation)
       memcpy(result, t, n);
       result[n] = '\n';
       result[n + 1] = '\0';
+      g_ctx = vash_xrealloc(g_ctx, g_ctxlen + n + 2);        /* the next continuation line's context */
+      memcpy(g_ctx + g_ctxlen, result, n + 1);
+      g_ctxlen += n + 1;
       if (!continuation)
         {
           vash_hist_add(t);
