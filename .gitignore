@@ -22,3 +22,4 @@ tests/coverage/__pycache__
 /build-asan/
 /build-strict/
 __pycache__/
+/build-fuzz/

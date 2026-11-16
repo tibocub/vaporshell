@@ -92,6 +92,7 @@ vaporshell/
   posix.mk            standalone build (see BUILD)
   Kconfig, Makefile   standard NuttX app-directory shape
   completions/        optional completion specs (git, ssh) for $VASH_COMPLETION_PATH
+  docs/security.md    hardened build, sanitizers, fuzzing, CI, how to report a vulnerability (SECURITY.md)
   docs/daily-driver.md chsh at home, ~/.bashrc exec trick without root, what $SHELL looks like to tools
   docs/interactive.md the interactive-shell plan + status (prompt, editor, history, completion, rc files)
   docs/design.md      the design doc -- read this first for anything non-trivial

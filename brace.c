@@ -83,6 +83,11 @@ static bool parse_int(const char *s, size_t n, long *v, bool *padded)
       return false;
     }
 
+  if (n - i > 17)                     /* up to 10^17: sums and products of two stay in a long */
+    {
+      return false;
+    }
+
   *padded = (n - i > 1 && s[i] == '0');
   for (; i < n; i++)
     {

@@ -24,6 +24,20 @@ LDLIBS    += -pthread
 CFLAGS    += -pthread -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
              -DVAPORSHELL_POSIX -Iposix -I. -MMD -MP $(EXTRA_CFLAGS)
 
+# Hardening, on by default (HARDEN=0 drops it; docs/security.md). Each flag is
+# kept only if this compiler/linker accepts it, so the build stays portable.
+HARDEN ?= 1
+cc_ok = $(shell $(CC) $(1) -x c -c /dev/null -o /dev/null 2>/dev/null && echo $(1))
+ld_ok = $(shell $(CC) $(1) -x c /dev/null -o /dev/null 2>/dev/null && echo $(1))
+ifeq ($(HARDEN),1)
+CFLAGS    += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 $(call cc_ok,-fstack-protector-strong) \
+             $(call cc_ok,-fstack-clash-protection) $(call cc_ok,-fcf-protection) \
+             $(call cc_ok,-fno-strict-overflow) $(call cc_ok,-fPIE)
+LDFLAGS   += $(call ld_ok,-pie) $(call ld_ok,-Wl$(comma)-z$(comma)relro$(comma)-z$(comma)now) \
+             $(call ld_ok,-Wl$(comma)-z$(comma)noexecstack)
+endif
+comma := ,
+
 # Every top-level .c is part of the NuttX build too (see the Makefile's
 # MAINSRC/CSRCS); posix/ holds what the standalone build adds on top.
 # platform_nuttx.c and dispatch.c (the tbx table) only exist for NuttX.
@@ -32,7 +46,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: all help small bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
+.PHONY: fuzz all help small bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -112,6 +126,16 @@ SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 asan:
 	$(MAKE) BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
 
+# Fuzzing (needs clang): make fuzz builds build-fuzz/fuzz, then
+#   build-fuzz/fuzz fuzz/corpus -max_total_time=60     (see docs/security.md)
+FUZZ_FLAGS := -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -g -O1
+FUZZ_OBJS  := $(filter-out build-fuzz/vaporshell_main.o,$(OBJS:$(BUILDDIR)/%=build-fuzz/%))
+
+fuzz:
+	$(MAKE) -f posix.mk CC=clang BUILDDIR=build-fuzz EXTRA_CFLAGS="$(FUZZ_FLAGS)" $(FUZZ_OBJS)
+	clang $(FUZZ_FLAGS) -fsanitize=fuzzer -pthread -std=c99 -D_POSIX_C_SOURCE=200809L -DVAPORSHELL_POSIX -Iposix -I. \
+	  -o build-fuzz/fuzz fuzz/fuzz.c $(FUZZ_OBJS) -pthread
+
 check-asan: asan
 	VASH_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
 
@@ -130,6 +154,6 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/vaporshell
 
 clean:
-	rm -rf build build-asan build-strict
+	rm -rf build build-asan build-strict build-fuzz
 
 -include $(OBJS:.o=.d)

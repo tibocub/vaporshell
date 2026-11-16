@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y dash python3
+      - run: make CC=${{ matrix.cc }}
+      - run: make CC=${{ matrix.cc }} check
+      - run: make CC=${{ matrix.cc }} check-pty
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y dash python3
+      - run: make check-asan
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y clang
+      - run: make -f posix.mk fuzz
+      - name: Fuzz for 90 seconds, starting from the seed corpus
+        run: |
+          mkdir -p work && cp -r fuzz/corpus work/corpus
+          build-fuzz/fuzz work/corpus -max_total_time=90 -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=work/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: work/crash-* work/timeout-* work/oom-*
