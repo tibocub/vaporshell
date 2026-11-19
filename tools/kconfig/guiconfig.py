@@ -803,7 +803,7 @@ def _node_str(node):
             if sym.user_value is None and sym.type and not \
                 (sym.choice and sym.choice.tri_value == 2):
 
-                s += " (NEW)"
+                pass  # vaporshell: no "(NEW)" marker
 
     elif isinstance(node.item, Symbol):
         # Symbol without prompt (can show up in show-all)

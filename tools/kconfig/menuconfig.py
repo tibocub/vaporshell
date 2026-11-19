@@ -2993,7 +2993,7 @@ def _node_str(node):
             if sym.user_value is None and sym.orig_type and \
                not (sym.choice and sym.choice.tri_value == 2):
 
-                s += " (NEW)"
+                pass  # vaporshell: no "(NEW)" marker
 
     if isinstance(node.item, Choice) and node.item.tri_value == 2:
         # Print the prompt of the selected symbol after the choice for
