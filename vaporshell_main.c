@@ -66,6 +66,7 @@ static char *read_prompted(const char *prompt, bool continuation)
 #  define DEFAULT_PS1 "vaporshell$ "      /* NuttX has no users: uid is always 0, so \$ would say # */
 #endif
 
+#ifndef VASH_NO_TITLE
 /* Time since the last line was handed to the parser, i.e. since the command started
  * (continuation lines reset it: the last one is what runs). */
 
@@ -120,6 +121,7 @@ static void prompt_hooks(void)
   vash_ledit_title(t);                    /* a PROMPT_COMMAND that sets a title runs after this */
   free(t);
 }
+#endif
 
 static char *interactive_next_line(void *ctx, bool continuation)
 {
@@ -135,7 +137,9 @@ static char *interactive_next_line(void *ctx, bool continuation)
       char **cmds = vash_xmalloc((cnt + 1) * sizeof(char *));
       size_t k;
 
+#ifndef VASH_NO_TITLE
       prompt_hooks();
+#endif
       for (k = 0; k < cnt; k++)            /* bash 5.1: an array runs each element (a snapshot: they edit it) */
         {
           const char *pc = pca == NULL ? var_get("PROMPT_COMMAND") : pca->e[k].val;
@@ -182,10 +186,12 @@ static char *interactive_next_line(void *ctx, bool continuation)
   expanded = vash_prompt_expand(ps);
   line = read_prompted(expanded, continuation);
   free(expanded);
+#ifndef VASH_NO_TITLE
   if (line != NULL)
     {
       clock_gettime(CLOCK_MONOTONIC, &g_cmd_t0);
     }
+#endif
 
   return line;
 }

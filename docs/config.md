@@ -24,10 +24,23 @@ No `.config` means the defaults of `config/Kconfig`, which are the full shell.
 `make savedefconfig` writes `./defconfig`, the shortest file that reproduces your
 `.config`; copy it to `config/` to make a preset of your own.
 
-**Status.** Phase 1 (this) is the compiler/linker side of the menu. The two small
-presets already select size-oriented flags; the *feature* cuts that make them really
-small (the editor and completion, job control, bash extensions, ...) arrive with the
-module switches in the next phases, and these presets will be extended then.
+## The "Language" and "Interactive shell" menus
+
+| Option | Default | Effect when off |
+|---|---|---|
+| POSIX mode only | off | no bash extensions (arrays, `[[ ]]`, process substitution, ...): about 190 KB less |
+| Line editor | on | the shell reads plain lines (no `bind`, no `~/.inputrc`); about 100 KB less with history and completion |
+| History | on | no `history`, `fc` or `!!`; the editor has no Up/Down history |
+| Tab completion | on | Tab inserts nothing |
+| Programmable completion | on | `complete`, `compgen`, `compopt` are accepted and do nothing (rc files keep working) |
+| fish-style specs | on | `complete -c ... -s -l -d` is not understood |
+| Syntax highlighting, autosuggestions, terminal title | on | each is a few KB |
+
+A bash builtin that a build leaves out still exists as a stub when the build has bash
+mode, so an rc file that calls it does not break.
+
+The tests follow the configuration: a build without a feature skips the tests that need
+it (`tests/config-needs.txt`, `NEEDS` in `tests/pty/run.py`) and says how many it skipped.
 
 ## The "Build" menu
 
@@ -45,13 +58,13 @@ Measured with gcc on x86-64 (full shell, default flags 403 KB):
 | Config | Binary |
 |---|---|
 | none / `full_defconfig` | 403 KB |
-| `tiny_defconfig` (phase 1) | 298 KB |
-| `tinyest_defconfig` (phase 1) | 282 KB |
+| `tiny_defconfig` | 284 KB |
+| `tinyest_defconfig` | 164 KB |
 
 ## Notes
 
 - The sanitizer (`make asan`), fuzz and `strict` builds ignore `.config` on purpose
   (`NOCONFIG=1`): they always test everything.
-- On NuttX the vaporOS build has its own Kconfig (`VAPOROS_VAPORSHELL_*`); the
-  feature switches will be shared with it when they exist.
+- On NuttX the vaporOS build has its own Kconfig (`VAPOROS_VAPORSHELL_*`); it does not use
+  these switches yet.
 - `make HARDEN=0` and `make CFLAGS=...` on the command line still win over `.config`.

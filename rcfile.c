@@ -81,6 +81,7 @@ static void load(bool login, bool norc, const char *rcfile)
     }
 
   vash_rc_source(SYSTEM_RC);
+#ifndef VASH_NO_EDITOR                 /* ~/.inputrc configures the line editor */
   path = var_get("INPUTRC") != NULL ? vash_xstrdup(var_get("INPUTRC")) : in_home(".inputrc");
   if (path != NULL)
     {
@@ -93,6 +94,7 @@ static void load(bool login, bool norc, const char *rcfile)
 
       free(path);
     }
+#endif
 
   if (rcfile == NULL && var_get("VASH_RC") != NULL && *var_get("VASH_RC") != '\0')
     {

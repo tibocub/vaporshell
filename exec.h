@@ -63,6 +63,16 @@ struct builtin_s
   unsigned modes;             /* VASH_M_* profiles this builtin exists in */
 };
 
+/* A builtin that only exists in bash mode. In a POSIX-only build (VASH_POSIX_ONLY) the entry is
+ * not even in the table, so the linker can drop the builtin's code and its help text.
+ */
+
+#ifdef VASH_POSIX_ONLY
+#  define BASH_BI(name, fn, special, help)
+#else
+#  define BASH_BI(name, fn, special, help) { name, fn, special, help, VASH_M_BASH },
+#endif
+
 extern const struct builtin_s g_vash_builtins[];     /* name == NULL terminated */
 const struct builtin_s *builtin_find(const char *name);
 

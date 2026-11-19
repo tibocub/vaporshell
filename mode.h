@@ -79,10 +79,40 @@ enum vash_profile_e
 #define VASH_M_POSIX 0x2u
 #define VASH_M_ALL   (VASH_M_BASH | VASH_M_POSIX)
 
+#define BIT(f) (1UL << (unsigned)(f))
+
+/* What each profile turns on. In a POSIX-only build (VASH_POSIX_ONLY, see config/Kconfig)
+ * vash_feat() is a constant, so the compiler drops every bash-only branch.
+ */
+
+/* Bash's default. */
+
+#define BASH_FEATURES \
+  (BIT(VF_DOT_SEARCH_CWD) | BIT(VF_FUNC_NAME_ANY) | BIT(VF_TEST_EXT) | \
+   BIT(VF_AMP_REDIR) | BIT(VF_PRINTF_EXT) | BIT(VF_BASH_INFO_FORMATS) | BIT(VF_DOT_ARGS) | BIT(VF_ARITH_EXT) | BIT(VF_BASH_SYNTAX) | \
+   BIT(VF_BRACE_EXP) | BIT(VF_ANSI_C_QUOTE) | BIT(VF_PARAM_EXT) | BIT(VF_TRAP_BASH) | \
+   BIT(VF_SET_O_BASH) | BIT(VF_RETURN_TOPLEVEL_ERR) | BIT(VF_READ_EXT) | \
+   BIT(VF_BASH_VARS))
+
+/* POSIX: the strict reading (dash-like), not bash --posix. Where those two
+ * disagree (e.g. `[ a == a ]`) this profile follows POSIX.
+ */
+
+#define POSIX_FEATURES \
+  (BIT(VF_SPECIAL_ERR_FATAL) | BIT(VF_SPECIAL_ASSIGN_KEEP) | \
+   BIT(VF_SPECIAL_BEFORE_FUNC) | BIT(VF_EVAL_SYNTAX_FATAL) | \
+   BIT(VF_ERREXIT_IN_CMDSUB) | BIT(VF_EXIT2_ON_ERROR) | BIT(VF_ECHO_XPG) | \
+   BIT(VF_LOCAL_INHERITS) | BIT(VF_ALIAS_SCRIPTS) | BIT(VF_OPTARG_EMPTY) | \
+   BIT(VF_NOTFOUND_127))
+
+#ifdef VASH_POSIX_ONLY
+#  define vash_feat(f) (((POSIX_FEATURES) & BIT(f)) != 0)
+#else
 static inline bool vash_feat(enum vash_feature_e f)
 {
   return (g_sh.features & (1UL << (unsigned)f)) != 0;
 }
+#endif
 
 void vash_mode_set(enum vash_profile_e p);
 enum vash_profile_e vash_mode_get(void);

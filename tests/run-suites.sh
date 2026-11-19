@@ -57,8 +57,12 @@ else
     echo "posix-mode reference: (dash not installed: POSIX suites skipped)"
 fi
 
-sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
-sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+if vash_have BASH_MODE; then
+    sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
+    sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+else
+    echo "bash-mode suites skipped: this build is POSIX-only"
+fi
 if command -v "$DASH_REF" >/dev/null 2>&1; then
     sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
     sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1
@@ -69,8 +73,10 @@ fi
 # inproc.c. Skipped if the caller already set it, or with VASH_SKIP_INPROC=1.
 if [ -z "$VASH_INPROC" ] && [ -z "$VASH_SKIP_INPROC" ]; then
     printf '%s-- in-process subshells (VASH_INPROC=1) --%s\n' "$C_BOLD" "$C_RESET"
-    VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
-    VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+    if vash_have BASH_MODE; then
+        VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" own || rc=1
+        VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$BASH_REF" modes/bash || rc=1
+    fi
     if command -v "$DASH_REF" >/dev/null 2>&1; then
         VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" own --posix || rc=1
         VASH_INPROC=1 sh "$HERE/posix-check.sh" "$VS" "$DASH_REF" modes/posix --posix || rc=1

@@ -1711,6 +1711,7 @@ int bi_read(int argc, char **argv)
  * the last one is non-zero.
  */
 
+#ifndef VASH_POSIX_ONLY
 static int bi_let(int argc, char **argv)
 {
   long v = 0;
@@ -1732,9 +1733,11 @@ static int bi_let(int argc, char **argv)
 
   return v != 0 ? 0 : 1;
 }
+#endif
 
 /* builtin cmd args: run a builtin, bypassing functions. */
 
+#ifndef VASH_POSIX_ONLY
 static int bi_builtin(int argc, char **argv)
 {
   if (argc < 2)
@@ -1750,6 +1753,7 @@ static int bi_builtin(int argc, char **argv)
 
   return run_argv(argc - 1, argv + 1, true);
 }
+#endif
 
 static int bi_command(int argc, char **argv)
 {
@@ -2051,6 +2055,7 @@ static int bi_type(int argc, char **argv)
 
 /* caller [N]: the call stack as BASH_LINENO / FUNCNAME / BASH_SOURCE give it. */
 
+#ifndef VASH_POSIX_ONLY
 static int bi_caller(int argc, char **argv)
 {
   struct frame_s *f;
@@ -2103,6 +2108,7 @@ static int bi_caller(int argc, char **argv)
 
   return 0;
 }
+#endif
 
 static int bi_wait(int argc, char **argv)
 {
@@ -2347,13 +2353,35 @@ static int bi_umask(int argc, char **argv)
 
 /* ---- The table --------------------------------------------------------------------------- */
 
+#ifndef VASH_POSIX_ONLY
+/* Bash builtins this build left out (config/Kconfig) still exist as stubs, so an rc file that
+ * calls `complete` or `bind` keeps working: bi_ignore succeeds, bi_nomatch is "no matches".
+ */
+
+#if defined(VASH_NO_EDITOR) || defined(VASH_NO_HISTORY) || defined(VASH_NO_COMPLETION) || defined(VASH_NO_PROG_COMPLETION)
+static int bi_ignore(int argc, char **argv)
+{
+  (void)argc;
+  (void)argv;
+  return 0;
+}
+
+static int bi_nomatch(int argc, char **argv)
+{
+  (void)argc;
+  (void)argv;
+  return 1;
+}
+#endif
+#endif
+
 const struct builtin_s g_vash_builtins[] =
 {
   { ":",        bi_colon,    true,  "do nothing, successfully", VASH_M_ALL },
   { ".",        bi_dot,      true,  ". file [args]: run commands from a file in this shell", VASH_M_ALL },
   { "break",    bi_break,    true,  "break [n]: leave a loop", VASH_M_ALL },
   { "continue", bi_continue, true,  "continue [n]: next loop iteration", VASH_M_ALL },
-  { "caller",   bi_caller,   false, "caller [expr]: the call stack", VASH_M_BASH },
+  BASH_BI("caller", bi_caller, false, "caller [expr]: the call stack")
   { "eval",     bi_eval,     true,  "eval [args]: run the arguments as a command", VASH_M_ALL },
   { "exec",     bi_exec,     true,  "exec [command]: replace the shell / apply redirections", VASH_M_ALL },
   { "exit",     bi_exit,     true,  "exit [n]: leave the shell", VASH_M_ALL },
@@ -2362,7 +2390,7 @@ const struct builtin_s g_vash_builtins[] =
   { "return",   bi_return,   true,  "return [n]: leave a function or sourced file", VASH_M_ALL },
   { "set",      bi_set,      true,  "set [-euxfC] [-o name] [--] [args]: options and positional parameters", VASH_M_ALL },
   { "shift",    bi_shift,    true,  "shift [n]: drop positional parameters", VASH_M_ALL },
-  { "source",   bi_dot,      true,  "source file [args]: same as .", VASH_M_BASH },
+  BASH_BI("source", bi_dot, true, "source file [args]: same as .")
   { "trap",     bi_trap,     true,  "trap [action sig...]: run action on signals / exit", VASH_M_ALL },
   { "unset",    bi_unset,    true,  "unset [-fv] name...: remove variables or functions", VASH_M_ALL },
   { "[",        bi_bracket,  false, "[ expr ]: evaluate a conditional expression", VASH_M_ALL },
@@ -2372,10 +2400,10 @@ const struct builtin_s g_vash_builtins[] =
   { "unalias",  bi_unalias,  false, "unalias [-a] name...: remove aliases", VASH_M_ALL },
   { "getopts",  bi_getopts,  false, "getopts optstring name [arg...]: parse options", VASH_M_ALL },
   { "hash",     bi_hash,     false, "hash [-r] [name...]: remember command locations", VASH_M_ALL },
-  { "declare",  bi_declare,  false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes", VASH_M_BASH },
-  { "mapfile",  bi_mapfile,  false, "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: read lines into an array", VASH_M_BASH },
-  { "readarray", bi_mapfile, false, "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: a synonym for mapfile", VASH_M_BASH },
-  { "typeset",  bi_declare,  false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare", VASH_M_BASH },
+  BASH_BI("declare", bi_declare, false, "declare [-aAilrux] [-p] [name[=value] ...]: set variable attributes")
+  BASH_BI("mapfile", bi_mapfile, false, "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: read lines into an array")
+  BASH_BI("readarray", bi_mapfile, false, "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]: a synonym for mapfile")
+  BASH_BI("typeset", bi_declare, false, "typeset [-aAilrux] [-p] [name[=value] ...]: a synonym for declare")
   { "local",    bi_local,    false, "local [name[=value]...]: function-local variables", VASH_M_ALL },
 #ifdef VAPORSHELL_POSIX
   { "times",    bi_times,    true,  "print accumulated process times", VASH_M_ALL },
@@ -2383,7 +2411,7 @@ const struct builtin_s g_vash_builtins[] =
 #endif
   { "echo",     bi_echo,     false, "echo [-neE] [arg...]: print arguments", VASH_M_ALL },
   { "false",    bi_false,    false, "do nothing, unsuccessfully", VASH_M_ALL },
-  { "help",     bi_help,     false, "help [name]: list builtins", VASH_M_BASH },
+  BASH_BI("help", bi_help, false, "help [name]: list builtins")
   { "kill",     bi_kill,     false, "kill [-s sig | -sig] pid...: send a signal", VASH_M_ALL },
   { "printf",   bi_printf,   false, "printf [-v var] format [arg...]: formatted output", VASH_M_ALL },
   { "pwd",      bi_pwd,      false, "print the working directory", VASH_M_ALL },
@@ -2391,25 +2419,47 @@ const struct builtin_s g_vash_builtins[] =
   { "test",     bi_test,     false, "test expr: evaluate a conditional expression", VASH_M_ALL },
   { "true",     bi_true,     false, "do nothing, successfully", VASH_M_ALL },
   { "type",     bi_type,     false, "type name...: say how a name resolves", VASH_M_ALL },
-  { "pushd",    bi_pushd,    false, "pushd [-n] [dir | +N | -N]: push a directory", VASH_M_BASH },
-  { "popd",     bi_popd,     false, "popd [-n] [+N | -N]: pop a directory", VASH_M_BASH },
-  { "dirs",     bi_dirs,     false, "dirs [-clpv]: show the directory stack", VASH_M_BASH },
-  { "shopt",    bi_shopt,    false, "shopt [-pqsu] [-o] [name...]: shell options", VASH_M_BASH },
-  { "let",      bi_let,      false, "let expr...: evaluate arithmetic expressions", VASH_M_BASH },
-  { "builtin",  bi_builtin,  false, "builtin cmd [args]: run a builtin, skipping functions", VASH_M_BASH },
+  BASH_BI("pushd", bi_pushd, false, "pushd [-n] [dir | +N | -N]: push a directory")
+  BASH_BI("popd", bi_popd, false, "popd [-n] [+N | -N]: pop a directory")
+  BASH_BI("dirs", bi_dirs, false, "dirs [-clpv]: show the directory stack")
+  BASH_BI("shopt", bi_shopt, false, "shopt [-pqsu] [-o] [name...]: shell options")
+  BASH_BI("let", bi_let, false, "let expr...: evaluate arithmetic expressions")
+  BASH_BI("builtin", bi_builtin, false, "builtin cmd [args]: run a builtin, skipping functions")
   { "umask",    bi_umask,    false, "umask [mode]: show or set the file creation mask", VASH_M_ALL },
   { "wait",     bi_wait,     false, "wait [pid...]: wait for background jobs", VASH_M_ALL },
   { "jobs",     bi_jobs,     false, "jobs [-l|-p] [-n]: list background jobs", VASH_M_ALL },
   { "fg",       bi_fg,       false, "fg [job]: bring a job to the foreground", VASH_M_ALL },
   { "bg",       bi_bg,       false, "bg [job]: resume a stopped job in the background", VASH_M_ALL },
-  { "disown",   bi_disown,   false, "disown [-a|-r] [job...]: remove jobs from the job table", VASH_M_BASH },
-  { "enable",   bi_enable,   false, "enable [-n] [-a|-p] [name...]: enable or disable shell builtins", VASH_M_BASH },
-  { "compgen",  bi_compgen,  false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches", VASH_M_BASH },
-  { "complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec", VASH_M_BASH },
-  { "compopt",  bi_compopt,  false, "compopt [-o option] [name...]: modify completion options", VASH_M_BASH },
+  BASH_BI("disown", bi_disown, false, "disown [-a|-r] [job...]: remove jobs from the job table")
+  BASH_BI("enable", bi_enable, false, "enable [-n] [-a|-p] [name...]: enable or disable shell builtins")
+#if defined(VASH_NO_COMPLETION) || defined(VASH_NO_PROG_COMPLETION)
+  BASH_BI("compgen", bi_nomatch, false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches")
+#else
+  BASH_BI("compgen", bi_compgen, false, "compgen [-W wordlist] [-f|-d] [-A action] [-P pre] [-S suf] [-X glob] [-- word]: generate matches")
+#endif
+#if defined(VASH_NO_COMPLETION) || defined(VASH_NO_PROG_COMPLETION)
+  BASH_BI("complete", bi_ignore, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec")
+#else
+  BASH_BI("complete", bi_complete, false, "complete [-F func|-W wordlist|-r] [-p] [name...]: register a completion spec")
+#endif
+#if defined(VASH_NO_COMPLETION) || defined(VASH_NO_PROG_COMPLETION)
+  BASH_BI("compopt", bi_ignore, false, "compopt [-o option] [name...]: modify completion options")
+#else
+  BASH_BI("compopt", bi_compopt, false, "compopt [-o option] [name...]: modify completion options")
+#endif
+#ifndef VASH_NO_HISTORY
   { "fc",       bi_fc,       false, "fc [-lnr] [first [last]] | fc -s [old=new] [cmd]: list or re-run history entries", VASH_M_ALL },
-  { "history",  bi_history,  false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history", VASH_M_BASH },
-  { "bind",     bi_bind,     false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings", VASH_M_BASH },
+#endif
+#ifdef VASH_NO_HISTORY
+  BASH_BI("history", bi_ignore, false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history")
+#else
+  BASH_BI("history", bi_history, false, "history [n] | -c | -d offset | -a | -w | -r | -s arg...: the command history")
+#endif
+#ifdef VASH_NO_EDITOR
+  BASH_BI("bind", bi_ignore, false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings")
+#else
+  BASH_BI("bind", bi_bind, false, "bind [-lpP] [-r keys] [-x keys:code] [-f file] [keys:command]: the line editor key bindings")
+#endif
   { NULL, NULL, false, NULL, 0 }
 };
 

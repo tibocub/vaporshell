@@ -1,0 +1,4 @@
+# Test scripts that need a feature a configuration can leave out (config/Kconfig):
+#   SYMBOL  script.sh ...
+# They are skipped, not failed, by a build made without SYMBOL (tests/lib.sh vash_have).
+COMPLETION_PROG bash_completion_load.sh compgen_more.sh compgen.sh complete_bind.sh complete_print_order.sh declare_f_and_compgen_actions.sh

@@ -24,6 +24,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef VASH_NO_PROG_COMPLETION
+/* The spec machinery is unreferenced then and the linker drops it; do not warn about each helper. */
+#  pragma GCC diagnostic ignored "-Wunused-function"
+#  pragma GCC diagnostic ignored "-Wunused-const-variable"
+#endif
+
 #include "vaporshell.h"
 #include "exec.h"
 #include "expand.h"
@@ -1201,6 +1207,7 @@ static const struct complete_spec_s g_default_specs[] =
  * first time the command is completed; else the shell's own defaults.
  */
 
+#ifndef VASH_NO_PROG_COMPLETION
 static const struct complete_spec_s *spec_for(const char *cmd)
 {
   const struct complete_spec_s *s = find_spec(cmd);
@@ -1267,11 +1274,13 @@ static const struct complete_spec_s *spec_for(const char *cmd)
 
   return NULL;
 }
+#endif
 
 /* Run one spec: compgen with its options, then its -F function. The
  * function's exit status (-1: there is none), for 124 = "retry" below.
  */
 
+#ifndef VASH_NO_PROG_COMPLETION
 static int run_spec(const struct complete_spec_s *spec, const char *cmd, const char *line,
                     int point, const char *word, vash_comp_list_f sink, void *ctx)
 {
@@ -1337,7 +1346,9 @@ static int run_spec(const struct complete_spec_s *spec, const char *cmd, const c
 
   return status;
 }
+#endif
 
+#ifndef VASH_NO_PROG_COMPLETION
 int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                       vash_comp_list_f sink, void *ctx)
 {
@@ -1413,3 +1424,4 @@ int vash_comp_from_spec(const char *cmd, const char *line, int point, const char
   run_spec(spec, cmd, line, point, word, sink, ctx);
   return found | VASH_SPEC_FOUND;
 }
+#endif

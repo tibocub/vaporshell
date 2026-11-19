@@ -9,30 +9,11 @@
 #include "vaporshell.h"
 #include "mode.h"
 
-#define BIT(f) (1UL << (unsigned)(f))
-
-/* Bash's default. */
-
-#define BASH_FEATURES \
-  (BIT(VF_DOT_SEARCH_CWD) | BIT(VF_FUNC_NAME_ANY) | BIT(VF_TEST_EXT) | \
-   BIT(VF_AMP_REDIR) | BIT(VF_PRINTF_EXT) | BIT(VF_BASH_INFO_FORMATS) | BIT(VF_DOT_ARGS) | BIT(VF_ARITH_EXT) | BIT(VF_BASH_SYNTAX) | \
-   BIT(VF_BRACE_EXP) | BIT(VF_ANSI_C_QUOTE) | BIT(VF_PARAM_EXT) | BIT(VF_TRAP_BASH) | \
-   BIT(VF_SET_O_BASH) | BIT(VF_RETURN_TOPLEVEL_ERR) | BIT(VF_READ_EXT) | \
-   BIT(VF_BASH_VARS))
-
-/* POSIX: the strict reading (dash-like), not bash --posix. Where those two
- * disagree (e.g. `[ a == a ]`) this profile follows POSIX.
- */
-
-#define POSIX_FEATURES \
-  (BIT(VF_SPECIAL_ERR_FATAL) | BIT(VF_SPECIAL_ASSIGN_KEEP) | \
-   BIT(VF_SPECIAL_BEFORE_FUNC) | BIT(VF_EVAL_SYNTAX_FATAL) | \
-   BIT(VF_ERREXIT_IN_CMDSUB) | BIT(VF_EXIT2_ON_ERROR) | BIT(VF_ECHO_XPG) | \
-   BIT(VF_LOCAL_INHERITS) | BIT(VF_ALIAS_SCRIPTS) | BIT(VF_OPTARG_EMPTY) | \
-   BIT(VF_NOTFOUND_127))
-
 void vash_mode_set(enum vash_profile_e p)
 {
+#ifdef VASH_POSIX_ONLY
+  p = VASH_PROFILE_POSIX;                 /* the build has no other mode (config/Kconfig) */
+#endif
   g_sh.profile = (int)p;
   g_sh.features = (p == VASH_PROFILE_POSIX) ? POSIX_FEATURES : BASH_FEATURES;
 

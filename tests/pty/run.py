@@ -22,6 +22,23 @@ CTRL = lambda c: chr(ord(c) - 64)  # noqa: E731
 ENTER = "\r"
 
 VS = None
+
+
+def have(sym):
+    """Does the build under test have this feature? (.config; VASH_NOCONFIG=1 or none: everything.)"""
+    cfg = os.environ.get("VASH_CFG", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".config"))
+    if os.environ.get("VASH_NOCONFIG") or not os.path.exists(cfg):
+        return True
+    return ("CONFIG_VASH_%s=y\n" % sym) in open(cfg).read()
+
+
+# Tests that need a feature a configuration may leave out: feature -> substrings of test names.
+NEEDS = {
+    "COMPLETION_PROG": ["an optional spec file", "bash_completion:", "complete -W", "specs load lazily",
+                        "generated .vash specs", "kill -<Tab>", "Tab completes jobs"],
+    "COMPLETION_FISH": ["fish-style complete"],
+}
+
 TMP = tempfile.mkdtemp(prefix="vs-pty-")
 atexit.register(shutil.rmtree, TMP, True)
 results = []
@@ -1025,8 +1042,15 @@ def main():
     only = sys.argv[2] if len(sys.argv) > 2 else ""
     ok = bad = 0
     failed = []
+    if not have("LINE_EDITOR"):
+        print("pty: skipped, this build has no line editor")
+        sys.exit(0)
+    skipped = 0
     for fn in results:
         if only and only not in fn.test_name:
+            continue
+        if any(sub in fn.test_name for sym, subs in NEEDS.items() if not have(sym) for sub in subs):
+            skipped += 1
             continue
         try:
             fn()
@@ -1036,7 +1060,7 @@ def main():
             bad += 1
             failed.append(fn.test_name)
             print("FAILED  %s\n    %s" % (fn.test_name, str(ex).replace("\n", "\n    ")))
-    print("pty: %d passed, %d failed" % (ok, bad))
+    print("pty: %d passed, %d failed%s" % (ok, bad, ", %d skipped (not in this configuration)" % skipped if skipped else ""))
     tally = os.environ.get("VASH_TALLY")
     if tally and not only:
         with open(tally, "a") as t:

@@ -14,7 +14,6 @@ typedef void (*vash_comp_list_f)(void *ctx, const char *name, const char *desc);
 
 typedef void (*vash_comp_cand_f)(void *ctx, char *name, char *desc, char suffix);
 
-char *vash_comp_tail(const char *name, char suffix, size_t skip);
 
 /* Complete the word at the end of line[0..len). The text to insert goes to
  * 'ins' (the common part of all candidates); every candidate is passed to
@@ -37,15 +36,19 @@ char *vash_comp_tail(const char *name, char suffix, size_t skip);
 #define VASH_SPEC_FOUND     1
 #define VASH_SPEC_EXCLUSIVE 2
 
+#if defined(VASH_NO_PROG_COMPLETION) || defined(VASH_NO_COMPLETION)
+static inline int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
+                                      vash_comp_list_f sink, void *ctx)
+{ (void)cmd; (void)line; (void)point; (void)word; (void)sink; (void)ctx; return 0; }
+#else
 int vash_comp_from_spec(const char *cmd, const char *line, int point, const char *word,
                        vash_comp_list_f sink, void *ctx);
+#endif
 
 /* vash_is_command() looks in the $PATH table as it was at the last vash_commands_refresh()
  * (one stat per directory), so a caller checking several words refreshes once.
  */
 
-void vash_commands_refresh(void);
-bool vash_is_command(const char *name);
 bool vash_comp_filenames(void);   /* complete -o filenames / compopt -o filenames: candidates are file names */
 bool vash_comp_nospace(void);   /* compopt -o nospace in the completion function that just ran (compgen.c) */
 void vash_shopt_each(void (*fn)(const char *name, void *arg), void *arg);    /* shopt.c */
@@ -53,7 +56,22 @@ void vash_setopt_each(void (*fn)(const char *name, void *arg), void *arg);   /* 
 void vash_each_user(void (*fn)(const char *name, void *arg), void *arg);   /* compgen.c */
 void vash_each_path_command(void (*fn)(const char *name, void *arg), void *arg);
 
+
+#ifdef VASH_NO_COMPLETION
+/* No completion in this build (config/Kconfig): the editor's Tab finds nothing. */
+static inline char *vash_comp_tail(const char *name, char suffix, size_t skip)
+{ (void)name; (void)suffix; (void)skip; return NULL; }
+static inline void vash_commands_refresh(void) {}
+static inline bool vash_is_command(const char *name) { (void)name; return true; }
+static inline int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
+                                size_t *skip, vash_comp_cand_f list, void *ctx)
+{ (void)line; (void)len; (void)ins; (void)inslen; (void)del; (void)skip; (void)list; (void)ctx; return 0; }
+#else
+char *vash_comp_tail(const char *name, char suffix, size_t skip);
+void vash_commands_refresh(void);
+bool vash_is_command(const char *name);
 int vash_complete(const char *line, int len, char *ins, int inslen, int *del,
-                size_t *skip, vash_comp_cand_f list, void *ctx);
+                  size_t *skip, vash_comp_cand_f list, void *ctx);
+#endif
 
 #endif

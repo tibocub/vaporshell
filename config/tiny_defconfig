@@ -1,8 +1,17 @@
-# A small but comfortable shell (bash and POSIX modes, line editor, a few light QoL
-# features). Phase 1 only sets the compiler side; the feature cuts arrive with the
-# module switches (docs/config.md).
+# A tiny bash alternative: all of bash and POSIX mode, the line editor with history and
+# basic Tab completion (commands, files, variables, users, hosts), syntax highlighting,
+# autosuggestions and the terminal title. Left out: programmable completion (complete,
+# compgen and compopt are accepted and ignored, so rc files keep working) and fish-style specs.
 CONFIG_VASH_OPT_SIZE=y
 CONFIG_VASH_GC_SECTIONS=y
 CONFIG_VASH_LTO=y
 CONFIG_VASH_STRIP=y
 CONFIG_VASH_HARDEN=y
+CONFIG_VASH_MODES_BOTH=y
+CONFIG_VASH_LINE_EDITOR=y
+CONFIG_VASH_HISTORY=y
+CONFIG_VASH_COMPLETION=y
+# CONFIG_VASH_COMPLETION_PROG is not set
+CONFIG_VASH_HIGHLIGHT=y
+CONFIG_VASH_AUTOSUGGEST=y
+CONFIG_VASH_TITLE=y

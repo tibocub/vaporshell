@@ -1,7 +1,10 @@
-# The smallest binary: script-only, POSIX-only. Phase 1 only sets the compiler side;
-# the feature cuts arrive with the module switches (docs/config.md).
+# The smallest binary: a POSIX (dash-like) script runner. No bash extensions, no line editor,
+# history or completion (an interactive session reads plain lines from the terminal), no
+# title, no hardening flags.
 CONFIG_VASH_OPT_SIZE=y
 CONFIG_VASH_GC_SECTIONS=y
 CONFIG_VASH_LTO=y
 CONFIG_VASH_STRIP=y
 # CONFIG_VASH_HARDEN is not set
+CONFIG_VASH_MODES_POSIX_ONLY=y
+# CONFIG_VASH_LINE_EDITOR is not set

@@ -27,8 +27,10 @@ All this while being small enought to run on an RP2040 or an ESP32 (using NuttX/
 Vaporshell doesn't bring its own dialect, we aim for 100% bash-compatibility, not only with the language
 but with the whole ecosystem. For example, I personally daily-drive vash on my old bashrc and the plugins
 
-- bash users that are jealous of fish features and reactivity
+It's mainly for:
 
+- bash users that are jealous of fish features and reactivity but don't want to move away from the bash ecosystem
+- fish users that want an even faster 0-delay workflow (instant tab-completions for files/commands/subcommands, etc.)
 
 ## Support and compatibility
 
@@ -230,7 +232,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 
 ### Codebase
 - [ ] learn and apply [OpenSSF](https://openssf.org) security tools and good practices to make vaporshell a minimum safe
-- [ ] improve the build configuration: **phase 1 done** (`make menuconfig`, presets, compiler/linker options, `make size-report`; see [docs/config.md](docs/config.md)); next: per-module feature switches, then `tiny` (bash+POSIX, editor, light QoL) and `tinyest` (script-only, POSIX-only) really cutting features
+- [ ] improve the build configuration: **phases 1-3 done** (`make menuconfig`, compiler/linker options, module switches, `tiny` 284 KB and `tinyest` 164 KB presets; see [docs/config.md](docs/config.md)); next: bash-extras switches (process substitution, `mapfile`, `select`, job control) and sharing the switches with the NuttX Kconfig
 - [ ] explore and implement a plugin system that allow to extend vaporshell with native code (should patch vaporshell pre-compilation so it produces only one binary with vaporOS. an optional support for external binaries could be nice for desktop)
 
 ### REPL / Line-Editor

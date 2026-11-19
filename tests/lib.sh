@@ -74,3 +74,32 @@ tally_report()
         exit (f > 0)
     }' "$1"
 }
+
+# Configuration awareness (docs/config.md). A build made from a .config that leaves features
+# out must not be failed for lacking them: vash_have SYMBOL is true if the build under test has
+# the feature (BASH_MODE, LINE_EDITOR, HISTORY, COMPLETION, COMPLETION_PROG, ...), and
+# vash_test_skipped NAME says a script needs one that is off (tests/config-needs.txt). With no
+# .config, or VASH_NOCONFIG=1 (the sanitizer build, which is always full), everything is on.
+VASH_TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
+VASH_CFG=${VASH_CFG:-$VASH_TESTS_DIR/../.config}
+
+vash_have()
+{
+    [ -n "$VASH_NOCONFIG" ] && return 0
+    [ -f "$VASH_CFG" ] || return 0
+    case $1 in
+        BASH_MODE) ! grep -q '^CONFIG_VASH_MODES_POSIX_ONLY=y' "$VASH_CFG" ;;
+        *) grep -q "^CONFIG_VASH_$1=y" "$VASH_CFG" ;;
+    esac
+}
+
+vash_test_skipped()
+{
+    [ -f "$VASH_TESTS_DIR/config-needs.txt" ] || return 1
+    while read -r sym names; do
+        case $sym in ''|'#'*) continue ;; esac
+        vash_have "$sym" && continue
+        case " $names " in *" $1 "*) return 0 ;; esac
+    done <"$VASH_TESTS_DIR/config-needs.txt"
+    return 1
+}

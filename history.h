@@ -8,6 +8,16 @@
 
 /* Load HISTFILE (default ~/.vash_history) if the shell is interactive. */
 
+#ifdef VASH_NO_HISTORY
+/* No history in this build (config/Kconfig). */
+static inline void vash_hist_init(void) {}
+static inline void vash_hist_add(const char *line) { (void)line; }
+static inline int vash_hist_count(void) { return 0; }
+static inline const char *vash_hist_get(int i) { (void)i; return NULL; }
+static inline char *vash_hist_expand(const char *line) { (void)line; return NULL; }
+static inline void vash_hist_save(void) {}
+static inline void vash_hist_fini(void) {}
+#else
 void vash_hist_init(void);
 
 /* Record a command (no trailing newline), honouring HISTCONTROL / HISTSIZE. */
@@ -28,5 +38,6 @@ void vash_hist_save(void);
 /* Free the list. */
 
 void vash_hist_fini(void);
+#endif
 
 #endif

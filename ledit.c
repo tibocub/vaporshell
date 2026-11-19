@@ -377,6 +377,7 @@ static void draw_prompt(struct sbuf_s *o, const char *p, struct cursor_s *c, int
 
 enum { HL_NONE, HL_OK, HL_BAD, HL_QUOTE, HL_PATH, HL_COMMENT, HL_KW, HL_FUNC };
 
+#if !defined(VASH_NO_HIGHLIGHT) || !defined(VASH_NO_AUTOSUGGEST)
 static bool path_exists(const char *word)
 {
   char tilde[VASH_PATH_MAX];
@@ -394,7 +395,9 @@ static bool path_exists(const char *word)
 
   return stat(VASH_FS(word), &st) == 0;
 }
+#endif
 
+#ifndef VASH_NO_HIGHLIGHT
 /* The answers of the last few path checks, by hash of the word: the line is redrawn
  * on every key and a stat() on littlefs costs 10 ms or more, so a word that did not
  * change is not looked up again. Kept while one line is edited.
@@ -424,6 +427,7 @@ static bool path_known(struct pmemo_s *m, const char *word)
   m->exists[m->n % 8] = path_exists(word);
   return m->exists[m->n++ % 8];
 }
+#endif
 
 /* The earlier lines of the command being typed (each continuation line is a separate
  * read): highlighting and completion run over them + the current line, so a quote or a
@@ -435,9 +439,12 @@ static char *g_ctx;
 static size_t g_ctxlen;
 static int g_indent;
 
+#if !defined(VASH_NO_HIGHLIGHT) || !defined(VASH_NO_AUTOSUGGEST)
 static const char *const g_cmd_kw[] = { "if", "then", "else", "elif", "do", "while", "until",
                                          "!", "{", "time", "coproc", NULL };
+#endif
 
+#ifndef VASH_NO_HIGHLIGHT
 static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
 {
   unsigned char *st = vash_xmalloc(len + 1);
@@ -673,6 +680,7 @@ static void set_style(struct sbuf_s *o, unsigned char from, unsigned char to)
 
   sb_adds(o, sgr[to]);
 }
+#endif
 
 static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
                  size_t cursor, const char *ghost, bool hilite, const char *menu)
@@ -682,10 +690,12 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
   struct cursor_s at = { 0, 0 };
   size_t i;
   char t[24];
-  const char *hlv = var_get("VASH_HIGHLIGHT");
   unsigned char *hl = NULL;
   unsigned char *styles = NULL;
   unsigned char cur = HL_NONE;
+
+#ifndef VASH_NO_HIGHLIGHT
+  const char *hlv = var_get("VASH_HIGHLIGHT");
 
   if (hilite && (hlv == NULL || strcmp(hlv, "0") != 0))
     {
@@ -697,6 +707,9 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
       styles = hl + g_ctxlen;
       free(all);
     }
+#else
+  (void)hilite;
+#endif
 
   o = e->out;                       /* the buffer from the last redraw, emptied */
   o.len = 0;
@@ -722,11 +735,13 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
           at = c;
         }
 
+#ifndef VASH_NO_HIGHLIGHT
       if (styles != NULL && styles[i] != cur)
         {
           set_style(&o, cur, styles[i]);
           cur = styles[i];
         }
+#endif
 
       if (ch == '\n')
         {
@@ -830,6 +845,7 @@ static void draw(struct ed_s *e, const char *prompt, const char *s, size_t len,
  * VASH_AUTOSUGGEST=0 turns it off. NULL if there is none.
  */
 
+#ifndef VASH_NO_AUTOSUGGEST
 /* Would this history entry still make sense here? Its commands must exist (not a
  * program since uninstalled, nor a typo that was fixed afterwards) and the path
  * arguments with a "/" must exist from this directory: a suggestion that cannot work
@@ -928,7 +944,15 @@ static bool sugg_plain(const char *t)       /* no control byte: the grey text is
 
   return true;
 }
+#endif
 
+#ifdef VASH_NO_AUTOSUGGEST
+static const char *suggestion(const struct ed_s *e)
+{
+  (void)e;
+  return NULL;
+}
+#else
 static const char *suggestion(const struct ed_s *e)
 {
   const char *off = var_get("VASH_AUTOSUGGEST");
@@ -953,6 +977,7 @@ static const char *suggestion(const struct ed_s *e)
 
   return NULL;
 }
+#endif
 
 static void menu_free(struct ed_s *e);
 static char *menu_text(const struct ed_s *e);
@@ -2382,6 +2407,7 @@ static bool run(struct ed_s *e, int cmd, const char *seq, int len)
 
 /* ---- Entry points ------------------------------------------------------------- */
 
+#ifndef VASH_NO_TITLE
 void vash_ledit_title(const char *t)
 {
   const char *term = var_get("TERM");
@@ -2418,6 +2444,7 @@ void vash_ledit_title(const char *t)
   put(buf);
   put("\a");
 }
+#endif
 
 bool vash_ledit_usable(void)
 {

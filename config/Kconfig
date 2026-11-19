@@ -60,3 +60,97 @@ config VASH_HARDEN
 	  rejects the flags.
 
 endmenu
+
+menu "Language"
+
+choice VASH_MODES
+	prompt "Shell language modes"
+	default VASH_MODES_BOTH
+	help
+	  Which dialects the binary can speak.
+
+config VASH_MODES_BOTH
+	bool "bash and POSIX (the default)"
+	help
+	  Bash mode by default, POSIX mode with --posix, `set -o posix`,
+	  POSIXLY_CORRECT or when started as sh.
+
+config VASH_MODES_POSIX_ONLY
+	bool "POSIX only"
+	help
+	  A POSIX (dash-like) shell and nothing else: the compiler drops every
+	  bash extension ([[ ]], arrays, ${x//a/b}, brace expansion, mapfile,
+	  declare, shopt, pushd, ...). About 21% smaller than both modes on a
+	  -Os build (275 KB -> 217 KB, measured).
+
+endchoice
+
+endmenu
+
+menu "Interactive shell"
+
+config VASH_LINE_EDITOR
+	bool "Line editor"
+	default y
+	help
+	  Emacs-style editing, cursor keys, Ctrl-R, `bind` and ~/.inputrc.
+	  Without it an interactive shell reads plain lines from the terminal
+	  (no editing beyond what the tty driver does), which is all a script
+	  runner or a serial console needs. About 20 KB.
+
+config VASH_HISTORY
+	bool "Command history"
+	default y
+	depends on VASH_LINE_EDITOR
+	help
+	  Up/Down, `history`, `fc`, ! expansion and the history file. About 8 KB.
+
+menuconfig VASH_COMPLETION
+	bool "Tab completion"
+	default y
+	depends on VASH_LINE_EDITOR
+	help
+	  Completion of commands, files, variables, users and hosts; with the
+	  options below also the bash `complete`/`compgen` machinery. About 25 KB
+	  in all.
+
+if VASH_COMPLETION
+
+config VASH_COMPLETION_PROG
+	bool "Programmable completion (complete, compgen, compopt)"
+	default y
+	help
+	  The bash builtins and the spec machinery behind them, so that
+	  bash-completion scripts and `complete -F` in an rc file work.
+	  Without it Tab still completes commands, files, variables, users and
+	  hosts, and `complete`/`compopt` are accepted and ignored (an old
+	  .bashrc keeps working). About 12 KB.
+
+config VASH_COMPLETION_FISH
+	bool "fish-style completion specs (complete -c ... -s -l -d)"
+	default y
+	depends on VASH_COMPLETION_PROG
+	help
+	  The option-with-description specs under completions/. About 3 KB.
+
+config VASH_HIGHLIGHT
+	bool "Syntax highlighting while typing"
+	default y
+	help
+	  Commands green or red, quotes, paths, keywords, stray fi/done/esac.
+
+config VASH_AUTOSUGGEST
+	bool "History suggestions after the cursor"
+	default y
+
+endif # VASH_COMPLETION
+
+config VASH_TITLE
+	bool "Terminal title and slow-command timer"
+	default y
+	depends on VASH_LINE_EDITOR
+	help
+	  The window title (running command, user@host:dir) and the
+	  "took 12s" line after a slow command.
+
+endmenu

@@ -39,10 +39,15 @@ LABEL="${VASH_PLATFORM:+$VASH_PLATFORM: }$DIR ($(basename "${REF%% *}")${VSOPTS:
 
 pass=0
 fail=0
+skipped=0
 
 for t in "$TESTS"/*.sh; do
     name=$(basename "$t")
     case $name in *"$ONLY"*) ;; *) continue ;; esac
+    if vash_test_skipped "$name"; then      # needs a feature this build was configured without
+        skipped=$((skipped + 1))
+        continue
+    fi
 
     (rm -rf "$WORK" && mkdir "$WORK" && cd "$WORK" && $REF "$t" >"$TMP/ref.out" 2>/dev/null </dev/null)
     ref_rc=$?
@@ -62,5 +67,6 @@ done
 
 if [ "$fail" = 0 ]; then color=$C_GREEN; else color=$C_RED; fi
 printf '%s%d passed, %d failed  [%s]%s\n' "$color" "$pass" "$fail" "$LABEL" "$C_RESET"
-tally_group "$LABEL" "$pass" "$fail"
+[ "$skipped" -gt 0 ] && printf '%s%d skipped (not in this configuration)%s\n' "$C_YELLOW" "$skipped" "$C_RESET"
+tally_group "$LABEL" "$pass" "$fail" "$skipped"
 [ "$fail" = 0 ]

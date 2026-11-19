@@ -69,10 +69,45 @@ ifneq ($(call cfg,DEBUG,),)
 CFLAGS    += -g
 endif
 
+# The "Language" and "Interactive shell" menus: a switch that is off becomes -DVASH_NO_xxx
+# (the headers then have inline stubs) and the module's source file is not compiled.
+NO_SRCS    :=
+ifneq ($(call cfg,MODES_POSIX_ONLY,),)
+CFLAGS    += -DVASH_POSIX_ONLY
+endif
+ifeq ($(call cfg,LINE_EDITOR,y),)
+CFLAGS    += -DVASH_NO_EDITOR
+NO_SRCS   += ledit.c bind.c
+endif
+ifeq ($(call cfg,HISTORY,y),)
+CFLAGS    += -DVASH_NO_HISTORY
+NO_SRCS   += history.c
+endif
+ifeq ($(call cfg,COMPLETION,y),)
+CFLAGS    += -DVASH_NO_COMPLETION
+NO_SRCS   += complete.c compgen.c compfish.c
+endif
+ifeq ($(call cfg,COMPLETION_PROG,y),)
+CFLAGS    += -DVASH_NO_PROG_COMPLETION
+endif
+ifeq ($(call cfg,COMPLETION_FISH,y),)
+CFLAGS    += -DVASH_NO_FISH
+NO_SRCS   += compfish.c
+endif
+ifeq ($(call cfg,HIGHLIGHT,y),)
+CFLAGS    += -DVASH_NO_HIGHLIGHT
+endif
+ifeq ($(call cfg,AUTOSUGGEST,y),)
+CFLAGS    += -DVASH_NO_AUTOSUGGEST
+endif
+ifeq ($(call cfg,TITLE,y),)
+CFLAGS    += -DVASH_NO_TITLE
+endif
+
 # Every top-level .c is part of the NuttX build too (see the Makefile's
 # MAINSRC/CSRCS); posix/ holds what the standalone build adds on top.
 # platform_nuttx.c and dispatch.c (the tbx table) only exist for NuttX.
-SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
+SRCS      := $(filter-out platform_nuttx.c dispatch.c $(NO_SRCS),$(wildcard *.c)) \
              $(wildcard posix/*.c)
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
@@ -168,7 +203,7 @@ fuzz:
 	  -o build-fuzz/fuzz fuzz/fuzz.c $(FUZZ_OBJS) -pthread
 
 check-asan: asan
-	VASH_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
+	VASH_NOCONFIG=1 VASH_PLATFORM='Linux ASan' ASAN_OPTIONS=detect_leaks=0 sh tests/run-suites.sh build-asan/vaporshell
 
 # Ubuntu-style toolchains enable _FORTIFY_SOURCE by default, and its
 # glibc wrappers quietly declare functions (realpath, ...) that strict
