@@ -200,8 +200,62 @@ static char *stdin_next_line(void *ctx, bool continuation)
 static int usage_error(const char *what, const char *arg)
 {
   vash_err("%s: %s", arg, what);
+  fprintf(stderr, "Try `vaporshell --help' for more information.\n");
   return 2;
 }
+
+/* --help / -h (alone). Kept in step with the option loop in shell_main(), the rc-file
+ * order in rcfile.c and the VASH_* knobs (docs/interactive.md); tests/pty/run.py checks
+ * that every option the loop accepts is mentioned.
+ */
+
+static const char g_help[] =
+  "vaporshell, version " VAPORSHELL_VERSION " -- a bash-compatible shell\n"
+  "\n"
+  "Usage:\n"
+  "  vaporshell [options] [script [arguments...]]\n"
+  "  vaporshell [options] -c command [name [arguments...]]\n"
+  "  vaporshell [options]                 interactive shell when stdin is a terminal\n"
+  "\n"
+  "Options:\n"
+  "  -c            run the first argument as a command line, then exit\n"
+  "  -i            force an interactive shell\n"
+  "  -l, --login   act as a login shell (also when started as -vaporshell)\n"
+  "  -e            exit on the first command that fails          (set -e)\n"
+  "  -u            treat unset variables as errors               (set -u)\n"
+  "  -x            print each command before running it          (set -x)\n"
+  "  -f            disable pathname expansion (globbing)         (set -f)\n"
+  "  -C            do not overwrite files with >                 (set -C)\n"
+  "  -n            read commands but do not run them             (set -n)\n"
+  "  -v            print input lines as they are read            (set -v)\n"
+  "  -o NAME       set an option by name (+o NAME turns it off); see `set -o`\n"
+  "  --posix       POSIX mode (also: started as `sh`, or POSIXLY_CORRECT set)\n"
+  "  --norc        do not read any startup file\n"
+  "  --rcfile FILE, --init-file FILE\n"
+  "                read FILE instead of the usual startup files\n"
+  "  --version     print the version and exit\n"
+  "  -h, --help    print this help and exit (-h is help only when it is the sole\n"
+  "                argument; otherwise it is bash's `hashall` flag, a no-op here)\n"
+  "  --            end of options\n"
+  "\n"
+  "Startup files (interactive shells; --norc skips them all):\n"
+  "  /etc/vaporshell/vash.conf, ~/.inputrc, then ~/.vashrc. After ~/.vashrc, unless it\n"
+  "  sets LOAD_BASH_FILES=0: ~/.bashrc (login shells: /etc/profile and the first of\n"
+  "  ~/.bash_profile, ~/.bash_login, ~/.profile). VASH_RC=FILE replaces ~/.vashrc & co.\n"
+  "\n"
+  "Look and feel (environment variables, set them in ~/.vashrc):\n"
+  "  VASH_HIGHLIGHT=0          no syntax highlighting while typing\n"
+  "  VASH_AUTOSUGGEST=0        no history suggestions after the cursor\n"
+  "  VASH_INDENT=0             continuation lines use PS2 instead of aligning under PS1\n"
+  "  VASH_TITLE=0              do not set the terminal window title\n"
+  "  VASH_SLOW_CMD=SECONDS     report commands slower than this (default 5, 0 = never)\n"
+  "  VASH_BRACKETED_PASTE=0    do not ask the terminal for bracketed paste\n"
+  "  VASH_COMPLETION_PATH=DIRS completion spec directories (default\n"
+  "                            ~/.config/vaporshell/completions:/etc/vaporshell/completions)\n"
+  "  VASH_COMPLETION_TIMEOUT=MS  stop a completion function after this long (default 300)\n"
+  "\n"
+  "Documentation: docs/ (interactive.md, modes.md, daily-driver.md, security.md);\n"
+  "builtin help: `help`, `help NAME`.\n";
 
 /* The shell's exit status; runs the EXIT trap first. */
 
@@ -300,6 +354,12 @@ static int shell_main(int argc, char *argv[])
           break;
         }
 
+      if (strcmp(argv[i], "--help") == 0 || (argc == 2 && strcmp(argv[i], "-h") == 0))
+        {
+          fputs(g_help, stdout);
+          return 0;
+        }
+
       if (strcmp(argv[i], "--version") == 0)
         {
           printf("vaporshell, version %s\n", VAPORSHELL_VERSION);
@@ -366,6 +426,7 @@ static int shell_main(int argc, char *argv[])
               case 'C': g_sh.opt_C = true; break;
               case 'n': g_sh.opt_n = true; break;
               case 'v': g_sh.opt_v = true; break;
+              case 'h': break;                 /* bash's hashall: always on here */
               default:  return usage_error("invalid option", argv[i]);
             }
         }

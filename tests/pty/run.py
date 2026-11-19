@@ -678,6 +678,22 @@ def _():
     s.close()
 
 
+@test("--help / -h lists every option and knob the shell has")
+def _():
+    import subprocess
+    out = subprocess.run([VS, "--help"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    assert out.returncode == 0 and out.stdout.startswith("vaporshell, version"), out
+    for tok in ("-c", "-i", "--login", "-e", "-u", "-x", "-f", "-C", "-n", "-v", "-o NAME", "--posix",
+                "--norc", "--rcfile", "--init-file", "--version", "--help", "VASH_HIGHLIGHT",
+                "VASH_AUTOSUGGEST", "VASH_INDENT", "VASH_TITLE", "VASH_SLOW_CMD", "VASH_RC", "LOAD_BASH_FILES"):
+        assert tok in out.stdout, tok
+    assert subprocess.run([VS, "-h"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]}).stdout == out.stdout
+    r = subprocess.run([VS, "-h", "-c", "echo ok"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    assert r.stdout == "ok\n", r                     # with other arguments -h is bash's no-op hashall
+    bad = subprocess.run([VS, "--nope"], capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+    assert bad.returncode == 2 and "--help" in bad.stderr, bad
+
+
 @test("fish-style complete: options with descriptions, conditions, exclusive")
 def _():
     d = os.path.join(TMP, "fishspecs"); os.makedirs(d, exist_ok=True)
