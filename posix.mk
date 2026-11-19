@@ -215,9 +215,17 @@ strict:
 install: $(BIN)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(BIN) $(DESTDIR)$(PREFIX)/bin/vaporshell
+	@# `vash` is only a short name for typing: a link to vaporshell, made if that name is free
+	@# (not on $$PATH, not in the install directory) or is already our own link.
+	@d=$(DESTDIR)$(PREFIX)/bin; \
+	if [ "$$(readlink "$$d/vash" 2>/dev/null)" = vaporshell ]; then ln -sf vaporshell "$$d/vash"; \
+	elif [ -e "$$d/vash" ] || [ -L "$$d/vash" ] || command -v vash >/dev/null 2>&1; then \
+	  echo "vash already exists ($$(command -v vash || echo "$$d/vash")): not linking it to vaporshell"; \
+	else ln -s vaporshell "$$d/vash" && echo "linked vash -> vaporshell"; fi
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/vaporshell
+	@d=$(DESTDIR)$(PREFIX)/bin; if [ "$$(readlink "$$d/vash" 2>/dev/null)" = vaporshell ]; then rm -f "$$d/vash"; fi
 
 clean:
 	rm -rf build build-asan build-strict build-fuzz build-small

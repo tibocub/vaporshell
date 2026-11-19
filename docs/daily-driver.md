@@ -9,6 +9,12 @@ chsh -s /usr/local/bin/vaporshell
 ```
 
 `chsh` refuses shells not listed in `/etc/shells`, hence the second line.
+
+`make install` also makes `vash`, a symlink to `vaporshell`, as a short name to type
+(the official name stays `vaporshell`; there are other projects called vash). It is
+made only if no `vash` is on your `$PATH` or in the install directory already; if
+there is one, the install says so and leaves it alone. `make uninstall` removes the
+link only if it is ours.
 Log out and back in. Vaporshell then runs as a login shell and reads
 `/etc/profile` and `~/.bash_profile` / `.bash_login` / `.profile` (the usual
 bash way, so make `~/.bash_profile` source `~/.bashrc` if you want it).
