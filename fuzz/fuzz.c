@@ -13,17 +13,27 @@
  *                 run a command: "$(", "`", "<(", ">("
  *   6  printf     the printf builtin, always `-v var` (formats into a variable)
  *   7  test       the test/[ builtin on the input's lines as arguments
+ *   8  highlight  the editor's syntax highlighter
+ *   9  complete   Tab completion of the input as a command line (specs, files, variables)
+ *  10  bind       the `bind` builtin: key sequences and readline commands, one argument per line
+ *  11  run        runs the input as a script, sandboxed: externals cannot be found (PATH is
+ *                 read-only and points nowhere), and inputs that could leave the sandbox are
+ *                 skipped (see runnable(): paths, redirections, loops, functions, exec, ...)
  */
 
 #include <nuttx/config.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "vaporshell.h"
 #include "exec.h"
 #include "expand.h"
+#include "complete.h"
 #include "history.h"
+#include "ledit.h"
 #include "parse.h"
 
 static void fuzz_parser(const char *s, size_t n)
@@ -58,10 +68,62 @@ static void fuzz_parser(const char *s, size_t n)
   parser_free(&p);
 }
 
+void vash_fuzz_highlight(const char *s, size_t len);      /* ledit.c, with -DVASH_FUZZ */
+
+static void cand(void *ctx, char *name, char *desc, char suffix)
+{
+  (void)ctx;
+  (void)suffix;
+  free(name);
+  free(desc);
+}
+
+/* Can this script run without touching anything outside the process? With no way to find a
+ * program (PATH is read-only and empty of programs), what is left is the shell's own builtins
+ * and expansions; these words and characters would still reach out or never come back.
+ */
+
+static bool runnable(const char *s, size_t n)
+{
+  static const char *const bad[] =
+  {
+    "exit", "exec", "kill", "trap", "read", "wait", "cd", "pushd", "popd", "source", "ulimit", "umask",
+    "enable", "command", "builtin", "while", "until", "for", "select", "fg", "bg", "disown", "suspend",
+    "logout", "mapfile", "readarray", "coproc", "history", "fc", "hash", "()", "function", "set -e",
+    "set -u", "errexit", "nounset", NULL
+  };
+
+  int i;
+
+  if (strpbrk(s, "/&<>~\\") != NULL || strlen(s) > 256)
+    {
+      return false;
+    }
+
+  for (i = 0; bad[i] != NULL; i++)
+    {
+      if (strstr(s, bad[i]) != NULL)
+        {
+          return false;
+        }
+    }
+
+  return true;
+}
+
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
+  int nul = open("/dev/null", O_WRONLY);
+
   (void)argc;
+  setenv("PATH", "/nonexistent", 1);
   shell_init((*argv)[0]);          /* globs and tests look at the current directory: run it in a scratch one */
+  run_string("readonly PATH", 13);
+  if (nul >= 0)
+    {
+      dup2(nul, 1);                /* what the scripts print is not interesting */
+    }
+
   return 0;
 }
 
@@ -79,7 +141,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   memcpy(s, data + 1, size - 1);
   s[size - 1] = '\0';
 
-  switch (data[0] % 8)
+  switch (data[0] % 12)
     {
       case 0:
         fuzz_parser(s, size - 1);
@@ -138,11 +200,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
       case 6:
       case 7:
         {
-          char *av[10] = { data[0] % 8 == 6 ? "printf" : "test", NULL };
+          char *av[10] = { data[0] % 12 == 6 ? "printf" : "test", NULL };
           int ac = 1;
           char *t = s;
 
-          if (data[0] % 8 == 6)
+          if (data[0] % 12 == 6)
             {
               av[ac++] = "-v";
               av[ac++] = "fuzzvar";
@@ -159,7 +221,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             }
 
           av[ac] = NULL;
-          if (data[0] % 8 == 6)
+          if (data[0] % 12 == 6)
             {
               bi_printf(ac, av);
             }
@@ -168,6 +230,52 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
               bi_test(ac, av);
             }
         }
+
+        break;
+
+      case 8:
+        vash_fuzz_highlight(s, size - 1);
+        break;
+
+      case 9:
+        {
+          char ins[1024];
+          int del;
+          size_t skip;
+
+          vash_commands_refresh();
+          vash_complete(s, (int)(size - 1), ins, sizeof(ins), &del, &skip, cand, NULL);
+        }
+
+        break;
+
+      case 10:
+        {
+          char *av[10] = { "bind", NULL };
+          int ac = 1;
+          char *t = s;
+
+          while (t != NULL && ac < 9)
+            {
+              av[ac++] = t;
+              t = strchr(t, '\n');
+              if (t != NULL)
+                {
+                  *t++ = '\0';
+                }
+            }
+
+          av[ac] = NULL;
+          bi_bind(ac, av);
+        }
+
+        break;
+
+      case 11:
+        if (runnable(s, size - 1))
+          {
+            run_string(s, size - 1);
+          }
 
         break;
 

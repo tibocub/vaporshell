@@ -1,0 +1,1 @@
+x=$(echo hi); y=${x:-def}; echo "$x$y" $((1+2))

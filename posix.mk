@@ -194,7 +194,7 @@ asan:
 
 # Fuzzing (needs clang): make fuzz builds build-fuzz/fuzz, then
 #   build-fuzz/fuzz fuzz/corpus -max_total_time=60     (see docs/security.md)
-FUZZ_FLAGS := -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -g -O1
+FUZZ_FLAGS := -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -g -O1 -DVASH_FUZZ
 FUZZ_OBJS  := $(filter-out build-fuzz/vaporshell_main.o,$(OBJS:$(BUILDDIR)/%=build-fuzz/%))
 
 fuzz:

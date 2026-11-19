@@ -669,6 +669,18 @@ static unsigned char *highlight(const char *s, size_t len, struct pmemo_s *memo)
   return st;
 }
 
+#ifdef VASH_FUZZ
+/* fuzz/fuzz.c: the highlighter over arbitrary text, with nothing to see the result. */
+
+void vash_fuzz_highlight(const char *s, size_t len)
+{
+  struct pmemo_s memo;
+
+  memset(&memo, 0, sizeof(memo));
+  free(highlight(s, len, &memo));
+}
+#endif
+
 static void set_style(struct sbuf_s *o, unsigned char from, unsigned char to)
 {
   static const char *const sgr[] = { "", "\033[32m", "\033[31m", "\033[33m", "\033[4m", "\033[90m", "\033[36m", "\033[1;36m" };

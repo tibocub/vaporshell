@@ -1,0 +1,2 @@
+if [ -f x ]; then echo "a $b" 'c' # d
+fi; case $x in a|b) ;; esac; f() { ls -la ~/x; }

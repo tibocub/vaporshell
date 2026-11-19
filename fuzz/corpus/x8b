@@ -1,0 +1,2 @@
+for i in 1 2; do echo ${i} $(date) `id`; done | grep 'a
+b

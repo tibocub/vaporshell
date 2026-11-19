@@ -1,0 +1,3 @@
+
+-x
+"\C-x\C-r":echo hi

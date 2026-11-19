@@ -31,9 +31,9 @@ Check a binary: `readelf -lW build/vaporshell | grep -E 'RELRO|STACK'`.
 ## Fuzzing
 
 `fuzz/fuzz.c` is a libFuzzer harness (clang, ASan + UBSan). One binary; the
-first input byte picks the target. Nothing it exercises runs commands.
+first input byte picks the target. Targets 0-10 run no commands; target 11 runs scripts in a sandbox (below).
 
-| Byte % 8 | Target |
+| Byte % 12 | Target |
 |---|---|
 | 0 | lexer + parser over a script |
 | 1 | arithmetic evaluator (inputs with `$` or backtick skipped) |
@@ -43,6 +43,10 @@ first input byte picks the target. Nothing it exercises runs commands.
 | 5 | word expansion (skipped if the text could run a command) |
 | 6 | the `printf` builtin (`-v` only) |
 | 7 | the `test` / `[` builtin |
+| 8 | the line editor's syntax highlighter |
+| 9 | Tab completion of the input as a command line |
+| 10 | the `bind` builtin (key sequences, readline commands) |
+| 11 | the input run as a script in a sandbox: `PATH` is read-only and points nowhere, so no program can start; inputs with paths, redirections, loops, functions, `exec`, `exit`, `cd`, `trap`, ... are skipped |
 
 ```sh
 make -f posix.mk fuzz
@@ -75,9 +79,10 @@ Bugs found so far (all fixed):
 - `<(cmd)` temp files were reopened by name after `mkstemp`; they are now written
   through the descriptor `mkstemp` returned and read back with `O_NOFOLLOW`.
 
-Not fuzzed yet (they execute or touch the system, so they need a sandboxed
-harness): word expansion with `$( )`, redirections, the line editor,
-completion specs and startup/history file parsing.
+Not fuzzed yet (they need real programs or files): redirections, the key-handling
+half of the line editor, completion specs that run functions, startup/history
+file parsing. Target 11 is a filter, not a container: run long fuzzing sessions
+in a throwaway VM or container.
 
 ## Still to do
 
@@ -87,4 +92,3 @@ completion specs and startup/history file parsing.
 - OpenSSF Best Practices badge (passing level): the questionnaire at
   <https://www.bestpractices.dev/>.
 - A SAST pass with `clang-tidy`/`cppcheck` and a triage of the findings.
-- Fuzz the expansion and the line editor with a sandboxed harness.
