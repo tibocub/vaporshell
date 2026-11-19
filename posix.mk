@@ -10,6 +10,8 @@
 #   make check-asan     same tests, against the sanitizer build
 #   make strict         warnings-as-errors with distro fortify off (see below)
 #   make install        PREFIX=/usr/local (DESTDIR honored)
+#   make menuconfig     the configuration menu (also: tiny_defconfig, tinyest_defconfig,
+#                       full_defconfig, size-report; docs/config.md)
 #   make clean
 
 CC        ?= cc
@@ -17,16 +19,28 @@ PREFIX    ?= /usr/local
 BUILDDIR  ?= build
 REFSHELL  ?= bash
 
+# The configuration (make menuconfig, docs/config.md): .config if there is one, else the
+# defaults of config/Kconfig, which are the full shell. NOCONFIG=1 ignores .config: the
+# sanitizer, fuzz and strict builds use it so they always test everything.
+NOCONFIG  ?= 0
+ifeq ($(NOCONFIG),0)
+-include .config
+HAVE_CFG  := $(wildcard .config)
+endif
+# $(call cfg,NAME,default): "y" if CONFIG_VASH_NAME is on (or, with no .config, if default is y)
+cfg        = $(if $(HAVE_CFG),$(filter y,$(CONFIG_VASH_$(1))),$(2))
+OPT       := $(if $(call cfg,OPT_SIZE,),-Os,-O2)
+
 # Strict C99 + POSIX.1-2008 on purpose: it's what keeps this portable
 # instead of accidentally glibc-only.
-CFLAGS    ?= -O2
+CFLAGS    ?= $(OPT)
 LDLIBS    += -pthread
 CFLAGS    += -pthread -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
              -DVAPORSHELL_POSIX -Iposix -I. -MMD -MP $(EXTRA_CFLAGS)
 
 # Hardening, on by default (HARDEN=0 drops it; docs/security.md). Each flag is
 # kept only if this compiler/linker accepts it, so the build stays portable.
-HARDEN ?= 1
+HARDEN ?= $(if $(call cfg,HARDEN,y),1,0)
 cc_ok = $(shell $(CC) $(1) -x c -c /dev/null -o /dev/null 2>/dev/null && echo $(1))
 ld_ok = $(shell $(CC) $(1) -x c /dev/null -o /dev/null 2>/dev/null && echo $(1))
 ifeq ($(HARDEN),1)
@@ -38,6 +52,23 @@ LDFLAGS   += $(call ld_ok,-pie) $(call ld_ok,-Wl$(comma)-z$(comma)relro$(comma)-
 endif
 comma := ,
 
+# The rest of the "Build" menu.
+ifneq ($(call cfg,GC_SECTIONS,y),)
+CFLAGS    += -ffunction-sections -fdata-sections
+LDFLAGS   += $(call ld_ok,-Wl$(comma)--gc-sections) $(call ld_ok,-Wl$(comma)-dead_strip)
+endif
+ifneq ($(call cfg,LTO,),)
+LTO       := $(or $(call cc_ok,-flto=auto),$(call cc_ok,-flto))
+CFLAGS    += $(LTO)
+LDFLAGS   += $(LTO) $(OPT)
+endif
+ifneq ($(call cfg,STRIP,),)
+LDFLAGS   += $(call ld_ok,-s)
+endif
+ifneq ($(call cfg,DEBUG,),)
+CFLAGS    += -g
+endif
+
 # Every top-level .c is part of the NuttX build too (see the Makefile's
 # MAINSRC/CSRCS); posix/ holds what the standalone build adds on top.
 # platform_nuttx.c and dispatch.c (the tbx table) only exist for NuttX.
@@ -46,7 +77,7 @@ SRCS      := $(filter-out platform_nuttx.c dispatch.c,$(wildcard *.c)) \
 OBJS      := $(SRCS:%.c=$(BUILDDIR)/%.o)
 BIN       := $(BUILDDIR)/vaporshell
 
-.PHONY: fuzz all help small bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
+.PHONY: menuconfig guiconfig defconfig full_defconfig tiny_defconfig tinyest_defconfig olddefconfig savedefconfig size-report distclean fuzz all help small bench check check-pty check-smoosh check-asan check-vaporos check-all build-vaporos coverage asan strict install uninstall clean
 .DEFAULT_GOAL := all
 
 all: $(BIN)
@@ -54,7 +85,7 @@ all: $(BIN)
 $(BIN): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-$(BUILDDIR)/%.o: %.c
+$(BUILDDIR)/%.o: %.c $(HAVE_CFG)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -70,7 +101,7 @@ $(BUILDDIR)/complete_bench: tests/bench/complete_bench.c $(BENCH_OBJS)
 
 # The size the device build has (vaporOS compiles for size): build-small/vaporshell.
 small:
-	$(MAKE) -f posix.mk BUILDDIR=build-small EXTRA_CFLAGS=-Os
+	$(MAKE) -f posix.mk NOCONFIG=1 BUILDDIR=build-small EXTRA_CFLAGS=-Os
 
 bench: $(BUILDDIR)/complete_bench
 	@$(BUILDDIR)/complete_bench "$(or $(LINE),g)"
@@ -124,7 +155,7 @@ coverage: $(BIN)
 SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 
 asan:
-	$(MAKE) BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
+	$(MAKE) NOCONFIG=1 BUILDDIR=build-asan EXTRA_CFLAGS="$(SAN_FLAGS)" LDFLAGS="$(SAN_FLAGS)"
 
 # Fuzzing (needs clang): make fuzz builds build-fuzz/fuzz, then
 #   build-fuzz/fuzz fuzz/corpus -max_total_time=60     (see docs/security.md)
@@ -132,7 +163,7 @@ FUZZ_FLAGS := -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=
 FUZZ_OBJS  := $(filter-out build-fuzz/vaporshell_main.o,$(OBJS:$(BUILDDIR)/%=build-fuzz/%))
 
 fuzz:
-	$(MAKE) -f posix.mk CC=clang BUILDDIR=build-fuzz EXTRA_CFLAGS="$(FUZZ_FLAGS)" $(FUZZ_OBJS)
+	$(MAKE) -f posix.mk NOCONFIG=1 CC=clang BUILDDIR=build-fuzz EXTRA_CFLAGS="$(FUZZ_FLAGS)" $(FUZZ_OBJS)
 	clang $(FUZZ_FLAGS) -fsanitize=fuzzer -pthread -std=c99 -D_POSIX_C_SOURCE=200809L -DVAPORSHELL_POSIX -Iposix -I. \
 	  -o build-fuzz/fuzz fuzz/fuzz.c $(FUZZ_OBJS) -pthread
 
@@ -144,7 +175,7 @@ check-asan: asan
 # -D_POSIX_C_SOURCE would otherwise hide -- so a plain build there can
 # pass while Fedora fails. This is the build that sees what Fedora sees.
 strict:
-	$(MAKE) BUILDDIR=build-strict EXTRA_CFLAGS="-U_FORTIFY_SOURCE -Werror"
+	$(MAKE) NOCONFIG=1 BUILDDIR=build-strict EXTRA_CFLAGS="-U_FORTIFY_SOURCE -Werror"
 
 install: $(BIN)
 	install -d $(DESTDIR)$(PREFIX)/bin
@@ -154,6 +185,39 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/vaporshell
 
 clean:
-	rm -rf build build-asan build-strict build-fuzz
+	rm -rf build build-asan build-strict build-fuzz build-small
+
+distclean: clean
+	rm -f .config .config.old defconfig
+
+# ---- Configuration (docs/config.md) ----------------------------------------------------
+# Kconfiglib is vendored in tools/kconfig: nothing to install but python3.
+
+KCONF := python3 tools/kconfig
+
+menuconfig:
+	$(KCONF)/menuconfig.py config/Kconfig
+
+guiconfig:
+	$(KCONF)/guiconfig.py config/Kconfig
+
+defconfig: full_defconfig
+
+full_defconfig tiny_defconfig tinyest_defconfig:
+	$(KCONF)/defconfig.py --kconfig config/Kconfig config/$@
+
+olddefconfig:
+	$(KCONF)/olddefconfig.py config/Kconfig
+
+# The smallest defconfig that reproduces .config, written to ./defconfig
+savedefconfig:
+	$(KCONF)/savedefconfig.py --kconfig config/Kconfig --out defconfig
+
+# What this configuration costs, object by object (meaningless per object with LTO).
+size-report: $(BIN)
+	@echo "configuration:"; if [ -f .config ]; then grep -E '^CONFIG_' .config | sed 's/^/  /'; else echo "  none (.config absent: the defaults, i.e. full)"; fi
+	@echo; echo "bytes (text+data) per object, largest first:"
+	@size $(OBJS) | awk 'NR>1 {printf "%8d  %s\n", $$1+$$2, $$6}' | sort -rn | head -25
+	@echo; size $(BIN); ls -l $(BIN) | awk '{print $$5 " bytes on disk"}'
 
 -include $(OBJS:.o=.d)

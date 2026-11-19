@@ -23,3 +23,7 @@ tests/coverage/__pycache__
 /build-strict/
 __pycache__/
 /build-fuzz/
+/.config
+/.config.old
+/defconfig
+/build-small/

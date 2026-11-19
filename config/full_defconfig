@@ -1,0 +1,4 @@
+# The default: everything on, tuned for speed.
+CONFIG_VASH_OPT_SPEED=y
+CONFIG_VASH_GC_SECTIONS=y
+CONFIG_VASH_HARDEN=y

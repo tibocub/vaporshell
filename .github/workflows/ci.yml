@@ -36,6 +36,20 @@ jobs:
           persist-credentials: false
       - run: make check-asan
 
+  configs:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        preset: [full, tiny, tinyest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make ${{ matrix.preset }}_defconfig
+      - run: make
+      - run: build/vaporshell -c 'echo "$BASH_VERSION" && echo ok'
+      - run: make size-report
+
   fuzz:
     runs-on: ubuntu-24.04
     steps:

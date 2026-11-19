@@ -1,0 +1,62 @@
+# vaporshell configuration (standalone build: `make menuconfig`; see docs/config.md).
+# Every symbol here is VASH_*; .config holds CONFIG_VASH_*. With no .config the
+# defaults below apply, and they are exactly today's build ("full").
+
+mainmenu "vaporshell configuration"
+
+menu "Build"
+
+choice VASH_OPT
+	prompt "Optimization"
+	default VASH_OPT_SPEED
+	help
+	  What the compiler optimizes for.
+
+config VASH_OPT_SPEED
+	bool "Speed (-O2)"
+
+config VASH_OPT_SIZE
+	bool "Size (-Os)"
+	help
+	  Smaller code, a little slower. About 22% smaller than -O2 on the
+	  full shell (measured on x86-64 with gcc: 399 KB -> 311 KB).
+
+endchoice
+
+config VASH_GC_SECTIONS
+	bool "Drop unused functions at link time (--gc-sections)"
+	default y
+	help
+	  Puts every function and variable in its own section and lets the
+	  linker discard the ones nothing uses. No downside beyond link time.
+
+config VASH_LTO
+	bool "Link-time optimization (-flto)"
+	default n
+	help
+	  Another few percent, a slower build, and the compiler must support
+	  it. Combine with Size.
+
+config VASH_STRIP
+	bool "Strip symbols from the binary"
+	default n
+	help
+	  Removes the symbol table: about 12% smaller, but crash reports and
+	  gdb lose function names.
+
+config VASH_DEBUG
+	bool "Debug information (-g)"
+	default n
+
+config VASH_HARDEN
+	bool "Security hardening flags"
+	default y
+	help
+	  Stack protector, PIE, full RELRO, -D_FORTIFY_SOURCE=2 and friends
+	  (docs/security.md). Costs about 3% of the binary on the full shell and
+	  about 6% on a stripped, size-optimized one (measured, x86-64 gcc).
+	  Turn it off for the smallest possible binary on a machine where the
+	  shell is not exposed to untrusted input, or for a toolchain that
+	  rejects the flags.
+
+endmenu

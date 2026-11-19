@@ -230,7 +230,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 
 ### Codebase
 - [ ] learn and apply [OpenSSF](https://openssf.org) security tools and good practices to make vaporshell a minimum safe
-- [ ] improve the build configuration (e.g: use menuconfig) so vaporshell can be stripped down to optimize binzary size or disable unwanted features
+- [ ] improve the build configuration: **phase 1 done** (`make menuconfig`, presets, compiler/linker options, `make size-report`; see [docs/config.md](docs/config.md)); next: per-module feature switches, then `tiny` (bash+POSIX, editor, light QoL) and `tinyest` (script-only, POSIX-only) really cutting features
 - [ ] explore and implement a plugin system that allow to extend vaporshell with native code (should patch vaporshell pre-compilation so it produces only one binary with vaporOS. an optional support for external binaries could be nice for desktop)
 
 ### REPL / Line-Editor

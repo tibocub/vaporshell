@@ -1,0 +1,8 @@
+# A small but comfortable shell (bash and POSIX modes, line editor, a few light QoL
+# features). Phase 1 only sets the compiler side; the feature cuts arrive with the
+# module switches (docs/config.md).
+CONFIG_VASH_OPT_SIZE=y
+CONFIG_VASH_GC_SECTIONS=y
+CONFIG_VASH_LTO=y
+CONFIG_VASH_STRIP=y
+CONFIG_VASH_HARDEN=y
