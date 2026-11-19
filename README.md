@@ -29,7 +29,7 @@ but with the whole ecosystem. For example, I personally daily-drive vash on my o
 
 It's mainly for:
 
-- bash users that are jealous of fish features and reactivity but don't want to move away from the bash ecosystem
+- bash users that are jealous of fish or zsh features and reactivity but don't want to move away from the bash ecosystem
 - fish users that want an even faster 0-delay workflow (instant tab-completions for files/commands/subcommands, etc.)
 
 ## Support and compatibility
