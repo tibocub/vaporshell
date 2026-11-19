@@ -7,18 +7,27 @@
 
 
 ## Readme/codebase TODOs
-- make some benchmarks to show how freakin fast and memory efficient this is compared to bash and fish
+
+- make some benchmarks to show how freakin fast and memory efficient vash is compared to bash and fish
 - make the README more concise (migrate some info to the docs)
-- make a config menu (with dialog ?) for easy custom compilation, change target, select features, etc.
+- make a config menu (with dialog ?) for easy custom compilation, change target, select features to fine-tune binary size, etc.
 
 ## TLDR
 
 Vaporshell is a lightweight and protable shell that aims to provide:
 - Bash compatiblity by default
 - POSIX sh compatibility (like bash does, with a "--posix" mode)
-- A fast and comfortable user experience inspired by fish (for instance, our autocompletion engine is much faster AND more advanced than bash's)
+- A super fast and comfortable user experience inspired by fish
 
 All this while being small enought to run on an RP2040 or an ESP32 (using NuttX/VaporOS)
+
+
+## Why vash instead of bash or fish ?
+
+Vaporshell doesn't bring its own dialect, we aim for 100% bash-compatibility, not only with the language
+but with the whole ecosystem. For example, I personally daily-drive vash on my old bashrc and the plugins
+
+- bash users that are jealous of fish features and reactivity
 
 
 ## Support and compatibility
@@ -32,33 +41,6 @@ vaporOS (RP2040 and native sim).
 
 Not tested yet but support is planned for BSDs
 and MacOS as well.
-
-
-## GOALS
-
-- A real POSIX shell first: tokenizing, quoting, `$VAR` expansion,
-  redirection, control flow (`if`/`for`/`while`), functions -- the
-  actual `sh` language, not a look-alike. This is the priority; a
-  correct, if incomplete, POSIX shell beats a shell that half-does
-  POSIX and half-does something else.
-- Small and fast ("bash, but fast"). Every interactive feature's size
-  cost is measured (no compile-time switches: what only some users
-  need is an optional `.vash` file); completion is native code plus
-  declarative, lazily loaded specs rather than shell functions that fork
-  helpers. See `docs/interactive.md`.
-- Once that's solid: steal the bash/fish quality-of-life features that
-  make an interactive shell pleasant to actually use day to day --
-  tab completion, history, `.bashrc`-style startup, sensible line
-  editing. Not aiming for 100% bash compatibility, ever -- just the
-  parts that make vaporshell nicer to type into, without compromising
-  POSIX `sh` as the thing scripts can actually rely on.
-- Independent of any specific command set. vaporshell doesn't know
-  what `ls` or `poweroff` are, or where they come from -- it resolves
-  `$PATH` and runs whatever's there, the same way any real Unix shell
-  does. [vaporOS-coreutils](https://github.com/tibocub/vaporOS-coreutils)
-  is what vaporOS itself ships as that command set, but nothing here
-  is coupled to it specifically, and other NuttX projects could use
-  vaporshell with a completely different set of programs.
 
 
 ## LAYOUT
@@ -169,11 +151,10 @@ make strict                 # fortify off, -Werror (what Fedora sees)
 
 [#status](#status)
 
-The front end is a real lexer + parser producing an AST, and an executor
-that walks it -- not text rescanning. Words keep their quoting until
-expansion, so one word can become many fields (IFS splitting, `"$@"`,
-globbing). Variables live in a table, not in `environ`: only exported ones
-reach a child. See `docs/design.md`, "Architecture".
+Right now I'm daily-driving it to detect problems in real-life usage.
+It's pretty nice and trouble-free for now, I can just run my usual
+bash config with vaporshell with 0 migration or vaporshell-specific edits
+in my config.
 
 Modes: bash's behaviour is the default and `--posix` selects POSIX; both are
 presets of feature bits over one engine (`mode.h`, `docs/modes.md`). Each bit
@@ -263,7 +244,7 @@ see [docs/bash-coverage.md](docs/bash-coverage.md) and
 - [x] source a script into the current session (`.` and `source`)
 - [x] variables (`num=3; echo $num`)
 - [x] `;` end line with semicolon
-- [x] quoted assignment values (`age=5; name="tibo"`)
+- [x] quoted assignment values (`age=5; name="bob"`)
 - [x] `$VAR` / `${VAR}` expansion
 - [x] command substitution: `$(...)` and `` `...` ``
 - [x] `&&` / `||` conditional execution

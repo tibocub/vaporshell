@@ -14,7 +14,7 @@ Log out and back in. Vaporshell then runs as a login shell and reads
 bash way, so make `~/.bash_profile` source `~/.bashrc` if you want it).
 Keep a root terminal or `chsh -s /bin/bash` handy for the first login.
 
-## At school (no root): start it from `~/.bashrc`
+## No root: start it from `~/.bashrc`
 
 Put this at the **top** of `~/.bashrc` (after the usual "not interactive,
 return" guard is fine too):
@@ -34,7 +34,7 @@ fi
 * If the binary is missing you just get bash (`-x` test). Escape hatch if
   vaporshell ever breaks: `VASH_EXEC=1 bash` (or `bash --norc`).
 * Here `$SHELL` stays `/bin/bash`, so tools see bash. Use `~/.bash_profile`
-  for the same snippet if the school's terminal starts login shells and
+  for the same snippet if the root-less terminal starts login shells and
   `.bash_profile` doesn't source `.bashrc`.
 
 ## What programs see
@@ -43,7 +43,7 @@ fi
   are set, which is what nearly all bash-detecting scripts (nvm, conda,
   git-prompt, completions, `/etc/profile.d/*`) test.
 * `$SHELL` is inherited from the login (`/usr/local/bin/vaporshell` after
-  `chsh`; `/bin/bash` in the school setup). Programs that look at its
+  `chsh`; `/bin/bash` in the root-less setup). Programs that look at its
   basename (some `eval "$(tool init $(basename $SHELL))"` setups) won't know
   "vaporshell". If one bites, pick one:
   * `export SHELL=/bin/bash` in `~/.vashrc` (tools think bash, but terminals/

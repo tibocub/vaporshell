@@ -26,7 +26,7 @@ Probes matching bash in bash mode: **481 of 482**.
 
 `tests/coverage/probe.py` runs each probe (a few lines of shell, see
 `probes.txt`) under the real bash, under dash, and under vaporshell in both
-modes, and compares **stdout and exit status**. It does not compare stderr:
+modes, and compares **stdout and exit status**. It does not compare stderr as
 error wording is shell-specific.
 
 - **ok**: vaporshell's output and exit status equal bash's.
